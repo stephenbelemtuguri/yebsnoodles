@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173d30">
+  <title>YEBS Noodles | Reviews & Loyalty</title>
+  <style>
+    :root {
+      --forest: #173d30;
+      --forest-dark: #0f2820;
+      --leaf: #52785b;
+      --orange: #e57a45;
+      --orange-hover: #d26532;
+      --gold: #e9bd68;
+      --cream: #fbf8f0;
+      --paper: #fffefa;
+      --ink: #1e2621;
+      --muted: #6e7971;
+      --line: #e4dfd3;
+      --shadow: 0 12px 36px rgba(18, 44, 34, 0.08);
+      --serif: Georgia, "Times New Roman", serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--cream); color: var(--ink); min-height: 100vh; }
+    header { background: var(--forest); color: white; position: sticky; top: 0; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+    .header-wrap { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand-link { display: flex; align-items: center; gap: 12px; text-decoration: none; color: white; }
+    .brand-logo { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--gold); }
+    .brand-title { font-family: var(--serif); font-size: 1.3rem; font-weight: 700; }
+    .brand-badge { font-size: 0.7rem; text-transform: uppercase; color: var(--gold); background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 999px; }
+    .nav-btn { color: #e2ede5; text-decoration: none; font-size: 0.85rem; font-weight: 600; padding: 8px 14px; border-radius: 6px; background: rgba(255,255,255,0.08); }
+    .nav-btn:hover { background: rgba(255,255,255,0.18); }
+
+    .main-wrap { max-width: 1200px; margin: 24px auto; padding: 0 20px; }
+
+    .tabs { display: flex; gap: 8px; border-bottom: 2px solid var(--line); margin-bottom: 24px; }
+    .tab-btn { padding: 12px 20px; font-weight: 700; font-size: 0.92rem; color: var(--muted); background: none; border: none; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+    .tab-btn:hover { color: var(--forest); }
+    .tab-btn.active { color: var(--orange); border-bottom-color: var(--orange); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 24px; box-shadow: var(--shadow); margin-bottom: 20px; }
+    .card-title { font-family: var(--serif); font-size: 1.4rem; margin: 0 0 20px; color: var(--forest); }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 16px; border-radius: 6px; font-weight: 700; font-size: 0.85rem; border: 0; cursor: pointer; text-decoration: none; }
+    .btn-orange { background: var(--orange); color: white; }
+    .btn-orange:hover { background: var(--orange-hover); }
+    .btn-forest { background: var(--forest); color: white; }
+    .btn-outline { background: white; border: 1.5px solid var(--line); color: var(--forest); }
+
+    .rating-stars { display: flex; gap: 4px; }
+    .star { font-size: 1.8rem; cursor: pointer; color: #f59e0b; }
+    .star.empty { color: #d1d5db; }
+
+    .review-card { border: 1.5px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; background: white; }
+    .review-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .review-author { font-weight: 800; color: var(--forest); }
+    .review-comment { color: var(--ink); line-height: 1.5; font-size: 0.9rem; margin: 8px 0; }
+
+    .loyalty-banner { background: linear-gradient(135deg, var(--forest) 0%, #1c4b3b 100%); color: white; border-radius: 12px; padding: 28px; margin-bottom: 24px; }
+    .loyalty-points-big { font-size: 3rem; font-weight: 800; color: var(--gold); font-family: var(--serif); }
+    .loyalty-tier-badge { background: rgba(255,255,255,0.15); border: 1px solid var(--gold); padding: 6px 16px; border-radius: 999px; font-weight: 700; }
+
+    .reward-card { display: flex; justify-content: space-between; align-items: center; padding: 16px; border: 1.5px solid var(--line); border-radius: 10px; margin-bottom: 12px; background: white; }
+    .reward-card.affordable { border-color: var(--gold); background: #fffbf5; }
+
+    .referral-box { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 2px solid #fbbf24; border-radius: 12px; padding: 24px; text-align: center; }
+    .referral-code { font-family: monospace; font-size: 2rem; font-weight: 800; color: #92400e; letter-spacing: 0.1em; padding: 12px 24px; background: white; border-radius: 8px; display: inline-block; margin: 12px 0; }
+
+    footer { background: var(--forest-dark); color: #a4b8ac; padding: 20px; text-align: center; font-size: 0.8rem; margin-top: 40px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-wrap">
+      <a href="../index.html" class="brand-link">
+        <img src="../logo.png" alt="YEBS" class="brand-logo">
+        <div><div class="brand-title">YEBS Noodles</div><span class="brand-badge">Reviews & Rewards</span></div>
+      </a>
+      <nav style="display:flex; gap:10px;">
+        <a href="../index.html" class="nav-btn">🏠 Home</a>
+        <a href="customer-portal.html" class="nav-btn">📦 My Orders</a>
+        <a href="customer-reviews.html" class="nav-btn">⭐ Rewards</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="main-wrap">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="reviews">⭐ Reviews</button>
+      <button class="tab-btn" data-tab="loyalty">🎁 Loyalty</button>
+      <button class="tab-btn" data-tab="referrals">👥 Refer Friends</button>
+    </div>
+
+    <!-- REVIEWS TAB -->
+    <div id="reviews" class="tab-content active">
+      <div class="card">
+        <div class="card-title">⭐ Share Your Experience</div>
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:700; margin-bottom:8px; display:block;">Your Rating:</label>
+          <div class="rating-stars" id="starInput">
+            <span class="star empty" data-val="1">★</span>
+            <span class="star empty" data-val="2">★</span>
+            <span class="star empty" data-val="3">★</span>
+            <span class="star empty" data-val="4">★</span>
+            <span class="star empty" data-val="5">★</span>
+          </div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:700; margin-bottom:6px; display:block;">Order ID (optional):</label>
+          <input type="text" id="reviewOrderId" placeholder="e.g. YB-5041" style="width:100%; padding:10px; border:1px solid var(--line); border-radius:6px;">
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:700; margin-bottom:6px; display:block;">Your Review:</label>
+          <textarea id="reviewComment" placeholder="Tell us about your experience..." style="width:100%; min-height:100px; padding:12px; border:1px solid var(--line); border-radius:6px; resize:vertical;"></textarea>
+        </div>
+        <button class="btn btn-orange" onclick="submitReview()">Submit Review</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📖 Recent Reviews</div>
+        <div id="reviewsList"></div>
+      </div>
+    </div>
+
+    <!-- LOYALTY TAB -->
+    <div id="loyalty" class="tab-content">
+      <div class="loyalty-banner">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+          <div>
+            <h2 style="margin:0 0 8px; font-family:var(--serif);">Your Loyalty Status</h2>
+            <div style="opacity:0.9;">Keep ordering to earn more points!</div>
+          </div>
+          <div style="text-align:center;">
+            <div class="loyalty-points-big" id="loyaltyPoints">0</div>
+            <div style="opacity:0.85; font-size:0.85rem;">Loyalty Points</div>
+          </div>
+          <div class="loyalty-tier-badge" id="loyaltyTier">Bronze</div>
+        </div>
+        <div id="tierProgress" style="margin-top:16px;"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🎁 Redeem Your Points</div>
+        <div id="rewardsList"></div>
+      </div>
+    </div>
+
+    <!-- REFERRALS TAB -->
+    <div id="referrals" class="tab-content">
+      <div class="referral-box">
+        <h2 style="margin:0 0 8px; color:#92400e; font-family:var(--serif);">👥 Refer a Friend, Earn 50 Points!</h2>
+        <p style="color:#78350f; margin-bottom:16px;">Share your unique code with friends. When they place their first order, you BOTH get 50 loyalty points!</p>
+        <div class="referral-code" id="referralCode">LOADING...</div>
+        <div>
+          <button class="btn btn-orange" onclick="copyReferralCode()">📋 Copy Code</button>
+          <button class="btn btn-forest" onclick="shareReferralWhatsApp()">💬 Share on WhatsApp</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📊 Your Referral Stats</div>
+        <div id="referralStats"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>YEBS Noodles · Reviews, Loyalty Rewards & Referral Program</footer>
+
+  <script>
+    const API = 'http://localhost:3000/api';
+    const customerId = sessionStorage.getItem('customerId') || 'CUST-001';
+    let selectedRating = 0;
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    // Star rating input
+    document.querySelectorAll('#starInput .star').forEach(star => {
+      star.addEventListener('click', () => {
+        selectedRating = parseInt(star.dataset.val);
+        document.querySelectorAll('#starInput .star').forEach(s => {
+          s.classList.toggle('empty', parseInt(s.dataset.val) > selectedRating);
+        });
+      });
+    });
+
+    // Submit review
+    async function submitReview() {
+      if (selectedRating === 0) { alert('Please select a rating'); return; }
+      const comment = document.getElementById('reviewComment').value;
+      const orderId = document.getElementById('reviewOrderId').value || `REV-${Date.now()}`;
+      
+      await fetch(`${API}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          customerId,
+          customerName: 'Kwame M.',
+          menuItemId: 'MENU-101',
+          menuItemName: 'Ghana Spag Chicken',
+          rating: selectedRating,
+          comment
+        })
+      });
+      
+      alert('Thank you for your review!');
+      document.getElementById('reviewComment').value = '';
+      selectedRating = 0;
+      document.querySelectorAll('#starInput .star').forEach(s => s.classList.add('empty'));
+      loadReviews();
+    }
+
+    // Load reviews
+    async function loadReviews() {
+      try {
+        const res = await fetch(`${API}/reviews`);
+        const data = await res.json();
+        const list = document.getElementById('reviewsList');
+        if (data.reviews.length === 0) {
+          list.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted);">No reviews yet. Be the first!</div>';
+          return;
+        }
+        list.innerHTML = data.reviews.map(r => `
+          <div class="review-card">
+            <div class="review-header">
+              <span class="review-author">${r.customerName}</span>
+              <span style="color:#f59e0b;">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</span>
+            </div>
+            <div class="review-comment">${r.comment}</div>
+            <div style="font-size:0.8rem; color:var(--muted);">${new Date(r.createdAt).toLocaleDateString('en-GB')}</div>
+            ${r.adminReply ? `<div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:10px; margin-top:10px; font-size:0.85rem;"><strong>YEBS:</strong> ${r.adminReply.text}</div>` : ''}
+          </div>
+        `).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    // Load loyalty
+    async function loadLoyalty() {
+      try {
+        const res = await fetch(`${API}/loyalty/customer/${customerId}`);
+        const data = await res.json();
+        document.getElementById('loyaltyPoints').textContent = data.points;
+        document.getElementById('loyaltyTier').textContent = data.tier;
+        
+        if (data.nextTier) {
+          document.getElementById('tierProgress').innerHTML = `
+            <div style="background:rgba(255,255,255,0.2); border-radius:8px; padding:8px 14px; font-size:0.85rem;">
+              <strong>${data.points}</strong> points · <strong>${data.nextTier.pointsNeeded}</strong> more to reach ${data.nextTier.name} tier!
+            </div>
+          `;
+        } else {
+          document.getElementById('tierProgress').innerHTML = `<div style="background:rgba(255,255,255,0.2); border-radius:8px; padding:8px 14px; font-size:0.85rem;">🎉 You're at the highest tier - ${data.tier}!</div>`;
+        }
+
+        const rewardsRes = await fetch(`${API}/loyalty/rewards?customerId=${customerId}`);
+        const rewardsData = await rewardsRes.json();
+        document.getElementById('rewardsList').innerHTML = rewardsData.rewards.map(r => `
+          <div class="reward-card ${r.affordable ? 'affordable' : ''}">
+            <div>
+              <strong style="color:var(--forest); font-size:1.05rem;">${r.name}</strong>
+              <div style="font-size:0.82rem; color:var(--muted);">${r.affordable ? 'Ready to redeem!' : r.pointsNeeded + ' more points needed'}</div>
+            </div>
+            <div style="text-align:right;">
+              <span style="font-weight:800; color:var(--orange);">${r.pointsCost} pts</span>
+              <button class="btn ${r.affordable ? 'btn-orange' : 'btn-outline'} btn-sm" style="margin-left:10px;" ${r.affordable ? '' : 'disabled'} onclick="redeemReward('${r.id}','${r.name}')">Redeem</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    async function redeemReward(rewardId, name) {
+      if (confirm(`Redeem "${name}"?`)) {
+        const res = await fetch(`${API}/loyalty/redeem`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId, rewardId })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert(`Reward redeemed! Your code: ${data.redemptionCode}`);
+          loadLoyalty();
+        } else {
+          alert(data.error || 'Failed to redeem');
+        }
+      }
+    }
+
+    // Load referrals
+    async function loadReferrals() {
+      try {
+        const res = await fetch(`${API}/referrals/customer/${customerId}/code?customerName=KwameM`);
+        const data = await res.json();
+        document.getElementById('referralCode').textContent = data.referralCode;
+        sessionStorage.setItem('referralCode', data.referralCode);
+
+        const statsRes = await fetch(`${API}/referrals/customer/${customerId}/referrals`);
+        const statsData = await statsRes.json();
+        const s = statsData.stats;
+        document.getElementById('referralStats').innerHTML = `
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; text-align:center;">
+            <div style="padding:16px; background:#f9f7f2; border-radius:8px;"><div style="font-size:1.8rem; font-weight:800; color:var(--forest);">${s.total}</div><div style="font-size:0.8rem; color:var(--muted);">Total</div></div>
+            <div style="padding:16px; background:#fef3c7; border-radius:8px;"><div style="font-size:1.8rem; font-weight:800; color:#92400e;">${s.pending}</div><div style="font-size:0.8rem; color:var(--muted);">Pending</div></div>
+            <div style="padding:16px; background:#dbeafe; border-radius:8px;"><div style="font-size:1.8rem; font-weight:800; color:#1e40af;">${s.qualified}</div><div style="font-size:0.8rem; color:var(--muted);">Qualified</div></div>
+            <div style="padding:16px; background:#dcfce7; border-radius:8px;"><div style="font-size:1.8rem; font-weight:800; color:#166534;">${s.rewarded}</div><div style="font-size:0.8rem; color:var(--muted);">Rewarded</div></div>
+          </div>
+          ${s.totalPointsEarned > 0 ? `<div style="margin-top:16px; padding:12px; background:#f0fdf4; border-radius:8px; text-align:center;"><strong>Total Points Earned from Referrals:</strong> ${s.totalPointsEarned}</div>` : ''}
+        `;
+      } catch (e) { console.error(e); }
+    }
+
+    function copyReferralCode() {
+      const code = document.getElementById('referralCode').textContent;
+      navigator.clipboard.writeText(code);
+      alert('Referral code copied!');
+    }
+
+    function shareReferralWhatsApp() {
+      const code = sessionStorage.getItem('referralCode') || '';
+      const msg = encodeURIComponent(`Hey! Use my code ${code} to order delicious spaghetti from YEBS Noodles. You'll get 50 loyalty points on your first order! 🍜 Order at yebsnoodles.com`);
+      window.open(`https://wa.me/?text=${msg}`, '_blank');
+    }
+
+    // Initialize
+    loadReviews();
+    loadLoyalty();
+    loadReferrals();
+  </script>
+</body>
+</html>

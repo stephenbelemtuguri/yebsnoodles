@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173d30">
+  <title>YEBS Noodles | My Receipts</title>
+  <style>
+    :root {
+      --forest: #173d30;
+      --forest-dark: #0f2820;
+      --leaf: #52785b;
+      --orange: #e57a45;
+      --orange-hover: #d26532;
+      --gold: #e9bd68;
+      --cream: #fbf8f0;
+      --paper: #fffefa;
+      --ink: #1e2621;
+      --muted: #6e7971;
+      --line: #e4dfd3;
+      --shadow: 0 12px 36px rgba(18, 44, 34, 0.08);
+      --serif: Georgia, "Times New Roman", serif;
+      --green: #16a34a;
+      --red: #dc2626;
+      --blue: #3b82f6;
+      --yellow: #f59e0b;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--cream); color: var(--ink); min-height: 100vh; }
+    header {
+      background: var(--forest); color: white; position: sticky; top: 0; z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .header-wrap {
+      max-width: 1200px; margin: 0 auto; padding: 12px 20px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }
+    .brand-link { display: flex; align-items: center; gap: 12px; text-decoration: none; color: white; }
+    .brand-logo { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--gold); }
+    .brand-title { font-family: var(--serif); font-size: 1.3rem; font-weight: 700; }
+    .brand-badge { font-size: 0.7rem; text-transform: uppercase; color: var(--gold); background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 999px; }
+    .header-nav { display: flex; align-items: center; gap: 10px; }
+    .nav-btn { color: #e2ede5; text-decoration: none; font-size: 0.85rem; font-weight: 600; padding: 8px 14px; border-radius: 6px; background: rgba(255,255,255,0.08); transition: all 0.2s; }
+    .nav-btn:hover { background: rgba(255,255,255,0.18); color: white; }
+
+    .main-wrap { max-width: 1200px; margin: 24px auto; padding: 0 20px; }
+
+    /* Stats header */
+    .stats-banner {
+      background: linear-gradient(135deg, var(--forest) 0%, #1c4b3b 100%);
+      color: white; border-radius: 12px; padding: 24px 28px; margin-bottom: 24px;
+      box-shadow: 0 8px 24px rgba(23,61,48,0.15);
+    }
+    .stats-banner h1 { margin: 0 0 8px; font-family: var(--serif); font-size: 2rem; }
+    .stats-banner p { margin: 0; opacity: 0.9; }
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-top: 20px;
+    }
+    .stat-box {
+      background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 10px; padding: 16px; text-align: center;
+    }
+    .stat-value { font-size: 2rem; font-weight: 800; color: var(--gold); font-family: var(--serif); line-height: 1; }
+    .stat-label { font-size: 0.78rem; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 6px; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 8px; border-bottom: 2px solid var(--line); margin-bottom: 24px; overflow-x: auto; }
+    .tab-btn {
+      padding: 12px 20px; font-weight: 700; font-size: 0.92rem; color: var(--muted);
+      background: none; border: none; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap; transition: all 0.2s;
+    }
+    .tab-btn:hover { color: var(--forest); }
+    .tab-btn.active { color: var(--orange); border-bottom-color: var(--orange); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Receipt cards */
+    .card {
+      background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 24px;
+      box-shadow: var(--shadow); margin-bottom: 20px;
+    }
+    .card-title {
+      font-family: var(--serif); font-size: 1.4rem; margin: 0 0 20px; color: var(--forest);
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    }
+
+    .receipt-card {
+      border: 1.5px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 16px;
+      background: white; transition: all 0.2s; position: relative;
+    }
+    .receipt-card:hover { box-shadow: 0 6px 20px rgba(23,61,48,0.08); border-color: var(--gold); }
+    .receipt-card.saved { border-color: var(--orange); background: #fffbf5; }
+    .receipt-card.saved::before {
+      content: '★ Saved'; position: absolute; top: 12px; right: 12px;
+      background: var(--orange); color: white; font-size: 0.72rem; font-weight: 700;
+      padding: 3px 10px; border-radius: 999px;
+    }
+
+    .receipt-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+    .receipt-id { font-family: monospace; font-size: 1.2rem; font-weight: 800; color: var(--forest); letter-spacing: 0.05em; }
+    .receipt-date { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 5px; padding: 5px 14px; border-radius: 999px;
+      font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .status-paid { background: #dcfce7; color: #166534; }
+    .status-pending { background: #fee2e2; color: #991b1b; }
+    .status-review { background: #fef3c7; color: #92400e; }
+
+    .receipt-items {
+      background: #f9f7f2; border: 1px solid #eee8db; border-radius: 8px; padding: 12px; margin-bottom: 12px;
+    }
+    .receipt-item { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.9rem; }
+
+    .receipt-totals { display: flex; justify-content: space-between; padding: 8px 0; font-size: 0.95rem; }
+    .receipt-grand-total {
+      display: flex; justify-content: space-between; padding-top: 12px; border-top: 2px dashed var(--line);
+      font-size: 1.2rem; font-weight: 800; color: var(--forest); margin-top: 8px;
+    }
+
+    .payment-info-box {
+      margin-top: 12px; padding: 14px; background: #f9f7f2; border: 1px solid var(--line); border-radius: 8px;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+    }
+    .payment-method { font-weight: 700; color: var(--forest); font-size: 0.92rem; }
+    .payment-ref { font-size: 0.82rem; color: var(--muted); margin-top: 4px; font-family: monospace; }
+    .payment-paid-time { font-size: 0.82rem; color: var(--leaf); margin-top: 4px; }
+
+    .receipt-actions {
+      display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; padding-top: 16px; border-top: 1px solid var(--line);
+    }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 10px 16px; border-radius: 6px; font-weight: 700; font-size: 0.85rem;
+      border: 0; cursor: pointer; text-decoration: none; transition: all 0.2s;
+    }
+    .btn-sm { padding: 7px 12px; font-size: 0.8rem; }
+    .btn-orange { background: var(--orange); color: white; }
+    .btn-orange:hover { background: var(--orange-hover); }
+    .btn-forest { background: var(--forest); color: white; }
+    .btn-forest:hover { background: var(--forest-dark); }
+    .btn-outline { background: white; border: 1.5px solid var(--line); color: var(--forest); }
+    .btn-outline:hover { background: #f8f6f0; }
+    .btn-danger { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; }
+    .btn-danger:hover { background: #fef2f2; }
+    .btn-success { background: var(--green); color: white; }
+
+    .empty-state {
+      text-align: center; padding: 60px 20px; color: var(--muted);
+    }
+    .empty-state-icon { font-size: 3rem; margin-bottom: 12px; }
+    .empty-state-text { font-size: 1.05rem; margin: 0 0 16px; }
+
+    /* Receipt viewer modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(15,40,32,0.7); backdrop-filter: blur(4px);
+      z-index: 2000; display: none; align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-content {
+      background: var(--paper); border-radius: 12px; max-width: 600px; width: 100%; max-height: 92vh;
+      overflow-y: auto; box-shadow: 0 25px 70px rgba(0,0,0,0.3); border: 1px solid var(--line);
+    }
+    .modal-header {
+      background: var(--forest); color: white; padding: 18px 24px;
+      display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10;
+    }
+    .modal-close {
+      background: rgba(255,255,255,0.15); border: 0; color: white; width: 34px; height: 34px;
+      border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; cursor: pointer;
+    }
+    .modal-close:hover { background: rgba(255,255,255,0.25); }
+
+    .receipt-preview { padding: 24px; }
+    .info-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.88rem; }
+    .info-label { color: var(--muted); }
+    .info-value { font-weight: 700; color: var(--forest); text-align: right; }
+
+    /* Search box */
+    .search-bar {
+      display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .search-input {
+      flex: 1; min-width: 200px; padding: 10px 14px; border: 1.5px solid var(--line);
+      border-radius: 8px; font-size: 0.9rem; background: white;
+    }
+    .search-input:focus { outline: none; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(229,122,69,0.15); }
+
+    .filter-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+    .filter-pill {
+      padding: 8px 14px; border: 1.5px solid var(--line); border-radius: 999px; background: white;
+      color: var(--forest); font-weight: 700; font-size: 0.82rem; cursor: pointer; transition: all 0.2s;
+    }
+    .filter-pill:hover { background: #f8f6f0; }
+    .filter-pill.active { background: var(--orange); color: white; border-color: var(--orange); }
+
+    footer { background: var(--forest-dark); color: #a4b8ac; padding: 20px; text-align: center; font-size: 0.8rem; margin-top: 40px; }
+
+    @media print {
+      body * { visibility: hidden; }
+      #printArea, #printArea * { visibility: visible; }
+      #printArea { position: absolute; left: 0; top: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-wrap">
+      <a href="../index.html" class="brand-link">
+        <img src="../logo.png" alt="YEBS" class="brand-logo">
+        <div><div class="brand-title">YEBS Noodles</div><span class="brand-badge">Order Receipts</span></div>
+      </a>
+      <nav class="header-nav">
+        <a href="../index.html" class="nav-btn">🏠 Home</a>
+        <a href="customer-portal.html" class="nav-btn">📦 My Orders</a>
+        <a href="receipts.html" class="nav-btn">🧾 Receipts</a>
+        <a href="customer-reviews.html" class="nav-btn">⭐ Rewards</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="main-wrap">
+    <!-- Stats Banner -->
+    <div class="stats-banner">
+      <h1>🧾 My Receipts</h1>
+      <p>View, download, and manage your order receipts. Track payment status and keep records.</p>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-value" id="statTotal">0</div><div class="stat-label">Total Orders</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#86efac;" id="statPaid">0</div><div class="stat-label">Paid</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:#fca5a5;" id="statPending">0</div><div class="stat-label">Pending</div></div>
+        <div class="stat-box"><div class="stat-value" id="statSpent">GH₵ 0</div><div class="stat-label">Total Spent</div></div>
+        <div class="stat-box"><div class="stat-value" style="color:var(--gold);" id="statSaved">0</div><div class="stat-label">Saved Receipts</div></div>
+      </div>
+    </div>
+
+    <!-- Search & Filter -->
+    <div class="search-bar">
+      <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search by Order ID (e.g. YB-5041) or phone number...">
+      <button id="searchBtn" class="btn btn-orange">Search</button>
+    </div>
+    <div class="filter-pills">
+      <button class="filter-pill active" data-filter="all">All Receipts</button>
+      <button class="filter-pill" data-filter="paid">✓ Paid</button>
+      <button class="filter-pill" data-filter="pending">⏳ Pending</button>
+      <button class="filter-pill" data-filter="saved">★ Saved</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" style="margin-top:20px;">
+      <button class="tab-btn active" data-tab="allReceipts">📋 All Receipts</button>
+      <button class="tab-btn" data-tab="savedReceipts">★ Saved Receipts</button>
+    </div>
+
+    <!-- All Receipts Tab -->
+    <div id="allReceipts" class="tab-content active">
+      <div id="receiptsList"></div>
+    </div>
+
+    <!-- Saved Receipts Tab -->
+    <div id="savedReceipts" class="tab-content">
+      <div id="savedReceiptsList"></div>
+    </div>
+  </div>
+
+  <!-- Receipt Viewer Modal -->
+  <div id="receiptModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <strong style="font-size:1.1rem;">🧾 Receipt Details</strong>
+          <span id="modalReceiptId" style="margin-left:12px; font-family:monospace; color:var(--gold);"></span>
+        </div>
+        <button class="modal-close" onclick="closeReceiptModal()">✕</button>
+      </div>
+      <div class="receipt-preview" id="receiptPreviewContent"></div>
+    </div>
+  </div>
+
+  <!-- Hidden print area -->
+  <div id="printArea" style="display:none;"></div>
+
+  <footer>YEBS Noodles · Order Receipts · Download, Save & Track Payments</footer>
+
+  <script>
+    const API = 'http://localhost:3000/api';
+    let allReceipts = [];
+    let savedReceiptIds = new Set();
+    let currentFilter = 'all';
+    let customerId = sessionStorage.getItem('customerId') || 'CUST-001';
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    // Filter pills
+    document.querySelectorAll('.filter-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        currentFilter = pill.dataset.filter;
+        renderReceipts();
+      });
+    });
+
+    // Search
+    document.getElementById('searchBtn').addEventListener('click', () => loadReceipts());
+    document.getElementById('searchInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') loadReceipts(); });
+
+    // Load all receipts for this customer
+    async function loadReceipts() {
+      const searchTerm = document.getElementById('searchInput').value.trim();
+
+      // Try to fetch by phone number if search looks like a phone
+      const phoneMatch = searchTerm.match(/\d{9,}/);
+      const queryParams = new URLSearchParams();
+
+      if (phoneMatch) {
+        queryParams.set('phone', searchTerm);
+      } else if (searchTerm) {
+        queryParams.set('name', searchTerm);
+      }
+
+      try {
+        // First try: fetch receipts matching search
+        const url = `${API}/receipts/customer/${customerId}?${queryParams.toString()}`;
+        let res = await fetch(url);
+        let data = await res.json();
+
+        // If no results and search looks like an order ID, fetch that specific order
+        if (data.total === 0 && searchTerm.toUpperCase().startsWith('YB')) {
+          res = await fetch(`${API}/receipts/order/${searchTerm}`);
+          if (res.ok) {
+            const singleReceipt = await res.json();
+            data = { total: 1, paid: singleReceipt.payment.status === 'PAID' ? 1 : 0, pending: singleReceipt.payment.status !== 'PAID' ? 1 : 0, totalSpent: singleReceipt.payment.status === 'PAID' ? singleReceipt.total : 0, receipts: [{ ...singleReceipt, isSaved: savedReceiptIds.has(singleReceipt.order.id) }] };
+          }
+        }
+
+        allReceipts = data.receipts || [];
+
+        // Update saved receipts set
+        allReceipts.forEach(r => { if (r.isSaved) savedReceiptIds.add(r.order.id); });
+
+        // Update stats
+        document.getElementById('statTotal').textContent = data.total || 0;
+        document.getElementById('statPaid').textContent = data.paid || 0;
+        document.getElementById('statPending').textContent = data.pending || 0;
+        document.getElementById('statSpent').textContent = `GH₵ ${(data.totalSpent || 0).toFixed(2)}`;
+        document.getElementById('statSaved').textContent = savedReceiptIds.size;
+
+        renderReceipts();
+        loadSavedReceipts();
+      } catch (err) {
+        console.error('Failed to load receipts:', err);
+        document.getElementById('receiptsList').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📡</div>
+            <p class="empty-state-text">Could not connect to the server.</p>
+            <p style="font-size:0.85rem; color:var(--muted);">Make sure the server is running (npm start) and try again.</p>
+          </div>`;
+      }
+    }
+
+    function renderReceipts() {
+      const container = document.getElementById('receiptsList');
+
+      let filtered = allReceipts;
+      if (currentFilter === 'paid') filtered = allReceipts.filter(r => r.payment.statusRaw === 'paid');
+      else if (currentFilter === 'pending') filtered = allReceipts.filter(r => r.payment.statusRaw !== 'paid');
+      else if (currentFilter === 'saved') filtered = allReceipts.filter(r => r.isSaved);
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">🧾</div>
+            <p class="empty-state-text">No receipts found.</p>
+            <p style="font-size:0.85rem; color:var(--muted);">Your order receipts will appear here after you place an order.</p>
+            <a href="../index.html#order" class="btn btn-orange" style="margin-top:16px;">Place an Order →</a>
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = filtered.map(r => buildReceiptCard(r)).join('');
+    }
+
+    function buildReceiptCard(r) {
+      const statusClass = r.payment.statusRaw === 'paid' ? 'status-paid' : r.payment.statusRaw === 'review' ? 'status-review' : 'status-pending';
+      const statusIcon = r.payment.statusRaw === 'paid' ? '✓' : r.payment.statusRaw === 'review' ? '🔍' : '⏳';
+      const isSaved = r.isSaved || savedReceiptIds.has(r.order.id);
+
+      const itemsHTML = (r.items || []).map(item => `
+        <div class="receipt-item">
+          <span>${item.quantity}× ${item.name}</span>
+          <span style="font-weight:700;">GH₵ ${item.lineTotal.toFixed(2)}</span>
+        </div>
+      `).join('');
+
+      return `
+        <div class="receipt-card ${isSaved ? 'saved' : ''}">
+          <div class="receipt-header">
+            <div>
+              <div class="receipt-id">${r.order.id}</div>
+              <div class="receipt-date">${new Date(r.order.date).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' })}</div>
+            </div>
+            <span class="status-badge ${statusClass}">${statusIcon} ${r.payment.status}</span>
+          </div>
+
+          <div class="receipt-items">${itemsHTML}</div>
+
+          <div class="receipt-totals"><span>Subtotal</span><span>GH₵ ${r.subtotal.toFixed(2)}</span></div>
+          <div class="receipt-totals"><span>Delivery Fee</span><span>GH₵ ${r.deliveryFee.toFixed(2)}</span></div>
+          <div class="receipt-grand-total"><span>Total</span><span>GH₵ ${r.total.toFixed(2)}</span></div>
+
+          <div class="payment-info-box">
+            <div>
+              <div class="payment-method">💳 ${r.payment.method}</div>
+              <div class="payment-ref">Ref: ${r.payment.reference}</div>
+              ${r.payment.paidAt ? `<div class="payment-paid-time">Paid: ${new Date(r.payment.paidAt).toLocaleString('en-GB')}</div>` : ''}
+            </div>
+            <span class="status-badge ${statusClass}">${statusIcon} ${r.payment.status}</span>
+          </div>
+
+          ${r.delivery.driver ? `<div style="margin-top:10px; font-size:0.85rem; color:var(--muted);">🛵 Driver: ${r.delivery.driver} · ${r.delivery.vehicle || ''}</div>` : ''}
+          ${r.order.pickupPin ? `<div style="margin-top:4px; font-size:0.85rem; color:var(--muted);">🔑 Pickup PIN: <strong style="font-family:monospace;">${r.order.pickupPin}</strong></div>` : ''}
+
+          <div class="receipt-actions">
+            <button class="btn btn-forest btn-sm" onclick="viewReceipt('${r.order.id}')">👁️ View</button>
+            <button class="btn btn-outline btn-sm" onclick="downloadReceipt('${r.order.id}')">📥 Download</button>
+            <button class="btn btn-outline btn-sm" onclick="printReceipt('${r.order.id}')">🖨️ Print</button>
+            ${isSaved
+              ? `<button class="btn btn-danger btn-sm" onclick="deleteReceipt('${r.order.id}')">🗑️ Delete</button>`
+              : `<button class="btn btn-orange btn-sm" onclick="saveReceipt('${r.order.id}')">★ Save</button>`
+            }
+          </div>
+        </div>`;
+    }
+
+    // View receipt in modal
+    async function viewReceipt(orderId) {
+      try {
+        const res = await fetch(`${API}/receipts/order/${orderId}`);
+        if (!res.ok) throw new Error('Failed to fetch receipt');
+        const r = await res.json();
+
+        document.getElementById('modalReceiptId').textContent = r.order.id;
+        const statusClass = r.payment.statusRaw === 'paid' ? 'status-paid' : r.payment.statusRaw === 'review' ? 'status-review' : 'status-pending';
+        const isSaved = savedReceiptIds.has(r.order.id);
+
+        const itemsHTML = (r.items || []).map(item => `
+          <div class="receipt-item">
+            <span>${item.quantity}× ${item.name}</span>
+            <span style="font-weight:700;">GH₵ ${item.lineTotal.toFixed(2)}</span>
+          </div>
+        `).join('');
+
+        document.getElementById('receiptPreviewContent').innerHTML = `
+          <div style="text-align:center; padding-bottom:20px; border-bottom:1px solid var(--line); margin-bottom:20px;">
+            <h2 style="font-family:var(--serif); color:var(--forest); margin:0 0 4px;">YEBS Noodles</h2>
+            <div style="font-size:0.78rem; color:var(--gold); text-transform:uppercase; letter-spacing:0.1em;">The Standard of Delicacy</div>
+            <div style="font-size:0.82rem; color:var(--muted); margin-top:6px;">Adabraka, Accra · +233 55 910 3452</div>
+            <div style="margin-top:10px;"><span class="status-badge ${statusClass}">${r.payment.status}</span></div>
+          </div>
+
+          <div class="info-row"><span class="info-label">Receipt #:</span><span class="info-value">${r.receiptNumber}</span></div>
+          <div class="info-row"><span class="info-label">Order ID:</span><span class="info-value">${r.order.id}</span></div>
+          <div class="info-row"><span class="info-label">Date:</span><span class="info-value">${new Date(r.order.date).toLocaleString('en-GB', { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span></div>
+          <div class="info-row"><span class="info-label">Customer:</span><span class="info-value">${r.customer.name}</span></div>
+          <div class="info-row"><span class="info-label">Phone:</span><span class="info-value">${r.customer.phone}</span></div>
+          ${r.order.pickupPin ? `<div class="info-row"><span class="info-label">Pickup PIN:</span><span class="info-value" style="font-family:monospace;">${r.order.pickupPin}</span></div>` : ''}
+          ${r.delivery.pickupPoint ? `<div class="info-row"><span class="info-label">Pickup Point:</span><span class="info-value">${r.delivery.pickupPoint}</span></div>` : ''}
+          ${r.delivery.driver ? `<div class="info-row"><span class="info-label">Driver:</span><span class="info-value">${r.delivery.driver} (${r.delivery.vehicle || ''})</span></div>` : ''}
+
+          <div style="margin:20px 0; padding:12px; background:#f9f7f2; border-radius:8px;">
+            ${itemsHTML}
+          </div>
+
+          <div class="receipt-totals"><span>Subtotal</span><span>GH₵ ${r.subtotal.toFixed(2)}</span></div>
+          <div class="receipt-totals"><span>Delivery Fee</span><span>GH₵ ${r.deliveryFee.toFixed(2)}</span></div>
+          <div class="receipt-grand-total"><span>Total</span><span>GH₵ ${r.total.toFixed(2)}</span></div>
+
+          <div class="payment-info-box">
+            <div>
+              <div class="payment-method">💳 ${r.payment.method}</div>
+              <div class="payment-ref">Ref: ${r.payment.reference}</div>
+              ${r.payment.paidAt ? `<div class="payment-paid-time">Paid: ${new Date(r.payment.paidAt).toLocaleString('en-GB')}</div>` : ''}
+              ${r.payment.verificationMethod ? `<div style="font-size:0.8rem; color:var(--muted); margin-top:4px;">Verified via: ${r.payment.verificationMethod}</div>` : ''}
+            </div>
+            <span class="status-badge ${statusClass}">${r.payment.status}</span>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-top:20px; flex-wrap:wrap;">
+            <button class="btn btn-outline btn-sm" onclick="downloadReceipt('${r.order.id}')">📥 Download</button>
+            <button class="btn btn-outline btn-sm" onclick="printReceipt('${r.order.id}')">🖨️ Print</button>
+            ${isSaved
+              ? `<button class="btn btn-danger btn-sm" onclick="deleteReceipt('${r.order.id}')">🗑️ Delete Saved</button>`
+              : `<button class="btn btn-orange btn-sm" onclick="saveReceipt('${r.order.id}')">★ Save Receipt</button>`
+            }
+          </div>
+
+          <div style="text-align:center; margin-top:24px; padding-top:16px; border-top:1px solid var(--line); font-size:0.78rem; color:var(--muted);">
+            Thank you for choosing YEBS Noodles! 🍜<br>
+            This is a computer-generated receipt.
+          </div>
+        `;
+
+        document.getElementById('receiptModal').classList.add('active');
+      } catch (err) {
+        alert('Failed to load receipt details');
+      }
+    }
+
+    function closeReceiptModal() {
+      document.getElementById('receiptModal').classList.remove('active');
+    }
+
+    // Download receipt
+    function downloadReceipt(orderId) {
+      window.open(`${API}/receipts/order/${orderId}/download`, '_blank');
+    }
+
+    // Print receipt
+    async function printReceipt(orderId) {
+      const res = await fetch(`${API}/receipts/order/${orderId}/printable`);
+      const html = await res.text();
+
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(html);
+      printWindow.document.close();
+      setTimeout(() => { printWindow.print(); }, 500);
+    }
+
+    // Save receipt
+    async function saveReceipt(orderId) {
+      try {
+        const res = await fetch(`${API}/receipts/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId, orderId })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          savedReceiptIds.add(orderId);
+          alert('✅ Receipt saved! You can find it in your Saved Receipts tab.');
+          loadReceipts();
+        } else {
+          const err = await res.json();
+          alert(err.error || 'Failed to save receipt');
+        }
+      } catch (err) {
+        alert('Failed to save receipt. Server may be offline.');
+      }
+    }
+
+    // Delete saved receipt
+    async function deleteReceipt(orderId) {
+      if (!confirm('Delete this saved receipt? The order itself remains in your records.')) return;
+
+      // Find the saved receipt ID
+      const savedList = await (await fetch(`${API}/receipts/saved/${customerId}`)).json();
+      const saved = savedList.savedReceipts.find(s => s.orderId === orderId || s.orderId === normalizeOrderId(orderId));
+
+      if (!saved) {
+        savedReceiptIds.delete(orderId);
+        loadReceipts();
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API}/receipts/${saved.id}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId })
+        });
+
+        if (res.ok) {
+          savedReceiptIds.delete(orderId);
+          alert('🗑️ Receipt removed from saved.');
+          loadReceipts();
+        } else {
+          alert('Failed to delete receipt');
+        }
+      } catch (err) {
+        alert('Failed to delete receipt');
+      }
+    }
+
+    function normalizeOrderId(input) {
+      if (!input) return '';
+      let s = String(input).toUpperCase().trim();
+      if (/^\d+$/.test(s)) return 'YB-' + s.padStart(4, '0');
+      return s;
+    }
+
+    // Load saved receipts tab
+    async function loadSavedReceipts() {
+      try {
+        const res = await fetch(`${API}/receipts/saved/${customerId}`);
+        const data = await res.json();
+        const container = document.getElementById('savedReceiptsList');
+
+        if (data.total === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">★</div>
+              <p class="empty-state-text">No saved receipts yet.</p>
+              <p style="font-size:0.85rem; color:var(--muted);">Click "★ Save" on any receipt to bookmark it here for quick access.</p>
+            </div>`;
+          return;
+        }
+
+        container.innerHTML = data.savedReceipts.map(s => {
+          const r = s.receiptData;
+          const statusClass = r.payment.statusRaw === 'paid' ? 'status-paid' : 'status-pending';
+          return `
+            <div class="receipt-card saved">
+              <div class="receipt-header">
+                <div>
+                  <div class="receipt-id">${r.order.id}</div>
+                  <div class="receipt-date">Saved on ${new Date(s.savedAt).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}</div>
+                </div>
+                <span class="status-badge ${statusClass}">${r.payment.status}</span>
+              </div>
+              <div class="receipt-items">
+                ${(r.items || []).map(item => `<div class="receipt-item"><span>${item.quantity}× ${item.name}</span><span style="font-weight:700;">GH₵ ${item.lineTotal.toFixed(2)}</span></div>`).join('')}
+              </div>
+              <div class="receipt-grand-total"><span>Total</span><span>GH₵ ${r.total.toFixed(2)}</span></div>
+              <div class="payment-info-box">
+                <div><div class="payment-method">💳 ${r.payment.method}</div><div class="payment-ref">Ref: ${r.payment.reference}</div></div>
+                <span class="status-badge ${statusClass}">${r.payment.status}</span>
+              </div>
+              <div class="receipt-actions">
+                <button class="btn btn-forest btn-sm" onclick="viewReceipt('${r.order.id}')">👁️ View</button>
+                <button class="btn btn-outline btn-sm" onclick="downloadReceipt('${r.order.id}')">📥 Download</button>
+                <button class="btn btn-outline btn-sm" onclick="printReceipt('${r.order.id}')">🖨️ Print</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteReceipt('${r.order.id}')">🗑️ Delete</button>
+              </div>
+            </div>`;
+        }).join('');
+      } catch (err) {
+        console.error('Failed to load saved receipts:', err);
+      }
+    }
+
+    // Close modal on overlay click
+    document.getElementById('receiptModal').addEventListener('click', (e) => {
+      if (e.target.id === 'receiptModal') closeReceiptModal();
+    });
+
+    // Initialize
+    loadReceipts();
+  </script>
+</body>
+</html>

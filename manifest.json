@@ -1,0 +1,24 @@
+{
+  "name": "YEBS Noodles - The Standard of Delicacy",
+  "short_name": "YEBS Noodles",
+  "description": "Authentic Ghanaian street spaghetti & Indomie with real-time Bolt-style GPS tracking and pickup point batch delivery.",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#173d30",
+  "theme_color": "#173d30",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

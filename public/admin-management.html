@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173d30">
+  <title>YEBS Noodles | Admin Management Center</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --forest: #173d30;
+      --forest-dark: #0f2820;
+      --leaf: #52785b;
+      --orange: #e57a45;
+      --orange-hover: #d26532;
+      --gold: #e9bd68;
+      --cream: #fbf8f0;
+      --paper: #fffefa;
+      --ink: #1e2621;
+      --muted: #6e7971;
+      --line: #e4dfd3;
+      --shadow: 0 12px 36px rgba(18, 44, 34, 0.08);
+      --serif: Georgia, "Times New Roman", serif;
+      --green: #16a34a;
+      --red: #dc2626;
+      --blue: #3b82f6;
+      --yellow: #f59e0b;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--cream);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    header {
+      background: var(--forest);
+      color: white;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .header-wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .brand-link { display: flex; align-items: center; gap: 12px; text-decoration: none; color: white; }
+    .brand-logo { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--gold); }
+    .brand-title { font-family: var(--serif); font-size: 1.3rem; font-weight: 700; }
+    .brand-badge { font-size: 0.7rem; text-transform: uppercase; color: var(--gold); background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 999px; }
+    .header-nav { display: flex; align-items: center; gap: 10px; }
+    .nav-btn { color: #e2ede5; text-decoration: none; font-size: 0.85rem; font-weight: 600; padding: 8px 14px; border-radius: 6px; background: rgba(255,255,255,0.08); transition: all 0.2s; }
+    .nav-btn:hover { background: rgba(255,255,255,0.18); color: white; }
+    .nav-btn.active { background: var(--orange); color: white; }
+
+    .main-wrap { max-width: 1400px; margin: 24px auto; padding: 0 20px; }
+
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      border-bottom: 2px solid var(--line);
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      padding: 12px 18px;
+      font-weight: 700;
+      font-size: 0.88rem;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: var(--forest); }
+    .tab-btn.active { color: var(--orange); border-bottom-color: var(--orange); }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-family: var(--serif);
+      font-size: 1.35rem;
+      margin: 0 0 20px;
+      color: var(--forest);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      border: 0;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-sm { padding: 6px 12px; font-size: 0.78rem; }
+    .btn-orange { background: var(--orange); color: white; }
+    .btn-orange:hover { background: var(--orange-hover); }
+    .btn-forest { background: var(--forest); color: white; }
+    .btn-forest:hover { background: var(--forest-dark); }
+    .btn-outline { background: white; border: 1.5px solid var(--line); color: var(--forest); }
+    .btn-outline:hover { background: #f8f6f0; }
+    .btn-success { background: var(--green); color: white; }
+    .btn-danger { background: var(--red); color: white; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th { text-align: left; padding: 12px 14px; background: #f7f4ed; color: var(--forest); font-weight: 700; border-bottom: 2px solid var(--line); }
+    td { padding: 14px; border-bottom: 1px solid var(--line); }
+    tr:hover td { background: #fbf9f5; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 700;
+    }
+    .badge-green { background: #dcfce7; color: #166534; }
+    .badge-yellow { background: #fef3c7; color: #92400e; }
+    .badge-red { background: #fee2e2; color: #991b1b; }
+    .badge-blue { background: #dbeafe; color: #1e40af; }
+    .badge-orange { background: #fed7aa; color: #9a3412; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 1000px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 900px) { .grid-3 { grid-template-columns: 1fr; } }
+
+    .stat-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 18px;
+      text-align: center;
+    }
+    .stat-value { font-size: 2rem; font-weight: 800; color: var(--forest); font-family: var(--serif); }
+    .stat-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+
+    .input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-size: 0.88rem;
+      background: white;
+    }
+    .input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--orange);
+      box-shadow: 0 0 0 3px rgba(229,122,69,0.15);
+    }
+    label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 0.83rem; color: var(--forest); }
+    .form-group { margin-bottom: 14px; }
+
+    .star-rating { display: inline-flex; gap: 2px; }
+    .star { color: #f59e0b; }
+    .star-empty { color: #d1d5db; }
+
+    .review-card {
+      border: 1.5px solid var(--line);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 14px;
+      background: white;
+    }
+    .review-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+    .review-author { font-weight: 800; color: var(--forest); }
+    .review-comment { color: var(--ink); line-height: 1.5; font-size: 0.9rem; margin: 8px 0; }
+    .review-reply {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-top: 10px;
+      font-size: 0.85rem;
+    }
+
+    .chat-list { max-height: 500px; overflow-y: auto; }
+    .chat-item {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .chat-item:hover { background: #f9f7f2; }
+    .chat-item.active { background: #fef3e8; border-left: 3px solid var(--orange); }
+    .chat-msg { padding: 10px 14px; border-radius: 10px; margin-bottom: 8px; max-width: 75%; }
+    .chat-msg.sent { background: var(--forest); color: white; margin-left: auto; }
+    .chat-msg.received { background: #f0ede4; color: var(--ink); }
+    .chat-msg.system { background: #fef3c7; text-align: center; margin: 0 auto; font-size: 0.82rem; color: #92400e; }
+
+    .inventory-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .stock-bar { width: 120px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+    .stock-fill { height: 100%; border-radius: 4px; }
+
+    .loyalty-tier {
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+      border: 1.5px solid #fbbf24;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .rule-toggle { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--line); }
+    .switch { position: relative; width: 44px; height: 24px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #ccc; border-radius: 24px; transition: 0.3s; }
+    .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
+    input:checked + .slider { background: var(--green); }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    footer { background: var(--forest-dark); color: #a4b8ac; padding: 20px; text-align: center; font-size: 0.8rem; margin-top: 40px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-wrap">
+      <a href="../admin.html" class="brand-link">
+        <img src="../logo.png" alt="YEBS" class="brand-logo">
+        <div>
+          <div class="brand-title">YEBS Noodles</div>
+          <span class="brand-badge">Management Center</span>
+        </div>
+      </a>
+      <nav class="header-nav">
+        <a href="../admin.html" class="nav-btn">← Dashboard</a>
+        <a href="admin-analytics.html" class="nav-btn">📊 Analytics</a>
+        <a href="admin-management.html" class="nav-btn active">⚙️ Management</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="main-wrap">
+    <h1 style="font-family:var(--serif); color:var(--forest); margin-bottom:20px;">⚙️ Management Center</h1>
+
+    <!-- Tab Navigation -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="reviews">⭐ Reviews</button>
+      <button class="tab-btn" data-tab="chat">💬 Live Chat</button>
+      <button class="tab-btn" data-tab="menu">🍝 Menu Management</button>
+      <button class="tab-btn" data-tab="inventory">📦 Inventory</button>
+      <button class="tab-btn" data-tab="loyalty">🎁 Loyalty</button>
+      <button class="tab-btn" data-tab="referrals">👥 Referrals</button>
+      <button class="tab-btn" data-tab="pricing">💲 Dynamic Pricing</button>
+    </div>
+
+    <!-- ===== REVIEWS TAB ===== -->
+    <div id="reviews" class="tab-content active">
+      <div class="grid-3" style="margin-bottom:20px;">
+        <div class="stat-card"><div class="stat-value" id="totalReviews">0</div><div class="stat-label">Total Reviews</div></div>
+        <div class="stat-card"><div class="stat-value" id="avgRating">0.0</div><div class="stat-label">Average Rating</div></div>
+        <div class="stat-card"><div class="stat-value" id="pendingReplies">0</div><div class="stat-label">Need Reply</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>⭐ Customer Reviews</span>
+          <select id="reviewFilter" class="input" style="width:auto;">
+            <option value="">All Ratings</option>
+            <option value="5">5 Stars</option>
+            <option value="4">4 Stars</option>
+            <option value="3">3 Stars</option>
+            <option value="2">2 Stars</option>
+            <option value="1">1 Star</option>
+          </select>
+        </div>
+        <div id="reviewsList"></div>
+      </div>
+    </div>
+
+    <!-- ===== CHAT TAB ===== -->
+    <div id="chat" class="tab-content">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">💬 Active Conversations</div>
+          <div class="chat-list" id="conversationList">
+            <div style="text-align:center; padding:40px; color:var(--muted);">No active conversations</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">
+            <span>📨 Messages</span>
+            <span id="selectedOrderId" class="badge badge-orange">Select a conversation</span>
+          </div>
+          <div id="messagesContainer" style="max-height:400px; overflow-y:auto; margin-bottom:16px;">
+            <div style="text-align:center; padding:40px; color:var(--muted);">Select a conversation to view messages</div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="chatInput" class="input" placeholder="Type a reply..." disabled>
+            <button id="sendChatBtn" class="btn btn-orange" disabled>Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== MENU MANAGEMENT TAB ===== -->
+    <div id="menu" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <span>🍝 Menu Items</span>
+          <button class="btn btn-orange btn-sm" onclick="showAddMenuForm()">+ Add New Item</button>
+        </div>
+        <div id="menuItemsList"></div>
+      </div>
+      
+      <div id="addMenuForm" class="card" style="display:none;">
+        <div class="card-title">Add New Menu Item</div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label>Name</label>
+            <input type="text" id="newMenuName" class="input" placeholder="e.g. Ghana Spag Special">
+          </div>
+          <div class="form-group">
+            <label>Price (GH₵)</label>
+            <input type="number" id="newMenuPrice" class="input" placeholder="30" step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <select id="newMenuCategory" class="input">
+              <option value="spaghetti">Spaghetti</option>
+              <option value="noodles">Noodles</option>
+              <option value="drinks">Drinks</option>
+              <option value="sides">Sides</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Prep Time (minutes)</label>
+            <input type="number" id="newMenuPrepTime" class="input" placeholder="15">
+          </div>
+          <div class="form-group" style="grid-column:1/-1;">
+            <label>Description</label>
+            <textarea id="newMenuDesc" class="input" placeholder="Brief description of the dish"></textarea>
+          </div>
+        </div>
+        <button class="btn btn-forest" onclick="createMenuItem()">Create Item</button>
+        <button class="btn btn-outline" onclick="document.getElementById('addMenuForm').style.display='none'">Cancel</button>
+      </div>
+    </div>
+
+    <!-- ===== INVENTORY TAB ===== -->
+    <div id="inventory" class="tab-content">
+      <div class="grid-3" style="margin-bottom:20px;">
+        <div class="stat-card"><div class="stat-value" id="totalItems" style="color:var(--blue);">0</div><div class="stat-label">Total Items</div></div>
+        <div class="stat-card"><div class="stat-value" id="lowStockCount" style="color:var(--yellow);">0</div><div class="stat-label">Low Stock</div></div>
+        <div class="stat-card"><div class="stat-value" id="outOfStockCount" style="color:var(--red);">0</div><div class="stat-label">Out of Stock</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>📦 Inventory Management</span>
+          <button class="btn btn-orange btn-sm" onclick="showRestockForm()">+ Restock</button>
+        </div>
+        <div id="inventoryList"></div>
+      </div>
+
+      <div id="restockForm" class="card" style="display:none;">
+        <div class="card-title">Restock Item</div>
+        <div class="form-group">
+          <label>Select Item</label>
+          <select id="restockItemId" class="input"></select>
+        </div>
+        <div class="form-group">
+          <label>Quantity to Add</label>
+          <input type="number" id="restockQty" class="input" placeholder="10" min="1">
+        </div>
+        <button class="btn btn-success" onclick="restockItem()">Restock</button>
+        <button class="btn btn-outline" onclick="document.getElementById('restockForm').style.display='none'">Cancel</button>
+      </div>
+    </div>
+
+    <!-- ===== LOYALTY TAB ===== -->
+    <div id="loyalty" class="tab-content">
+      <div class="grid-3" style="margin-bottom:20px;">
+        <div class="stat-card"><div class="stat-value" style="color:#f59e0b;">4</div><div class="stat-label">Loyalty Tiers</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--green);">7</div><div class="stat-label">Rewards Available</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--orange);" id="totalLoyaltyMembers">145</div><div class="stat-label">Members</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🏆 Loyalty Tiers</div>
+        <div id="loyaltyTiersList"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🎁 Rewards Catalog</div>
+        <div id="rewardsCatalogList"></div>
+      </div>
+    </div>
+
+    <!-- ===== REFERRALS TAB ===== -->
+    <div id="referrals" class="tab-content">
+      <div class="grid-3" style="margin-bottom:20px;">
+        <div class="stat-card"><div class="stat-value" id="totalReferrals">0</div><div class="stat-label">Total Referrals</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--green);" id="rewardedReferrals">0</div><div class="stat-label">Rewarded</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--blue);" id="conversionRate">0%</div><div class="stat-label">Conversion Rate</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">👥 Referral Program Overview</div>
+        <div style="background:#f9f7f2; padding:16px; border-radius:8px; margin-bottom:16px;">
+          <strong>How it works:</strong> Existing customers share their unique referral code. When a new customer signs up using that code and makes their first order, both parties receive 50 loyalty points each.
+        </div>
+        <div id="referralsList"></div>
+      </div>
+    </div>
+
+    <!-- ===== DYNAMIC PRICING TAB ===== -->
+    <div id="pricing" class="tab-content">
+      <div class="card">
+        <div class="card-title">💲 Dynamic Pricing Rules</div>
+        <p style="color:var(--muted); margin-bottom:16px;">Adjusts menu prices automatically based on demand, inventory, time, weather, and special events.</p>
+        <div id="pricingRulesList"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📅 Daily Pricing Forecast</div>
+        <p style="color:var(--muted); margin-bottom:16px;">Expected price adjustments throughout the day (sample GH₵ 30 item):</p>
+        <div id="pricingForecast"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>YEBS Noodles Management Center · Reviews, Chat, Menu, Inventory, Loyalty, Referrals & Dynamic Pricing</footer>
+
+  <script>
+    const API = 'http://localhost:3000/api';
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    // ===== REVIEWS =====
+    async function loadReviews() {
+      try {
+        const res = await fetch(`${API}/reviews`);
+        const data = await res.json();
+        
+        document.getElementById('totalReviews').textContent = data.total;
+        document.getElementById('avgRating').textContent = data.averageRating;
+        
+        const list = document.getElementById('reviewsList');
+        if (data.reviews.length === 0) {
+          list.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted);">No reviews yet</div>';
+          return;
+        }
+        
+        list.innerHTML = data.reviews.map(r => `
+          <div class="review-card">
+            <div class="review-header">
+              <div>
+                <span class="review-author">${r.customerName}</span>
+                <span style="color:var(--muted); font-size:0.82rem; margin-left:8px;">${new Date(r.createdAt).toLocaleDateString('en-GB')}</span>
+              </div>
+              <div>
+                <span class="star-rating">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</span>
+                <span class="badge badge-${r.status === 'published' ? 'green' : 'yellow'}" style="margin-left:8px;">${r.status}</span>
+              </div>
+            </div>
+            <div class="review-comment">${r.comment}</div>
+            ${r.adminReply ? `<div class="review-reply"><strong>YEBS Reply:</strong> ${r.adminReply.text}</div>` : `
+              <div style="margin-top:10px; display:flex; gap:8px;">
+                <input type="text" class="input" placeholder="Write a reply..." id="reply-${r.id}" style="flex:1;">
+                <button class="btn btn-forest btn-sm" onclick="replyToReview('${r.id}')">Reply</button>
+              </div>
+            `}
+          </div>
+        `).join('');
+      } catch (e) { console.error('Reviews load failed:', e); }
+    }
+
+    async function replyToReview(reviewId) {
+      const reply = document.getElementById(`reply-${reviewId}`).value;
+      if (!reply) return;
+      await fetch(`${API}/reviews/${reviewId}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reply, adminName: 'YEBS Admin' })
+      });
+      loadReviews();
+    }
+
+    // ===== CHAT =====
+    async function loadConversations() {
+      try {
+        const res = await fetch(`${API}/chat`);
+        const data = await res.json();
+        const list = document.getElementById('conversationList');
+        if (data.conversations.length === 0) {
+          list.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted);">No active conversations</div>';
+          return;
+        }
+        list.innerHTML = data.conversations.map(c => `
+          <div class="chat-item" onclick="loadConversation('${c.orderId}')">
+            <div style="display:flex; justify-content:space-between;">
+              <strong>Order ${c.orderId}</strong>
+              ${c.unreadForAdmin > 0 ? `<span class="badge badge-red">${c.unreadForAdmin} unread</span>` : ''}
+            </div>
+            <div style="font-size:0.82rem; color:var(--muted); margin-top:4px;">
+              ${c.lastMessage ? c.lastMessage.senderName + ': ' + c.lastMessage.message.substring(0, 40) + '...' : 'No messages'}
+            </div>
+          </div>
+        `).join('');
+      } catch (e) { console.error('Chat load failed:', e); }
+    }
+
+    async function loadConversation(orderId) {
+      document.getElementById('selectedOrderId').textContent = `Order ${orderId}`;
+      try {
+        const res = await fetch(`${API}/chat/order/${orderId}`);
+        const data = await res.json();
+        const container = document.getElementById('messagesContainer');
+        container.innerHTML = data.messages.map(m => {
+          const cls = m.senderRole === 'admin' ? 'sent' : m.messageType === 'system' ? 'system' : 'received';
+          return `<div class="chat-msg ${cls}"><strong>${m.senderName}:</strong> ${m.message}</div>`;
+        }).join('');
+        container.scrollTop = container.scrollHeight;
+        
+        document.getElementById('chatInput').disabled = false;
+        document.getElementById('sendChatBtn').disabled = false;
+        document.getElementById('sendChatBtn').onclick = () => sendChatMessage(orderId);
+      } catch (e) { console.error('Conversation load failed:', e); }
+    }
+
+    async function sendChatMessage(orderId) {
+      const msg = document.getElementById('chatInput').value;
+      if (!msg) return;
+      await fetch(`${API}/chat/order/${orderId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderId: 'ADMIN', senderName: 'YEBS Admin', senderRole: 'admin', message: msg })
+      });
+      document.getElementById('chatInput').value = '';
+      loadConversation(orderId);
+    }
+
+    // ===== MENU =====
+    async function loadMenu() {
+      try {
+        const res = await fetch(`${API}/menu`);
+        const data = await res.json();
+        const list = document.getElementById('menuItemsList');
+        list.innerHTML = data.items.map(item => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid var(--line);">
+            <div>
+              <strong style="color:var(--forest); font-size:1.05rem;">${item.name}</strong>
+              <span style="color:var(--muted); font-size:0.85rem; margin-left:8px;">${item.category}</span>
+              <div style="font-size:0.85rem; color:var(--ink); margin-top:4px;">${item.description || 'No description'}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-weight:800; color:var(--orange); font-size:1.2rem;">GH₵ ${item.price.toFixed(2)}</div>
+              <div style="margin-top:6px; display:flex; gap:6px; justify-content:flex-end;">
+                <button class="btn ${item.available ? 'btn-success' : 'btn-outline'} btn-sm" onclick="toggleMenu('${item.id}')">
+                  ${item.available ? '✓ Available' : '✗ Unavailable'}
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="deleteMenu('${item.id}')">Delete</button>
+              </div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) { console.error('Menu load failed:', e); }
+    }
+
+    function showAddMenuForm() { document.getElementById('addMenuForm').style.display = 'block'; }
+
+    async function createMenuItem() {
+      const body = {
+        name: document.getElementById('newMenuName').value,
+        price: document.getElementById('newMenuPrice').value,
+        category: document.getElementById('newMenuCategory').value,
+        prepTime: parseInt(document.getElementById('newMenuPrepTime').value),
+        description: document.getElementById('newMenuDesc').value
+      };
+      await fetch(`${API}/menu`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      document.getElementById('addMenuForm').style.display = 'none';
+      loadMenu();
+    }
+
+    async function toggleMenu(id) {
+      await fetch(`${API}/menu/${id}/toggle`, { method: 'PATCH' });
+      loadMenu();
+    }
+
+    async function deleteMenu(id) {
+      if (confirm('Delete this menu item?')) {
+        await fetch(`${API}/menu/${id}`, { method: 'DELETE' });
+        loadMenu();
+      }
+    }
+
+    // ===== INVENTORY =====
+    async function loadInventory() {
+      try {
+        const res = await fetch(`${API}/inventory`);
+        const data = await res.json();
+        
+        document.getElementById('totalItems').textContent = data.total;
+        document.getElementById('lowStockCount').textContent = data.lowStockAlerts;
+        document.getElementById('outOfStockCount').textContent = data.outOfStock;
+        
+        const list = document.getElementById('inventoryList');
+        list.innerHTML = data.items.map(item => {
+          const pct = (item.currentStock / item.maxStock) * 100;
+          const color = item.currentStock === 0 ? '#dc2626' : item.currentStock <= item.reorderPoint ? '#f59e0b' : '#16a34a';
+          const status = item.currentStock === 0 ? 'OUT OF STOCK' : item.currentStock <= item.reorderPoint ? 'LOW STOCK' : 'OK';
+          return `
+            <div class="inventory-row">
+              <div style="flex:1;">
+                <strong style="color:var(--forest);">${item.ingredient}</strong>
+                <span class="badge badge-${item.currentStock === 0 ? 'red' : item.currentStock <= item.reorderPoint ? 'yellow' : 'green'}" style="margin-left:8px;">${status}</span>
+                <div style="font-size:0.82rem; color:var(--muted); margin-top:4px;">Supplier: ${item.supplier} · Cost: GH₵${item.costPerUnit.toFixed(2)}/${item.unit}</div>
+              </div>
+              <div style="text-align:center;">
+                <div style="font-weight:800; color:${color};">${item.currentStock} ${item.unit}</div>
+                <div class="stock-bar" style="margin-top:6px;"><div class="stock-fill" style="width:${pct}%; background:${color};"></div></div>
+                <div style="font-size:0.75rem; color:var(--muted); margin-top:4px;">Reorder at ${item.reorderPoint}</div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Populate restock dropdown
+        const select = document.getElementById('restockItemId');
+        select.innerHTML = data.items.map(i => `<option value="${i.id}">${i.ingredient} (${i.currentStock} ${i.unit})</option>`).join('');
+      } catch (e) { console.error('Inventory load failed:', e); }
+    }
+
+    function showRestockForm() { document.getElementById('restockForm').style.display = 'block'; }
+
+    async function restockItem() {
+      const itemId = document.getElementById('restockItemId').value;
+      const qty = document.getElementById('restockQty').value;
+      await fetch(`${API}/inventory/${itemId}/restock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: parseInt(qty) })
+      });
+      document.getElementById('restockForm').style.display = 'none';
+      loadInventory();
+    }
+
+    // ===== LOYALTY =====
+    async function loadLoyalty() {
+      try {
+        const res = await fetch(`${API}/loyalty/tiers`);
+        const tiers = await res.json();
+        document.getElementById('loyaltyTiersList').innerHTML = tiers.map(t => `
+          <div class="loyalty-tier">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong style="font-size:1.2rem; color:#92400e;">${t.name} Tier</strong>
+                <div style="font-size:0.85rem; color:#78350f;">${t.minPoints}+ points · ${t.discount}% discount</div>
+              </div>
+              <span class="badge badge-yellow">${t.perks.length} perks</span>
+            </div>
+            <ul style="margin:10px 0 0 20px; font-size:0.85rem; color:#78350f;">
+              ${t.perks.map(p => `<li>${p}</li>`).join('')}
+            </ul>
+          </div>
+        `).join('');
+
+        const rewardsRes = await fetch(`${API}/loyalty/rewards`);
+        const rewardsData = await rewardsRes.json();
+        document.getElementById('rewardsCatalogList').innerHTML = rewardsData.rewards.map(r => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid var(--line);">
+            <div>
+              <strong style="color:var(--forest);">${r.name}</strong>
+              <div style="font-size:0.82rem; color:var(--muted);">Type: ${r.type}</div>
+            </div>
+            <span class="badge badge-orange">${r.pointsCost} points</span>
+          </div>
+        `).join('');
+      } catch (e) { console.error('Loyalty load failed:', e); }
+    }
+
+    // ===== REFERRALS =====
+    async function loadReferrals() {
+      try {
+        const res = await fetch(`${API}/referrals/stats/overview`);
+        const data = await res.json();
+        document.getElementById('totalReferrals').textContent = data.totalReferrals;
+        document.getElementById('rewardedReferrals').textContent = data.rewarded;
+        document.getElementById('conversionRate').textContent = data.conversionRate;
+        
+        const list = document.getElementById('referralsList');
+        list.innerHTML = `
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px; text-align:center;">
+            <div class="stat-card"><div class="stat-value" style="font-size:1.5rem; color:var(--yellow);">${data.pending}</div><div class="stat-label">Pending</div></div>
+            <div class="stat-card"><div class="stat-value" style="font-size:1.5rem; color:var(--blue);">${data.qualified}</div><div class="stat-label">Qualified</div></div>
+            <div class="stat-card"><div class="stat-value" style="font-size:1.5rem; color:var(--green);">${data.rewarded}</div><div class="stat-label">Rewarded</div></div>
+          </div>
+          <div style="margin-top:16px; padding:16px; background:#f0fdf4; border-radius:8px; border:1px solid #bbf7d0;">
+            <strong>Total Rewards Distributed:</strong> ${data.totalRewardsDistributed} loyalty points
+          </div>
+        `;
+      } catch (e) { console.error('Referrals load failed:', e); }
+    }
+
+    // ===== DYNAMIC PRICING =====
+    async function loadPricing() {
+      try {
+        const res = await fetch(`${API}/pricing/rules`);
+        const data = await res.json();
+        document.getElementById('pricingRulesList').innerHTML = data.rules.map(r => `
+          <div class="rule-toggle">
+            <div>
+              <strong style="color:var(--forest);">${r.name}</strong>
+              <div style="font-size:0.82rem; color:var(--muted);">${r.description}</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="togglePricingRule('${r.id}', this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>
+        `).join('');
+
+        const forecastRes = await fetch(`${API}/pricing/forecast`);
+        const forecastData = await forecastRes.json();
+        document.getElementById('pricingForecast').innerHTML = forecastData.forecast.map(f => `
+          <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line);">
+            <span style="font-weight:700; color:var(--forest);">${f.hour}</span>
+            <span>GH₵ ${f.samplePrice.toFixed(2)}</span>
+            <span style="color:${f.discountPercent > 0 ? 'var(--green)' : f.surchargePercent > 0 ? 'var(--red)' : 'var(--muted)'};">
+              ${f.discountPercent > 0 ? `-${f.discountPercent}%` : f.surchargePercent > 0 ? `+${f.surchargePercent}%` : 'Normal'}
+            </span>
+          </div>
+        `).join('');
+      } catch (e) { console.error('Pricing load failed:', e); }
+    }
+
+    async function togglePricingRule(ruleId, enabled) {
+      await fetch(`${API}/pricing/rules/${ruleId}/toggle`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      });
+      loadPricing();
+    }
+
+    // Initialize all tabs
+    loadReviews();
+    loadConversations();
+    loadMenu();
+    loadInventory();
+    loadLoyalty();
+    loadReferrals();
+    loadPricing();
+  </script>
+</body>
+</html>

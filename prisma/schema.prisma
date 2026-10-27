@@ -1,0 +1,950 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// YEBS Noodles - Production Database Schema
+// ═══════════════════════════════════════════════════════════════════════════
+// Real-time food delivery platform with GPS tracking, MoMo payments,
+// driver management, and comprehensive audit logging.
+//
+// Database: PostgreSQL 14+ (production) / SQLite (development)
+// ═══════════════════════════════════════════════════════════════════════════
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "fullTextIndex"]
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. ADMIN MODEL - System administrators
+// ═══════════════════════════════════════════════════════════════════════════
+model Admin {
+  id                String      @id @default(uuid())
+  username          String      @unique
+  password          String      // bcrypt hashed
+  name              String
+  email             String?     @unique
+  phone             String?
+  role              String      @default("ADMIN") // SUPERADMIN, ADMIN, SUPPORT
+  isActive          Boolean     @default(true)
+  lastLoginAt       DateTime?
+  passwordChangedAt DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relationships
+  approvedDrivers Driver[]    @relation("ApprovedBy")
+  auditLogs       AuditLog[]
+  
+  @@index([username])
+  @@index([email])
+  @@map("admins")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. DRIVER MODEL - Delivery riders with approval workflow
+// ═══════════════════════════════════════════════════════════════════════════
+model Driver {
+  id                   String    @id @default(uuid())
+  username             String    @unique // auto-generated: fname+lname
+  password             String    // bcrypt hashed
+  fname                String
+  lname                String
+  name                 String    // computed: fname + lname
+  phone                String    @unique
+  email                String?
+  vehicle              String    // e.g., "Royal 125 Motorcycle (GN-4819-24)"
+  photo                String?   @db.Text // base64 data URL or S3 URL
+  
+  // Approval workflow
+  approvalStatus       String    @default("pending") // pending, approved, rejected
+  approvedAt           DateTime?
+  approvedById         String?
+  approvedBy           Admin?    @relation("ApprovedBy", fields: [approvedById], references: [id])
+  rejectedAt           DateTime?
+  rejectionReason      String?
+  approvalNotified     Boolean   @default(false)
+  
+  // Location & status
+  isActive             Boolean   @default(false)
+  isOnline             Boolean   @default(false)
+  lat                  Float     @default(5.56246)
+  lng                  Float     @default(-0.21289)
+  speedKmh             Float     @default(0)
+  statusText           String?
+  lastLocationUpdate   DateTime?
+  
+  // Stats
+  totalDeliveries      Int       @default(0)
+  totalEarnings        Float     @default(0)
+  rating               Float?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
+  passwordChangedAt DateTime?
+  
+  // Relationships
+  orders         Order[]
+  earnings       Earning[]
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  
+  @@index([username])
+  @@index([phone])
+  @@index([approvalStatus])
+  @@index([isActive, isOnline])
+  @@map("drivers")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. MENU ITEM MODEL - Dynamic menu management
+// ═══════════════════════════════════════════════════════════════════════════
+model MenuItem {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  category        String   @default("Main") // Main, Sides, Drinks, Extras
+  price           Float
+  image           String?
+  noodleTypes     String[] // ["Regular Noodles", "Indomie", "Bella Pasta"]
+  toppings        String[] // Available toppings
+  isAvailable     Boolean  @default(true)
+  isPopular       Boolean  @default(false)
+  prepTimeMinutes Int      @default(15)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([category])
+  @@index([isAvailable])
+  @@map("menu_items")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4. ORDER MODEL - Customer orders with payment tracking
+// ═══════════════════════════════════════════════════════════════════════════
+model Order {
+  id               String    @id // Format: YB-####
+  sessionNumber    Int       @default(1)
+  
+  // Customer info
+  customer         String
+  phone            String
+  email            String?
+  
+  // Delivery details
+  fulfilment       String    @default("Delivery") // Delivery, Pickup
+  location         String
+  mapPinLat        Float?
+  mapPinLng        Float?
+  timing           String    @default("ASAP") // ASAP, Scheduled
+  scheduledFor     DateTime?
+  notes            String?   @db.Text
+  
+  // Order items (JSON array)
+  itemsJson        String    @db.Text // [{menuId, name, noodle, toppings[], quantity, price}]
+  
+  // Pricing
+  subtotal         Float
+  deliveryFee      Float     @default(15)
+  discount         Float     @default(0)
+  total            Float
+  
+  // Payment
+  payment          String    @default("MoMo") // MoMo, Cash, Card
+  paymentMode      String    @default("momo") // momo, cash, card
+  paymentStatus    String    @default("unpaid") // unpaid, paid, review, refunded
+  paymentRef       String?
+  paymentVerified  Boolean   @default(false)
+  paidAt           DateTime?
+  verificationMethod String? // auto-momo, auto-sms, auto-receipt, manual-admin, cash-driver
+  
+  // MoMo specific
+  momoAmount           Float?
+  momoTransactionRef   String?
+  momoSender           String?
+  momoReceiptJson      String?   @db.Text // {image, transactionRef, uploadedAt, verified, hash}
+  momoPaymentAuditJson String?   @db.Text // [{at, action, actor, details}]
+  
+  // Order lifecycle
+  status           String    @default("pending") // pending, kitchen, driver_assigned, enroute, arrived, delivered, cancelled
+  pickupPin        String    // 4-digit PIN (last 4 of order ID)
+  verifiedByDriver Boolean   @default(false)
+  verificationMethod_driver String? // pin-matched, qr-scanned, manual
+  
+  // Pickup point
+  pickupPointName  String?
+  pickupPointLat   Float?
+  pickupPointLng   Float?
+  meetingPoint     String?   @db.Text
+  
+  // Driver assignment
+  driverId         String?
+  driver           Driver?   @relation(fields: [driverId], references: [id])
+  
+  // Timestamps
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  kitchenAt        DateTime?
+  enrouteAt        DateTime?
+  arrivedAt        DateTime?
+  deliveredAt      DateTime?
+  cancelledAt      DateTime?
+  cancellationReason String?
+  
+  // Relationships
+  auditLogs    AuditLog[]
+  notifications Notification[]
+  
+  @@index([phone])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([driverId])
+  @@index([sessionNumber])
+  @@index([createdAt])
+  @@index([pickupPin])
+  @@index([momoTransactionRef])
+  @@fulltext([customer, phone, location])
+  @@map("orders")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. SESSION MODEL - Batch delivery sessions with pickup points
+// ═══════════════════════════════════════════════════════════════════════════
+model Session {
+  id                 String    @id @default(uuid())
+  sessionNumber      Int       @unique
+  status             String    @default("ACTIVE") // ACTIVE, INTERMISSION, CLOSED
+  
+  // Pickup point
+  pickupPointName    String    @default("Circle Odo Rice Junction / VIP Station")
+  pickupPointLat     Float     @default(5.5612)
+  pickupPointLng     Float     @default(-0.2155)
+  pickupPointSetBy   String?   // admin or driver username
+  
+  // Timing
+  startedAt          DateTime  @default(now())
+  intermissionEndsAt DateTime?
+  closedAt           DateTime?
+  
+  // Stats
+  totalOrders        Int       @default(0)
+  totalRevenue       Float     @default(0)
+  assignedDrivers    String[]  // Array of driver IDs
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([sessionNumber])
+  @@index([status])
+  @@map("sessions")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 6. AUDIT LOG MODEL - Comprehensive activity tracking
+// ═══════════════════════════════════════════════════════════════════════════
+model AuditLog {
+  id        String   @id @default(uuid())
+  timestamp DateTime @default(now())
+  
+  // Action details
+  action    String   // ADMIN_LOGIN, DRIVER_SIGNUP, ORDER_CREATED, PAYMENT_VERIFIED, etc.
+  actor     String   // username, phone, or system
+  entity    String?  // Order ID, Driver ID, etc.
+  details   String?  @db.Text // JSON or text details
+  
+  // Request metadata
+  ipAddress String?
+  userAgent String?
+  method    String?  // GET, POST, etc.
+  endpoint  String?  // /api/orders/create
+  
+  // Relationships
+  adminId   String?
+  admin     Admin?   @relation(fields: [adminId], references: [id])
+  driverId  String?
+  driver    Driver?  @relation(fields: [driverId], references: [id])
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+  
+  @@index([timestamp])
+  @@index([action])
+  @@index([actor])
+  @@index([adminId])
+  @@index([driverId])
+  @@index([orderId])
+  @@map("audit_logs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 7. NOTIFICATION MODEL - Push notifications and alerts
+// ═══════════════════════════════════════════════════════════════════════════
+model Notification {
+  id        String   @id @default(uuid())
+  type      String   // order_status, payment, driver_assigned, driver_arrived, etc.
+  title     String
+  message   String   @db.Text
+  data      String?  @db.Text // JSON metadata
+  
+  // Recipients
+  recipientType String // customer, driver, admin
+  recipientId   String? // Driver ID if driver notification
+  recipientPhone String? // Customer phone
+  
+  // Status
+  status    String   @default("pending") // pending, sent, failed, read
+  sentAt    DateTime?
+  readAt    DateTime?
+  channel   String   // push, sms, email, in-app
+  
+  // Relationships
+  driverId  String?
+  driver    Driver?  @relation(fields: [driverId], references: [id])
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+  
+  createdAt DateTime @default(now())
+  
+  @@index([recipientType, recipientId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. EARNING MODEL - Driver earnings tracking
+// ═══════════════════════════════════════════════════════════════════════════
+model Earning {
+  id          String   @id @default(uuid())
+  driverId    String
+  driver      Driver   @relation(fields: [driverId], references: [id])
+  
+  // Earning details
+  amount      Float
+  type        String   // delivery_fee, tip, bonus, adjustment
+  description String?
+  
+  // Settlement
+  status      String   @default("pending") // pending, settled, cancelled
+  settledAt   DateTime?
+  settlementRef String?
+  
+  // Metadata
+  orderId     String?
+  sessionNumber Int?
+  
+  createdAt DateTime @default(now())
+  
+  @@index([driverId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("earnings")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. SETTING MODEL - System configuration
+// ═══════════════════════════════════════════════════════════════════════════
+model Setting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String @db.Text // JSON value
+  
+  description String?
+  category    String? // business, payment, delivery, notification, etc.
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([category])
+  @@map("settings")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 10. CUSTOMER MODEL - Customer accounts & profiles
+// ═══════════════════════════════════════════════════════════════════════════
+model Customer {
+  id            String   @id @default(uuid())
+  phone         String   @unique
+  email         String?  @unique
+  name          String?
+  password      String?  // Optional - for account login
+  
+  // Profile
+  avatar        String?
+  dateOfBirth   DateTime?
+  
+  // Loyalty & Rewards
+  loyaltyPoints Int      @default(0)
+  tier          String   @default("bronze") // bronze, silver, gold, platinum
+  
+  // Stats
+  totalOrders   Int      @default(0)
+  totalSpent    Float    @default(0)
+  
+  // Preferences
+  defaultLocation String?
+  preferences     String? @db.Text // JSON: {notifications, dietary, etc}
+  
+  // Status
+  isActive      Boolean  @default(true)
+  isVerified    Boolean  @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastOrderAt DateTime?
+  
+  // Relationships
+  orders          Order[]
+  addresses       SavedAddress[]
+  favoriteOrders  FavoriteOrder[]
+  reviews         Review[]
+  referrals       Referral[]      @relation("Referrer")
+  referredBy      Referral?       @relation("Referred")
+  subscriptions   Subscription[]
+  loyaltyHistory  LoyaltyTransaction[]
+  
+  @@index([phone])
+  @@index([email])
+  @@index([loyaltyPoints])
+  @@fulltext([name, phone, email])
+  @@map("customers")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 11. SAVED ADDRESS MODEL - Customer delivery addresses
+// ═══════════════════════════════════════════════════════════════════════════
+model SavedAddress {
+  id          String  @id @default(uuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  label       String  // Home, Work, etc.
+  address     String
+  lat         Float?
+  lng         Float?
+  instructions String? // Gate code, building number, etc.
+  
+  isDefault   Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([customerId])
+  @@map("saved_addresses")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 12. FAVORITE ORDER MODEL - Quick reorder favorites
+// ═══════════════════════════════════════════════════════════════════════════
+model FavoriteOrder {
+  id          String   @id @default(uuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  name        String   // "My Usual", "Friday Dinner", etc.
+  itemsJson   String   @db.Text // Same format as Order.itemsJson
+  notes       String?
+  
+  timesOrdered Int     @default(0)
+  lastOrdered  DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([customerId])
+  @@map("favorite_orders")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 13. REVIEW MODEL - Customer reviews & ratings
+// ═══════════════════════════════════════════════════════════════════════════
+model Review {
+  id          String   @id @default(uuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
+  
+  // Ratings (1-5 stars)
+  foodRating     Int  // Quality of food
+  deliveryRating Int  // Delivery speed & service
+  driverRating   Int? // Driver politeness
+  overallRating  Int  // Computed average
+  
+  // Review
+  comment        String? @db.Text
+  images         String[] // Array of image URLs
+  
+  // Response from restaurant
+  response       String? @db.Text
+  respondedAt    DateTime?
+  respondedBy    String? // Admin ID
+  
+  // Status
+  isPublished    Boolean @default(true)
+  isFeatured     Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([customerId])
+  @@index([orderId])
+  @@index([overallRating])
+  @@index([createdAt])
+  @@map("reviews")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 14. PROMO CODE MODEL - Discounts & promotions
+// ═══════════════════════════════════════════════════════════════════════════
+model PromoCode {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  description String?
+  
+  // Discount configuration
+  type        String   // percentage, fixed_amount, free_delivery
+  value       Float    // Percentage (0-100) or fixed amount
+  
+  // Constraints
+  minOrderAmount Float? // Minimum order value
+  maxDiscount    Float? // Maximum discount cap
+  maxUses        Int?   // Total usage limit
+  maxUsesPerUser Int?   @default(1)
+  
+  // Validity
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean  @default(true)
+  
+  // Usage tracking
+  timesUsed   Int      @default(0)
+  
+  // Targeting
+  customerTier String[] // bronze, silver, gold, platinum (empty = all)
+  firstOrderOnly Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?  // Admin ID
+  
+  // Relationships
+  usages PromoCodeUsage[]
+  
+  @@index([code])
+  @@index([startDate, endDate])
+  @@index([isActive])
+  @@map("promo_codes")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 15. PROMO CODE USAGE MODEL - Track usage
+// ═══════════════════════════════════════════════════════════════════════════
+model PromoCodeUsage {
+  id          String   @id @default(uuid())
+  promoCodeId String
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id])
+  customerId  String
+  orderId     String
+  
+  discountAmount Float
+  
+  usedAt DateTime @default(now())
+  
+  @@index([promoCodeId])
+  @@index([customerId])
+  @@map("promo_code_usages")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 16. DRIVER SHIFT MODEL - Shift scheduling
+// ═══════════════════════════════════════════════════════════════════════════
+model DriverShift {
+  id          String   @id @default(uuid())
+  driverId    String
+  driver      Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  
+  // Shift timing
+  startTime   DateTime
+  endTime     DateTime
+  
+  // Actual clock in/out
+  clockIn     DateTime?
+  clockOut    DateTime?
+  
+  // Status
+  status      String   @default("scheduled") // scheduled, active, completed, cancelled
+  
+  // Location
+  assignedArea String? // Geographic area/zone
+  
+  // Metrics
+  ordersCompleted Int    @default(0)
+  totalEarnings   Float  @default(0)
+  
+  notes       String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([driverId])
+  @@index([startTime])
+  @@index([status])
+  @@map("driver_shifts")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 17. PAYOUT MODEL - Driver weekly payouts
+// ═══════════════════════════════════════════════════════════════════════════
+model Payout {
+  id          String   @id @default(uuid())
+  driverId    String
+  driver      Driver   @relation(fields: [driverId], references: [id])
+  
+  // Period
+  periodStart DateTime
+  periodEnd   DateTime
+  
+  // Amounts
+  totalEarnings    Float
+  platformFee      Float  @default(0)
+  adjustments      Float  @default(0) // Bonuses, deductions
+  netAmount        Float  // Amount paid to driver
+  
+  // Payment
+  method           String // momo, bank_transfer, cash
+  momoNumber       String?
+  transactionRef   String?
+  
+  // Status
+  status           String @default("pending") // pending, processing, completed, failed
+  paidAt           DateTime?
+  
+  // Metadata
+  orderCount       Int
+  notes            String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([driverId])
+  @@index([status])
+  @@index([periodStart, periodEnd])
+  @@map("payouts")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 18. CHAT MESSAGE MODEL - In-app chat
+// ═══════════════════════════════════════════════════════════════════════════
+model ChatMessage {
+  id          String   @id @default(uuid())
+  
+  // Participants
+  orderId     String
+  senderId    String   // Customer ID or Driver ID
+  senderType  String   // customer, driver, admin
+  
+  // Message
+  message     String   @db.Text
+  attachments String[] // Image URLs
+  
+  // Status
+  isRead      Boolean  @default(false)
+  readAt      DateTime?
+  
+  createdAt DateTime @default(now())
+  
+  @@index([orderId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@map("chat_messages")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 19. RESTAURANT LOCATION MODEL - Multi-location support
+// ═══════════════════════════════════════════════════════════════════════════
+model RestaurantLocation {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique // ACCRA-01, KUMASI-01, etc.
+  
+  // Address
+  address     String
+  lat         Float
+  lng         Float
+  
+  // Contact
+  phone       String?
+  email       String?
+  
+  // Operating hours (JSON)
+  hours       String   @db.Text // {monday: {open: "18:00", close: "21:00"}}
+  
+  // Delivery zones
+  deliveryRadius Float  @default(10) // km
+  
+  // Status
+  isActive    Boolean  @default(true)
+  acceptingOrders Boolean @default(true)
+  
+  // Inventory (if managing stock)
+  inventoryEnabled Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relationships
+  inventory   Inventory[]
+  
+  @@index([code])
+  @@index([isActive])
+  @@map("restaurant_locations")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 20. INVENTORY MODEL - Stock management
+// ═══════════════════════════════════════════════════════════════════════════
+model Inventory {
+  id          String   @id @default(uuid())
+  locationId  String
+  location    RestaurantLocation @relation(fields: [locationId], references: [id])
+  
+  itemName    String
+  category    String   // noodles, proteins, vegetables, drinks
+  
+  // Stock
+  quantity    Int
+  unit        String   // kg, liters, pieces
+  minThreshold Int     // Alert when stock falls below this
+  
+  // Cost
+  costPerUnit Float
+  
+  // Status
+  isAvailable Boolean  @default(true)
+  
+  lastRestocked DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([locationId])
+  @@index([itemName])
+  @@map("inventory")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 21. REFERRAL MODEL - Customer referral program
+// ═══════════════════════════════════════════════════════════════════════════
+model Referral {
+  id            String   @id @default(uuid())
+  referrerId    String
+  referrer      Customer @relation("Referrer", fields: [referrerId], references: [id])
+  referredId    String   @unique
+  referred      Customer @relation("Referred", fields: [referredId], references: [id])
+  
+  // Referral code
+  code          String   @unique
+  
+  // Rewards
+  referrerReward Float   // Points/credit to referrer
+  referredReward Float   // Points/credit to referred
+  
+  // Status
+  status        String   @default("pending") // pending, completed, rewarded
+  completedAt   DateTime? // When referred made first order
+  rewardedAt    DateTime? // When rewards were given
+  
+  createdAt DateTime @default(now())
+  
+  @@index([referrerId])
+  @@index([code])
+  @@map("referrals")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 22. SUBSCRIPTION MODEL - Meal plans & subscriptions
+// ═══════════════════════════════════════════════════════════════════════════
+model Subscription {
+  id          String   @id @default(uuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+  
+  // Plan
+  planName    String   // Weekly Lunch, Monthly Dinner, etc.
+  planType    String   // daily, weekly, monthly
+  price       Float
+  
+  // Schedule
+  deliveryDays String[] // monday, tuesday, etc.
+  deliveryTime String   // 12:00, 18:00
+  
+  // Items
+  itemsJson   String   @db.Text // Predefined meals
+  
+  // Billing
+  startDate   DateTime
+  endDate     DateTime?
+  autoRenew   Boolean  @default(true)
+  
+  // Status
+  status      String   @default("active") // active, paused, cancelled, expired
+  
+  // Payments
+  lastPayment DateTime?
+  nextPayment DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([customerId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 23. LOYALTY TRANSACTION MODEL - Points history
+// ═══════════════════════════════════════════════════════════════════════════
+model LoyaltyTransaction {
+  id          String   @id @default(uuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+  
+  points      Int      // Positive = earned, Negative = redeemed
+  type        String   // order, referral, review, redemption, bonus
+  description String
+  
+  orderId     String?
+  
+  balanceBefore Int
+  balanceAfter  Int
+  
+  createdAt DateTime @default(now())
+  
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("loyalty_transactions")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 24. ANALYTICS EVENT MODEL - Track user behavior
+// ═══════════════════════════════════════════════════════════════════════════
+model AnalyticsEvent {
+  id          String   @id @default(uuid())
+  
+  // Event
+  eventName   String   // page_view, add_to_cart, checkout, etc.
+  category    String?  // customer, driver, admin
+  
+  // User
+  userId      String?
+  userType    String?  // customer, driver, admin, anonymous
+  sessionId   String?
+  
+  // Context
+  page        String?
+  referrer    String?
+  device      String?
+  browser     String?
+  ipAddress   String?
+  
+  // Data
+  properties  String?  @db.Text // JSON metadata
+  
+  // Timestamp
+  timestamp   DateTime @default(now())
+  
+  @@index([eventName])
+  @@index([userId])
+  @@index([timestamp])
+  @@map("analytics_events")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 25. A/B TEST MODEL - Experimentation framework
+// ═══════════════════════════════════════════════════════════════════════════
+model ABTest {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  
+  // Test configuration
+  variants    String   @db.Text // JSON: [{id, name, weight, config}]
+  
+  // Targeting
+  targetAudience String? @db.Text // JSON: {userType, tier, etc}
+  trafficAllocation Float @default(100) // Percentage of users
+  
+  // Status
+  status      String   @default("draft") // draft, running, paused, completed
+  
+  // Dates
+  startDate   DateTime?
+  endDate     DateTime?
+  
+  // Results
+  winner      String?  // Variant ID
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  
+  // Relationships
+  assignments ABTestAssignment[]
+  
+  @@index([status])
+  @@map("ab_tests")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 26. A/B TEST ASSIGNMENT MODEL - User variant assignments
+// ═══════════════════════════════════════════════════════════════════════════
+model ABTestAssignment {
+  id          String   @id @default(uuid())
+  testId      String
+  test        ABTest   @relation(fields: [testId], references: [id])
+  
+  userId      String
+  variantId   String   // Which variant the user sees
+  
+  // Conversion tracking
+  converted   Boolean  @default(false)
+  convertedAt DateTime?
+  
+  assignedAt DateTime @default(now())
+  
+  @@unique([testId, userId])
+  @@index([testId])
+  @@index([userId])
+  @@map("ab_test_assignments")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UPDATE EXISTING MODELS WITH NEW RELATIONSHIPS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Add to Driver model
+model Driver {
+  // ... existing fields ...
+  shifts  DriverShift[]
+  payouts Payout[]
+  
+  // ... rest of existing model ...
+}
+
+// Add to Order model  
+model Order {
+  // ... existing fields ...
+  customerId String?
+  reviews    Review[]
+  
+  // Promo code
+  promoCodeId String?
+  discountAmount Float @default(0)
+  
+  // ... rest of existing model ...
+}

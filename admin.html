@@ -1,0 +1,2935 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173d30">
+  <title>YEBS Noodles | Admin Dashboard & Real Delivery Records</title>
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';">
+  <style>
+    :root {
+      --forest: #173d30;
+      --forest-dark: #0f2820;
+      --forest-card: #15382c;
+      --leaf: #52785b;
+      --orange: #e57a45;
+      --orange-hover: #d26532;
+      --gold: #e9bd68;
+      --cream: #fbf8f0;
+      --paper: #fffefa;
+      --ink: #1e2621;
+      --muted: #6e7971;
+      --line: #e4dfd3;
+      --shadow: 0 12px 36px rgba(18, 44, 34, 0.08);
+      --serif: Georgia, "Times New Roman", serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--cream);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: var(--forest);
+      color: white;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .header-wrap {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .brand-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: white;
+    }
+    .brand-logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--gold);
+      background: white;
+    }
+    .brand-title {
+      font-family: var(--serif);
+      font-size: 1.3rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+    .brand-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--gold);
+      background: rgba(255,255,255,0.1);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .header-nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .nav-btn {
+      color: #e2ede5;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.08);
+      transition: all 0.2s;
+    }
+    .nav-btn:hover {
+      background: rgba(255,255,255,0.18);
+      color: white;
+    }
+    .nav-btn.active {
+      background: var(--orange);
+      color: white;
+    }
+
+    .main-wrap {
+      max-width: 1300px;
+      margin: 24px auto;
+      padding: 0 20px;
+      flex: 1;
+      width: 100%;
+    }
+
+    /* Session Admin Control Strip */
+    .session-admin-bar {
+      background: #173d30;
+      color: white;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      box-shadow: 0 4px 15px rgba(23,61,48,0.12);
+    }
+    .session-admin-info {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .session-badge {
+      font-weight: 800;
+      font-size: 0.85rem;
+      padding: 4px 12px;
+      border-radius: 999px;
+      letter-spacing: 0.05em;
+    }
+    .session-badge-active { background: #22c55e; color: #052e16; }
+    .session-badge-intermission { background: var(--gold); color: #78350f; }
+
+    .session-timer-clock {
+      font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+      font-size: 1.4rem;
+      font-weight: 800;
+      background: rgba(0,0,0,0.3);
+      padding: 4px 12px;
+      border-radius: 6px;
+      color: var(--gold);
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+
+    /* KPI Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 960px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 550px) { .kpi-grid { grid-template-columns: 1fr; } }
+    .kpi-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .kpi-label {
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .kpi-value {
+      font-size: 1.8rem;
+      font-weight: 800;
+      font-family: var(--serif);
+      color: var(--forest);
+    }
+    .kpi-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-size: 1.5rem;
+      background: #f4eee2;
+      color: var(--forest);
+    }
+
+    /* Tabs */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      border-bottom: 2px solid var(--line);
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      padding: 12px 20px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: var(--forest); }
+    .tab-btn.active { color: var(--orange); border-bottom-color: var(--orange); }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .card-title {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: 1.35rem;
+      color: var(--forest);
+    }
+
+    .table-responsive { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th {
+      text-align: left;
+      padding: 12px 14px;
+      background: #f7f4ed;
+      color: var(--forest);
+      font-weight: 700;
+      border-bottom: 2px solid var(--line);
+      white-space: nowrap;
+    }
+    td { padding: 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tr:hover td { background: #fbf9f5; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-pending { background: #fef3c7; color: #92400e; }
+    .badge-kitchen { background: #dbeafe; color: #1e40af; }
+    .badge-enroute { background: #fed7aa; color: #9a3412; }
+    .badge-arrived { background: #e0e7ff; color: #3730a3; }
+    .badge-delivered { background: #dcfce7; color: #166534; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      border: 0;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
+    .btn-orange { background: var(--orange); color: white; }
+    .btn-forest { background: var(--forest); color: white; }
+    .btn-outline { background: white; border: 1px solid var(--line); color: var(--forest); }
+    .btn-success { background: #16a34a; color: white; }
+
+    .monitoring-split {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 20px;
+    }
+    @media (max-width: 1000px) { .monitoring-split { grid-template-columns: 1fr; } }
+    #adminMap {
+      height: 420px;
+      min-height: 320px;
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      overflow: hidden;
+      background: #dce7df;
+    }
+    body.admin-locked .main-wrap,
+    body.admin-locked footer {
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .ops-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 1000px) { .ops-grid { grid-template-columns: 1fr; } }
+    .action-panel .action-stack { display: flex; flex-direction: column; gap: 10px; }
+    .action-meta { font-size: 0.82rem; color: var(--muted); line-height: 1.45; }
+    .call-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .call-row a { flex: 1; min-width: 140px; text-align: center; }
+
+    /* ---- Ongoing operations layout: sticky actions | map + data ---- */
+    .ops-layout {
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 1100px) {
+      .ops-layout { grid-template-columns: 1fr; }
+      .ops-actions { position: static !important; }
+    }
+    .ops-actions {
+      position: sticky;
+      top: 92px;
+      margin-bottom: 0 !important;
+      max-height: calc(100vh - 110px);
+      overflow-y: auto;
+    }
+    .ops-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+    .ops-main > .card { margin-bottom: 0; }
+    .ops-main #adminMap { height: 360px; }
+
+    .action-section {
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .action-section:first-of-type { border-top: 0; padding-top: 0; }
+    .action-section-title {
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--orange);
+    }
+    .action-selected {
+      background: #f7f3e8;
+      border: 1px solid #ecdfbe;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+    .pill-btn-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    .pill-btn-row .btn { padding: 7px 8px; font-size: 0.78rem; }
+    .call-row a[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+
+    /* Data panel toolbar */
+    .data-toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .data-toolbar input, .data-toolbar select {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-size: 0.82rem;
+      background: white;
+    }
+    .data-toolbar input { min-width: 190px; flex: 1; }
+
+    /* Rider roster */
+    .roster-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 14px;
+    }
+    .roster-card {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      background: #fbf9f3;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      transition: all 0.2s;
+    }
+    .roster-card:hover { border-color: var(--gold); box-shadow: 0 6px 18px rgba(23,61,48,0.08); }
+    .roster-photo {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      background: var(--forest);
+      color: white;
+      display: grid;
+      place-items: center;
+      font-size: 1.4rem;
+      overflow: hidden;
+      border: 2px solid var(--gold);
+    }
+    .roster-photo img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+    .roster-name { font-weight: 800; color: var(--forest); font-size: 0.9rem; }
+    .roster-meta { font-size: 0.76rem; color: var(--muted); line-height: 1.4; }
+    .roster-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .online-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: #22c55e; margin-right: 5px;
+    }
+    .online-dot.off { background: #9ca3af; }
+
+    /* MoMo receipt reviewer */
+    .receipt-review {
+      display: none;
+      gap: 10px;
+      border: 1px solid #bbf7d0;
+      background: #f6fdf8;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 0.8rem;
+    }
+    .receipt-review.active { display: block; }
+    .receipt-review img {
+      max-width: 100%;
+      max-height: 180px;
+      border-radius: 6px;
+      border: 1px solid #d1fae5;
+      display: block;
+      margin-top: 6px;
+    }
+
+    .inform-box {
+      background: #faf8f2;
+      border: 1px solid #e8e3d6;
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .inform-preview {
+      background: #1f362b;
+      color: #f0fdf4;
+      font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      line-height: 1.6;
+      margin: 14px 0;
+    }
+
+    /* Admin Menu Editor & Poster Template Styles */
+    .admin-menu-editor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 24px;
+    }
+    @media (max-width: 768px) { .admin-menu-editor-grid { grid-template-columns: 1fr; } }
+
+    .admin-menu-card-item {
+      background: #ffffff;
+      border: 1.5px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+    }
+    .admin-menu-card-item:hover {
+      box-shadow: 0 10px 28px rgba(23,61,48,0.12);
+      border-color: var(--gold);
+    }
+
+    /* Poster Capsule Bar */
+    .poster-capsule-bar {
+      display: flex;
+      align-items: stretch;
+      background: linear-gradient(135deg, #0e3d2b, #154e38);
+      border-radius: 12px;
+      margin: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(233, 189, 104, 0.3);
+    }
+    .poster-price-badge {
+      background: linear-gradient(135deg, #fbb017, #f39c12);
+      color: #0b3423;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-width: 80px;
+      clip-path: polygon(0 0, 90% 0, 100% 50%, 90% 100%, 0 100%);
+      font-weight: 900;
+      text-align: center;
+    }
+    .poster-price-num { font-size: 1.8rem; line-height: 0.95; font-family: var(--serif); }
+    .poster-price-unit { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-top: 2px; }
+    .poster-capsule-info { padding: 10px 14px; flex: 1; display: flex; flex-direction: column; justify-content: center; }
+    .poster-capsule-title { font-size: 1.05rem; font-weight: 900; color: #ffd84d; text-transform: uppercase; margin: 0 0 3px; line-height: 1.2; }
+    .poster-capsule-formula { font-size: 0.8rem; color: #ffffff; font-weight: 600; line-height: 1.35; margin: 0; }
+    .poster-capsule-formula span.eq { color: #ffd84d; font-weight: 900; margin-right: 4px; }
+
+    .admin-card-edit-body {
+      padding: 18px;
+      background: #faf8f2;
+      border-top: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .admin-field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .admin-edit-label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--forest);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 4px;
+    }
+    .admin-edit-input, .admin-edit-textarea, .admin-edit-select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-size: 0.86rem;
+      background: white;
+    }
+    .admin-edit-input:focus, .admin-edit-textarea:focus, .admin-edit-select:focus {
+      outline: none;
+      border-color: var(--orange);
+    }
+
+    /* Auth Modal Overlay */
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 40, 32, 0.94);
+      backdrop-filter: blur(10px);
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .auth-modal {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+      border-radius: 16px;
+      max-width: 440px;
+      width: 100%;
+      overflow: hidden;
+      animation: modalSlideUp 0.3s ease-out;
+    }
+    @keyframes modalSlideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .auth-header {
+      background: var(--forest);
+      color: white;
+      padding: 24px 20px;
+      text-align: center;
+    }
+    .auth-body {
+      padding: 24px 20px;
+    }
+    .auth-form-group {
+      margin-bottom: 16px;
+    }
+    .auth-form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--forest);
+      margin-bottom: 6px;
+    }
+    .auth-input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid var(--line);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      transition: border 0.2s;
+    }
+    .auth-input:focus {
+      outline: none;
+      border-color: var(--orange);
+      box-shadow: 0 0 0 3px rgba(229,122,69,0.15);
+    }
+    .auth-error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.84rem;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .auth-hint {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      margin-top: 16px;
+      line-height: 1.4;
+    }
+    .log-badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-family: monospace;
+    }
+    footer {
+      background: var(--forest-dark);
+      color: #a4b8ac;
+      padding: 20px;
+      text-align: center;
+      font-size: 0.8rem;
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body class="admin-locked">
+  <script>
+    if (location.protocol === 'file:') {
+      document.addEventListener('DOMContentLoaded', function () {
+        var b = document.createElement('div');
+        b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:999999;background:#7f1d1d;color:#fff;font:600 13px/1.5 system-ui,sans-serif;padding:12px 16px;text-align:center;';
+        b.innerHTML = '⚠️ Open this page through the local server. Run <strong>start.bat</strong> (or <strong>npm start</strong>) and visit <a href="http://localhost:3000/admin.html" style="color:#fde68a;font-weight:800;">http://localhost:3000/admin.html</a> — admin login, maps and sync cannot work from a file path.';
+        document.body.appendChild(b);
+      });
+    }
+  </script>
+  <header>
+    <div class="header-wrap">
+      <a href="index.html" class="brand-link">
+        <img src="logo.png" alt="YEBS Noodles Logo" class="brand-logo">
+        <div>
+          <div class="brand-title">YEBS Noodles</div>
+          <span class="brand-badge">Admin Operations & Real Records</span>
+        </div>
+      </a>
+      <nav class="header-nav">
+        <a href="index.html" class="nav-btn">Customer Store</a>
+        <a href="driver.html" class="nav-btn">Driver Portal</a>
+        <a href="admin.html" class="nav-btn active">Admin Dashboard</a>
+        <a href="public/admin-analytics.html" class="nav-btn">📊 Analytics</a>
+        <a href="public/admin-management.html" class="nav-btn">⚙️ Management</a>
+        <span id="adminUserBadge" style="display:none; font-size:0.75rem; color:var(--gold); background:rgba(255,255,255,0.12); padding:5px 10px; border-radius:6px; border:1px solid rgba(233,189,104,0.4); font-weight:700;">👤 Admin</span>
+        <button id="adminLogoutBtn" type="button" style="display:none; background:#d26532; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:0.8rem; cursor:pointer;">Logout</button>
+      </nav>
+    </div>
+  </header>
+
+  <div class="main-wrap">
+    <!-- Session Management Strip -->
+    <div class="session-admin-bar">
+      <div class="session-admin-info">
+        <span id="adminSessionBadge" class="session-badge session-badge-active">Order Session #1 ACTIVE</span>
+        <div>
+          <strong id="adminSessionStateText">Kitchen accepting orders</strong>
+          <div style="font-size:0.78rem; opacity:0.85;">
+            When a driver starts delivery (en route), the order session stops and a 3-minute intermission timer begins for the next batch loop.
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div id="adminSessionCountdownDigits" class="session-timer-clock" style="display:none;">03:00</div>
+        <button type="button" id="adminTriggerIntermissionBtn" class="btn btn-orange btn-sm">
+          ⏳ Trigger 3-Min Intermission Loop
+        </button>
+        <button type="button" id="adminStartNextSessionBtn" class="btn btn-outline btn-sm" style="color:white; border-color:rgba(255,255,255,0.4); background:transparent;">
+          ▶ Force Start Next Session
+        </button>
+      </div>
+    </div>
+
+    <!-- Real Data KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div>
+          <div class="kpi-label">Total Real Orders</div>
+          <div class="kpi-value" id="kpiTotalOrders">0</div>
+        </div>
+        <div class="kpi-icon">📦</div>
+      </div>
+      <div class="kpi-card">
+        <div>
+          <div class="kpi-label">Ongoing Deliveries</div>
+          <div class="kpi-value" id="kpiOngoingOrders" style="color:var(--orange);">0</div>
+        </div>
+        <div class="kpi-icon">🛵</div>
+      </div>
+      <div class="kpi-card">
+        <div>
+          <div class="kpi-label">Successful Deliveries</div>
+          <div class="kpi-value" id="kpiDeliveredOrders" style="color:#16a34a;">0</div>
+        </div>
+        <div class="kpi-icon">✅</div>
+      </div>
+      <div class="kpi-card">
+        <div>
+          <div class="kpi-label">Total Real Revenue</div>
+          <div class="kpi-value" id="kpiRevenue" style="color:var(--forest);">GH₵0</div>
+        </div>
+        <div class="kpi-icon">💰</div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="ongoingTab">🛵 Ongoing Orders & Live Map</button>
+      <button class="tab-btn" data-tab="recordsTab">📋 All Orders & Delivery Records</button>
+      <button class="tab-btn" data-tab="driversTab">👥 Driver Management</button>
+      <button class="tab-btn" data-tab="reportTab">📊 Daily Audit & Reports</button>
+      <button class="tab-btn" data-tab="foodMenuTab">🍝 Noodles Menu & Photos</button>
+      <button class="tab-btn" data-tab="informTab">💬 Inform Customer & WhatsApp Dispatch</button>
+      <button class="tab-btn" data-tab="auditLogsTab">🛡️ System DB Audit Logs</button>
+      <button class="tab-btn" data-tab="settingsTab">⚙️ Settings</button>
+    </div>
+
+    <!-- TAB 1: Ongoing Orders & Live Map -->
+    <div id="ongoingTab" class="tab-content">
+      <div class="ops-layout">
+        <!-- ACTION PANEL: sticky, always in reach while scrolling the data panel -->
+        <aside class="card action-panel ops-actions">
+          <div class="card-header" style="margin-bottom:14px;">
+            <div>
+              <h2 class="card-title">Action Panel</h2>
+              <div class="action-meta">Pick an order → assign a rider → call → dispatch.</div>
+            </div>
+          </div>
+
+          <div class="action-stack">
+            <div class="action-selected" id="actionSelectedSummary">No order selected. Click any row in the data panel.</div>
+
+            <div class="action-section">
+              <div class="action-section-title">1 · Assign rider</div>
+              <select id="actionDriverSelect" style="width:100%; padding:10px; border:1px solid var(--line); border-radius:6px;"></select>
+              <button type="button" id="actionAssignDriverBtn" class="btn btn-forest">Assign selected rider</button>
+            </div>
+
+            <div class="action-section">
+              <div class="action-section-title">2 · Call the real numbers</div>
+              <div class="call-row">
+                <a id="actionCallCustomerBtn" class="btn btn-outline" href="#" aria-disabled="true">📞 Customer</a>
+                <a id="actionCallDriverBtn" class="btn btn-orange" href="#" aria-disabled="true">📞 Rider</a>
+              </div>
+              <div class="action-meta" id="actionPhoneHint">Phone numbers appear once an order is selected.</div>
+            </div>
+
+            <div class="action-section">
+              <div class="action-section-title">3 · Advance delivery status</div>
+              <div class="pill-btn-row">
+                <button type="button" class="btn btn-outline btn-sm status-advance-btn" data-status="kitchen">🍳 Kitchen</button>
+                <button type="button" class="btn btn-orange btn-sm status-advance-btn" data-status="enroute">🛵 Dispatch</button>
+                <button type="button" class="btn btn-forest btn-sm status-advance-btn" data-status="arrived">📍 Arrived</button>
+                <button type="button" class="btn btn-success btn-sm status-advance-btn" data-status="delivered">✅ Delivered</button>
+              </div>
+              <div class="action-meta" id="actionEtaText">ETA appears when a rider is on the map.</div>
+            </div>
+
+            <div class="action-section">
+              <div class="action-section-title">4 · Payment (auto-verified, no waiting)</div>
+              <div id="actionPaymentSummary" style="font-size:0.8rem; color:var(--muted); background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; margin-bottom:8px;">
+                Select an order to see its payment state.
+              </div>
+              <div class="call-row">
+                <button type="button" id="actionVerifyMomoBtn" class="btn btn-success btn-sm">✅ Approve payment</button>
+                <button type="button" id="actionRejectPaymentBtn" class="btn btn-outline btn-sm">✖ Flag / reject</button>
+              </div>
+              <div class="receipt-review" id="actionReceiptReview"></div>
+
+              <div style="margin-top:12px; padding-top:10px; border-top:1px dashed var(--line);">
+                <div class="action-section-title" style="margin-bottom:6px;">Auto-match a MoMo SMS</div>
+                <textarea id="momoSmsInput" placeholder="Paste the full MoMo confirmation SMS here. The system reads the amount, transaction ID and order reference, then verifies automatically." style="width:100%; min-height:74px; font-size:0.78rem; padding:8px; border:1px solid var(--line); border-radius:6px; resize:vertical;"></textarea>
+                <button type="button" id="momoSmsVerifyBtn" class="btn btn-forest btn-sm" style="width:100%; margin-top:6px;">⚡ Auto-match &amp; verify payment</button>
+                <div id="momoSmsStatus" style="font-size:0.78rem; margin-top:6px; line-height:1.45;"></div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- MAIN: live map on top, live data panel below -->
+        <div class="ops-main">
+          <div class="card" style="margin-bottom:18px;">
+            <div class="card-header" style="margin-bottom:12px;">
+              <div>
+                <h2 class="card-title">📍 Shared Pickup Point</h2>
+                <div class="action-meta">Set it once here — the exact pin updates on the customer and rider maps everywhere.</div>
+              </div>
+              <span class="badge" id="adminPickupSavedBadge" style="background:#ecfdf5; color:#166534; border:1px solid #bbf7d0;">Shared live</span>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+              <select id="adminPickupPreset" style="flex:1; min-width:210px; padding:9px; border:1px solid var(--line); border-radius:6px; font-size:0.82rem;">
+                <option value="">Choose a known Accra landmark…</option>
+                <option value="Circle Odo Rice Junction / VIP Station">Circle Odo Rice Junction / VIP Station</option>
+                <option value="Adabraka Police Station Bus Stop">Adabraka Police Station Bus Stop</option>
+                <option value="Accra Ridge Hospital Main Gate">Accra Ridge Hospital Main Gate</option>
+                <option value="Efex Hotel, Adabraka (YEBS Kitchen)">Efex Hotel, Adabraka (YEBS Kitchen)</option>
+                <option value="Osu Danquah Circle">Osu Danquah Circle</option>
+                <option value="Kaneshie Market">Kaneshie Market</option>
+              </select>
+              <input id="adminPickupName" type="text" placeholder="Or type the exact pickup point name" style="flex:1.4; min-width:220px; padding:9px; border:1px solid var(--line); border-radius:6px; font-size:0.82rem;">
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:9px;">
+              <input id="adminPickupLat" type="number" step="any" placeholder="Latitude" style="width:130px; padding:8px; border:1px solid var(--line); border-radius:6px; font-size:0.8rem;">
+              <input id="adminPickupLng" type="number" step="any" placeholder="Longitude" style="width:130px; padding:8px; border:1px solid var(--line); border-radius:6px; font-size:0.8rem;">
+              <button id="adminPickupUseGpsBtn" type="button" class="btn btn-outline btn-sm">⌖ Use my GPS</button>
+              <button id="adminPickupSaveBtn" type="button" class="btn btn-orange btn-sm">💾 Save &amp; sync to all maps</button>
+              <span style="font-size:0.75rem; color:var(--muted);">…or click the map below to drop the pin.</span>
+            </div>
+            <div id="adminPickupStatus" style="font-size:0.78rem; color:var(--muted); margin-top:6px;"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header" style="margin-bottom:12px;">
+              <div>
+                <h2 class="card-title">Live Dispatch Map</h2>
+                <div class="action-meta">Kitchen, riders and customer drop points update live.</div>
+              </div>
+              <span class="badge badge-enroute" id="activeDriversCount">Live Tracking</span>
+            </div>
+            <div id="adminMap"></div>
+            <div style="font-size:0.75rem; color:var(--muted); margin-top:10px; line-height:1.4;">
+              🟢 YEBS Kitchen (Adabraka) &nbsp;|&nbsp; 🟠 Live Rider &nbsp;|&nbsp; 📍 Customer / Pickup
+              <span id="adminMapFallback" style="display:none; color:#b91c1c;"></span>
+            </div>
+          </div>
+
+          <div class="card data-panel">
+            <div class="card-header" style="margin-bottom:14px;">
+              <div>
+                <h2 class="card-title">Data Panel — Live Orders</h2>
+                <div class="action-meta">Packages, phones, MoMo state and assigned riders. Click a row to load actions.</div>
+              </div>
+              <button id="refreshOngoingBtn" class="btn btn-outline btn-sm">↻ Refresh</button>
+            </div>
+
+            <div class="data-toolbar" style="margin-bottom:12px;">
+              <input type="search" id="ongoingSearch" placeholder="Search order, customer, phone, rider…">
+              <select id="ongoingFilterStatus">
+                <option value="ONGOING">Ongoing only</option>
+                <option value="ALL">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="kitchen">Kitchen</option>
+                <option value="enroute">En route</option>
+                <option value="arrived">Arrived</option>
+                <option value="delivered">Delivered</option>
+              </select>
+              <select id="ongoingSort">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="total">Highest value</option>
+              </select>
+            </div>
+
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Customer</th>
+                    <th>Packages</th>
+                    <th>Status</th>
+                    <th>Rider</th>
+                    <th>Call</th>
+                  </tr>
+                </thead>
+                <tbody id="ongoingTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rider roster: real phone numbers + live-captured profile photos -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Rider Roster</h2>
+            <div class="action-meta">Registered riders with their signup vehicle, live photo and the phone number to call.</div>
+          </div>
+          <button type="button" id="refreshRidersBtn" class="btn btn-outline btn-sm">↻ Refresh riders</button>
+        </div>
+        <div class="roster-grid" id="adminRiderRoster"></div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Complete Historical Records -->
+    <div id="recordsTab" class="tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">All Orders & Successful Delivery Records</h2>
+            <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">
+              Archive of all real orders placed by customers.
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <input type="text" id="recordSearch" placeholder="Search order ID, customer, phone…" style="padding:8px 12px; border:1px solid var(--line); border-radius:6px; min-width:240px;">
+            <select id="recordFilterStatus" style="padding:8px 12px; border:1px solid var(--line); border-radius:6px;">
+              <option value="ALL">All Statuses</option>
+              <option value="delivered">Delivered Only</option>
+              <option value="arrived">Arrived Only</option>
+              <option value="enroute">En Route Only</option>
+              <option value="kitchen">In Kitchen</option>
+              <option value="pending">Pending</option>
+            </select>
+            <button id="exportCsvBtn" class="btn btn-outline">📥 Export CSV</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Date & Time</th>
+                <th>Customer</th>
+                <th>Phone</th>
+                <th>Delivery Point</th>
+                <th>Items Ordered</th>
+                <th>Total</th>
+                <th>Driver</th>
+                <th>Status</th>
+                <th>Session</th>
+              </tr>
+            </thead>
+            <tbody id="allRecordsTableBody">
+              <!-- Dynamic rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Food Cards & Poster Template Manager -->
+    <div id="foodMenuTab" class="tab-content" style="display:none;">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h2 class="card-title">🍜 Food Cards & Poster Template Manager (15 – 60 Cedis)</h2>
+            <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">
+              Manage prices, images, ingredients formula, highlight tags, and card templates live on the website.
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button type="button" id="adminResetMenuBtn" class="btn btn-outline btn-sm">
+              🔄 Reset to Poster Defaults
+            </button>
+            <button type="button" id="adminSaveAllMenuBtn" class="btn btn-orange btn-sm">
+              💾 Save All Changes Live
+            </button>
+          </div>
+        </div>
+
+        <!-- Official Poster Reference Banner -->
+        <div style="background:#faf7ee; border:1px solid #ebdcb9; border-radius:12px; padding:16px; margin:0 0 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+          <div style="display:flex; align-items:center; gap:14px;">
+            <img src="img_menu_poster.jpg" alt="Official Menu Poster" style="width:65px; height:85px; object-fit:cover; border-radius:8px; border:2px solid var(--gold); box-shadow:0 4px 10px rgba(0,0,0,0.15); cursor:pointer;" onclick="window.open('img_menu_poster.jpg', '_blank')">
+            <div>
+              <strong style="color:var(--forest); font-size:1rem;">Official YEBS Noodles Menu Poster Reference</strong>
+              <div style="font-size:0.82rem; color:var(--muted); margin-top:2px;">
+                Tiers: <strong>15 Cedis</strong> (Spaghetti) · <strong>20 Cedis</strong> · <strong>30 Cedis</strong> · <strong>40 Cedis</strong> · <strong>60 Cedis</strong> (Indomie & Spaghetti).
+              </div>
+              <div style="font-size:0.75rem; color:#16a34a; font-weight:700; margin-top:4px;">
+                ● Live synchronized with customer storefront via database & BroadcastChannel
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-forest btn-sm" onclick="window.open('img_menu_poster.jpg', '_blank')">
+            🔍 View Full Poster Image
+          </button>
+        </div>
+
+        <div id="adminMenuFeedback" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:0.88rem; font-weight:600;"></div>
+
+        <!-- Cards List / Grid -->
+        <div id="adminMenuCardsContainer" class="admin-menu-editor-grid">
+          <!-- Populated dynamically via renderFoodMenuTab() -->
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: Inform Customer & WhatsApp Dispatch -->
+    <div id="informTab" class="tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Inform Customer & Send Status Notification</h2>
+            <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">
+              Send instant WhatsApp updates to customers regarding their order progress.
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+          <div>
+            <div style="margin-bottom:16px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px;">Select Customer Order:</label>
+              <select id="informOrderSelect" style="width:100%; padding:10px; border:1px solid var(--line); border-radius:6px;"></select>
+            </div>
+
+            <div style="margin-bottom:16px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px;">Choose Status Update Template:</label>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <button type="button" class="btn btn-outline inform-preset-btn" data-template="confirmed">
+                  ✅ 1. Order Confirmed & In Kitchen
+                </button>
+                <button type="button" class="btn btn-outline inform-preset-btn" data-template="enroute">
+                  🛵 2. Driver En Route with Live Tracking Link
+                </button>
+                <button type="button" class="btn btn-outline inform-preset-btn" data-template="arrived">
+                  📍 3. Driver Has Arrived at Pickup Gate
+                </button>
+                <button type="button" class="btn btn-outline inform-preset-btn" data-template="delivered">
+                  🎉 4. Delivered Successfully & Thank You
+                </button>
+              </div>
+            </div>
+
+            <div style="margin-bottom:16px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px;">Custom Note / ETA:</label>
+              <input type="text" id="informCustomNote" placeholder="e.g. Driver is on a red Royal bike, arriving in 5 mins" style="width:100%; padding:10px; border:1px solid var(--line); border-radius:6px;">
+            </div>
+          </div>
+
+          <div>
+            <div class="inform-box">
+              <strong style="color:var(--forest);">Message Preview:</strong>
+              <div id="informMessagePreview" class="inform-preview">Select an order to generate status update.</div>
+              <div style="display:flex; gap:10px; margin-top:14px;">
+                <a id="informWhatsAppLink" href="#" target="_blank" class="btn btn-forest" style="flex:1;">
+                  💬 Open in WhatsApp & Send
+                </a>
+                <button type="button" id="copyMessageBtn" class="btn btn-outline">📋 Copy Message</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: System DB Audit Logs -->
+    <div id="auditLogsTab" class="tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <h2 class="card-title">Database Audit & Activity Logs</h2>
+            <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">
+              Traceable, tamper-evident logs recorded in Prisma DB engine for all transactions and logins.
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <input type="text" id="logSearchInput" placeholder="Filter actor, action, order..." style="padding:8px 12px; border:1px solid var(--line); border-radius:6px; font-size:0.85rem;">
+            <button id="refreshLogsBtn" type="button" class="btn btn-outline btn-sm">🔄 Refresh Logs</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Action</th>
+                <th>Actor</th>
+                <th>Entity / Target</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="auditLogsTableBody">
+              <tr><td colspan="5" style="text-align:center; padding:30px; color:var(--muted);">Loading database audit trail...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <!-- TAB: Driver Management (Approval + Roster + Remove) -->
+    <div id="driversTab" class="tab-content" style="display:none;">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">⏳ Pending Driver Approvals</h2>
+            <div class="action-meta">New drivers who signed up and are waiting for your approval before they can log in.</div>
+          </div>
+          <button type="button" id="refreshDriversApprovalBtn" class="btn btn-outline btn-sm">↻ Refresh</button>
+        </div>
+        <div id="pendingDriversGrid" class="roster-grid">
+          <div style="color:var(--muted); padding:20px;">Loading pending drivers…</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">✅ Approved Drivers Roster</h2>
+            <div class="action-meta">Active drivers. You can deactivate or permanently remove inactive ones.</div>
+          </div>
+          <button type="button" id="refreshApprovedDriversBtn" class="btn btn-outline btn-sm">↻ Refresh</button>
+        </div>
+        <div id="approvedDriversGrid" class="roster-grid">
+          <div style="color:var(--muted); padding:20px;">Loading drivers…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Daily Audit & Reports -->
+    <div id="reportTab" class="tab-content" style="display:none;">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header" style="flex-wrap:wrap; gap:10px;">
+          <div>
+            <h2 class="card-title">📊 Daily Audit Report</h2>
+            <div class="action-meta">Auto-generated at close of day. Shows all activity, income, and successful deliveries.</div>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <input type="date" id="reportDatePicker" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:0.85rem;">
+            <button type="button" id="generateReportBtn" class="btn btn-orange btn-sm">📊 Generate Report</button>
+            <button type="button" id="closeOfDayBtn" class="btn btn-forest btn-sm">🔒 Close Day & Audit</button>
+            <a id="exportDailyReportCsvBtn" href="#" class="btn btn-outline btn-sm" target="_blank">📥 Export CSV</a>
+          </div>
+        </div>
+
+        <div id="dailyReportSummary" style="display:none; margin-bottom:20px;">
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:14px; margin-bottom:20px;">
+            <div class="kpi-card" style="padding:16px;">
+              <div><div class="kpi-label">Total Orders</div><div class="kpi-value" id="rptTotalOrders">0</div></div>
+              <div class="kpi-icon">📦</div>
+            </div>
+            <div class="kpi-card" style="padding:16px;">
+              <div><div class="kpi-label">Delivered</div><div class="kpi-value" id="rptDelivered" style="color:#16a34a;">0</div></div>
+              <div class="kpi-icon">✅</div>
+            </div>
+            <div class="kpi-card" style="padding:16px;">
+              <div><div class="kpi-label">Total Income</div><div class="kpi-value" id="rptIncome" style="color:var(--forest);">GH₵0</div></div>
+              <div class="kpi-icon">💰</div>
+            </div>
+            <div class="kpi-card" style="padding:16px;">
+              <div><div class="kpi-label">MoMo Income</div><div class="kpi-value" id="rptMomoIncome" style="color:#1d4ed8;">GH₵0</div></div>
+              <div class="kpi-icon">📱</div>
+            </div>
+            <div class="kpi-card" style="padding:16px;">
+              <div><div class="kpi-label">Cash Income</div><div class="kpi-value" id="rptCashIncome" style="color:#92400e;">GH₵0</div></div>
+              <div class="kpi-icon">💵</div>
+            </div>
+            <div class="kpi-card" style="padding:16px;">
+              <div><div class="kpi-label">Unpaid Orders</div><div class="kpi-value" id="rptUnpaid" style="color:#b91c1c;">0</div></div>
+              <div class="kpi-icon">⚠️</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="dailyReportTableWrap" style="display:none;">
+          <h3 style="font-family:var(--serif); color:var(--forest); font-size:1.1rem; margin-bottom:10px;">Order Detail</h3>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Order ID</th><th>PIN</th><th>Customer</th><th>Items</th>
+                  <th>Total</th><th>Payment</th><th>Status</th><th>Driver</th><th>Time</th>
+                </tr>
+              </thead>
+              <tbody id="dailyReportTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="dailyReportActivityWrap" style="display:none; margin-top:20px;">
+          <h3 style="font-family:var(--serif); color:var(--forest); font-size:1.1rem; margin-bottom:10px;">Activity Log for the Day</h3>
+          <div class="table-responsive">
+            <table>
+              <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Details</th></tr></thead>
+              <tbody id="dailyActivityTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: Settings -->
+    <div id="settingsTab" class="tab-content" style="display:none;">
+      <div style="max-width:540px; margin:0 auto;">
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">⚙️ Admin Account Settings</h2>
+              <div class="action-meta">Change your admin username and/or password. Takes effect immediately.</div>
+            </div>
+          </div>
+          <div id="settingsFeedback" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:0.88rem; font-weight:600;"></div>
+          <form id="adminSettingsForm">
+            <div style="margin-bottom:14px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Current Password <span style="color:#b91c1c;">*</span></label>
+              <div style="position:relative;">
+                <input type="password" id="settingsCurrentPwd" class="auth-input" placeholder="Your current password" required autocomplete="current-password" style="padding-right:64px;">
+                <button type="button" class="toggle-pwd-btn" data-target="settingsCurrentPwd" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;cursor:pointer;font-size:0.78rem;font-weight:700;color:var(--forest);padding:6px;">Show</button>
+              </div>
+            </div>
+            <div style="margin-bottom:14px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">New Username (leave blank to keep current)</label>
+              <input type="text" id="settingsNewUsername" class="auth-input" placeholder="Enter new username" autocomplete="username">
+            </div>
+            <div style="margin-bottom:14px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">New Password (leave blank to keep current)</label>
+              <div style="position:relative;">
+                <input type="password" id="settingsNewPwd" class="auth-input" placeholder="Minimum 8 characters" autocomplete="new-password" style="padding-right:64px;">
+                <button type="button" class="toggle-pwd-btn" data-target="settingsNewPwd" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;cursor:pointer;font-size:0.78rem;font-weight:700;color:var(--forest);padding:6px;">Show</button>
+              </div>
+            </div>
+            <div style="margin-bottom:20px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Confirm New Password</label>
+              <input type="password" id="settingsConfirmPwd" class="auth-input" placeholder="Repeat new password" autocomplete="new-password">
+            </div>
+            <button type="submit" class="btn btn-orange" style="width:100%; padding:12px; font-size:0.95rem;">🔑 Save Credential Changes</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    YEBS Noodles · Admin Dashboard & Real Delivery Records · Adabraka, Accra
+  </footer>
+
+  <div id="adminAuthModal" class="auth-overlay" style="display:flex;">
+    <div class="auth-modal">
+      <div class="auth-header">
+        <img src="logo.png" alt="YEBS" style="width:50px; height:50px; border-radius:50%; border:2px solid var(--gold); margin-bottom:8px; background:white;">
+        <h2 style="margin:0; font-family:var(--serif); font-size:1.4rem;">YEBS Admin Verification</h2>
+        <div style="font-size:0.8rem; color:#e2ede5; margin-top:4px;">Restricted Access · Enter credentials to view the admin panel</div>
+      </div>
+      <div class="auth-body">
+        <div id="adminAuthError" class="auth-error"></div>
+        <form id="adminLoginForm">
+          <div class="auth-form-group">
+            <label for="adminUsernameInput">Administrator Username</label>
+            <input type="text" id="adminUsernameInput" class="auth-input" placeholder="Username" required autocomplete="username">
+          </div>
+          <div class="auth-form-group">
+            <label for="adminPasswordInput">Password</label>
+            <div style="position:relative;">
+              <input type="password" id="adminPasswordInput" class="auth-input" placeholder="••••••••" required autocomplete="current-password" style="padding-right:64px;">
+              <button type="button" id="toggleAdminPasswordBtn" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); border:0; background:transparent; cursor:pointer; font-size:0.78rem; font-weight:700; color:var(--forest); padding:6px;">Show</button>
+            </div>
+          </div>
+          <label style="display:flex; align-items:center; gap:8px; font-size:0.8rem; color:var(--muted); margin-bottom:10px; cursor:pointer;">
+            <input type="checkbox" id="adminRememberMe" checked style="width:16px; height:16px;">
+            Keep me signed in on this device for 12 hours
+          </label>
+          <button type="submit" id="adminLoginSubmitBtn" class="btn btn-orange" style="width:100%; padding:12px; font-size:0.95rem; margin-top:4px;">
+            🔒 Sign In
+          </button>
+        </form>
+        <div style="margin-top:14px; font-size:0.78rem; color:var(--muted); text-align:center; line-height:1.5;">
+          Authorized YEBS staff only. All sign-in attempts are rate-limited and recorded.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script>
+    if (!window.L) {
+      document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');
+    }
+  </script>
+  <script type="module">
+    import {
+      initStore,
+      getOrders,
+      getOrderById,
+      saveOrders,
+      updateOrderStatus,
+      onSyncEvent,
+      MENU_ITEMS,
+      getSessionState,
+      stopOrderSessionAndStartCountdown,
+      forceStartNewOrderSession,
+      RESTAURANT_COORDS,
+      DEFAULT_DRIVERS,
+      getDispatchDrivers,
+      formatWhatsAppUrl,
+      formatTelHref,
+      resolveDriverPhone,
+      isDriverOnline,
+      addReliableBasemap,
+      estimateEtaMinutes,
+      OWNER_WHATSAPP_NUMBER,
+      isKitchenOpen,
+      apiAdminLogin,
+      apiValidateSession,
+      apiFetchLogs,
+      apiFetchActiveDrivers,
+      apiFetchAllDrivers,
+      apiVerifyMomoReceipt,
+      apiVerifyMomoSms,
+      apiReviewPayment,
+      apiPayCash,
+      apiSetPickupPoint,
+      apiFetchSession,
+      getPickupPoint,
+      applyServerSession,
+      startLiveOrderSync,
+      getMenuItems,
+      saveMenuItems,
+      apiFetchMenu,
+      apiSaveMenu,
+      apiResetMenu,
+      DEFAULT_POSTER_MENU
+    } from './shared.js';
+
+    initStore();
+
+    let map = null;
+    let markersLayer = null;
+
+    // DOM Elements
+    const kpiTotalOrders = document.getElementById('kpiTotalOrders');
+    const kpiOngoingOrders = document.getElementById('kpiOngoingOrders');
+    const kpiDeliveredOrders = document.getElementById('kpiDeliveredOrders');
+    const kpiRevenue = document.getElementById('kpiRevenue');
+    const ongoingTableBody = document.getElementById('ongoingTableBody');
+    const allRecordsTableBody = document.getElementById('allRecordsTableBody');
+    const informOrderSelect = document.getElementById('informOrderSelect');
+    const informMessagePreview = document.getElementById('informMessagePreview');
+    const informWhatsAppLink = document.getElementById('informWhatsAppLink');
+    const informCustomNote = document.getElementById('informCustomNote');
+    const recordSearch = document.getElementById('recordSearch');
+    const recordFilterStatus = document.getElementById('recordFilterStatus');
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    const adminFoodGrid = document.getElementById('adminFoodGrid');
+
+    const ongoingSearch = document.getElementById('ongoingSearch');
+    const ongoingFilterStatus = document.getElementById('ongoingFilterStatus');
+    const ongoingSort = document.getElementById('ongoingSort');
+    const adminRiderRoster = document.getElementById('adminRiderRoster');
+    const refreshRidersBtn = document.getElementById('refreshRidersBtn');
+    const actionPhoneHint = document.getElementById('actionPhoneHint');
+    const actionReceiptReview = document.getElementById('actionReceiptReview');
+    const actionPaymentSummary = document.getElementById('actionPaymentSummary');
+    const actionVerifyMomoBtn = document.getElementById('actionVerifyMomoBtn');
+    const actionRejectPaymentBtn = document.getElementById('actionRejectPaymentBtn');
+    const momoSmsInput = document.getElementById('momoSmsInput');
+    const momoSmsVerifyBtn = document.getElementById('momoSmsVerifyBtn');
+    const momoSmsStatus = document.getElementById('momoSmsStatus');
+    const adminPickupPreset = document.getElementById('adminPickupPreset');
+    const adminPickupName = document.getElementById('adminPickupName');
+    const adminPickupLat = document.getElementById('adminPickupLat');
+    const adminPickupLng = document.getElementById('adminPickupLng');
+    const adminPickupUseGpsBtn = document.getElementById('adminPickupUseGpsBtn');
+    const adminPickupSaveBtn = document.getElementById('adminPickupSaveBtn');
+    const adminPickupStatus = document.getElementById('adminPickupStatus');
+    const adminMapFallback = document.getElementById('adminMapFallback');
+
+    const adminSessionBadge = document.getElementById('adminSessionBadge');
+    const adminSessionStateText = document.getElementById('adminSessionStateText');
+    const adminSessionCountdownDigits = document.getElementById('adminSessionCountdownDigits');
+    const adminTriggerIntermissionBtn = document.getElementById('adminTriggerIntermissionBtn');
+    const adminStartNextSessionBtn = document.getElementById('adminStartNextSessionBtn');
+
+    // Tab Switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+        btn.classList.add('active');
+        const tabId = btn.dataset.tab;
+        document.getElementById(tabId).style.display = 'block';
+
+        if (tabId === 'ongoingTab') {
+          setTimeout(() => { initMap(); if (map) map.invalidateSize(); }, 150);
+        }
+      });
+    });
+
+    // Session Management Loop
+    function updateSessionUI() {
+      const session = getSessionState();
+      if (session.status === "ACTIVE") {
+        adminSessionBadge.className = "session-badge session-badge-active";
+        adminSessionBadge.textContent = `Order Session #${session.sessionNumber || 1} ACTIVE`;
+        adminSessionStateText.textContent = "Kitchen receiving and preparing orders";
+        adminSessionCountdownDigits.style.display = "none";
+      } else if (session.status === "INTERMISSION") {
+        adminSessionBadge.className = "session-badge session-badge-intermission";
+        adminSessionBadge.textContent = `Order Session #${session.sessionNumber || 1} INTERMISSION`;
+        
+        const remainingMs = Math.max(0, session.intermissionEndsAt - Date.now());
+        const totalSecs = Math.ceil(remainingMs / 1000);
+        const mins = Math.floor(totalSecs / 60);
+        const secs = totalSecs % 60;
+        const clockFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+        adminSessionCountdownDigits.textContent = clockFormatted;
+        adminSessionCountdownDigits.style.display = "block";
+        adminSessionStateText.textContent = `Driver en route. Next batch session begins in ${clockFormatted}`;
+      }
+    }
+
+    setInterval(updateSessionUI, 1000);
+
+    adminTriggerIntermissionBtn.addEventListener('click', () => {
+      stopOrderSessionAndStartCountdown(180);
+      updateSessionUI();
+    });
+
+    adminStartNextSessionBtn.addEventListener('click', () => {
+      forceStartNewOrderSession();
+      updateSessionUI();
+    });
+
+    let selectedOrderId = null;
+    let liveDrivers = DEFAULT_DRIVERS.slice();
+
+    function initMap() {
+      if (map || typeof L === "undefined") return;
+      const el = document.getElementById("adminMap");
+      if (!el) return;
+      map = L.map("adminMap").setView([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], 13);
+      addReliableBasemap(map);
+      markersLayer = L.layerGroup().addTo(map);
+      const restIcon = L.divIcon({
+        html: `<div style="background:#173d30; color:white; width:34px; height:34px; border-radius:50%; display:grid; place-items:center; border:2px solid white; box-shadow:0 3px 10px rgba(0,0,0,0.3); font-size:16px;">🍜</div>`,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17]
+      });
+      L.marker([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], { icon: restIcon })
+        .bindPopup(`<b>YEBS Noodles Kitchen</b><br>Adabraka, Accra`)
+        .addTo(map);
+
+      // Click anywhere on the map to drop/set the shared pickup pin.
+      map.on("click", (e) => {
+        const { lat, lng } = e.latlng;
+        pickupDraft = { lat, lng };
+        if (adminPickupLat) adminPickupLat.value = lat.toFixed(6);
+        if (adminPickupLng) adminPickupLng.value = lng.toFixed(6);
+        const label = (adminPickupName && adminPickupName.value.trim()) || "Picked on map";
+        if (adminPickupName && !adminPickupName.value.trim()) adminPickupName.value = label;
+        placePickupMarker(lat, lng, label);
+        if (adminPickupStatus) {
+          adminPickupStatus.textContent = `Pin set to ${lat.toFixed(5)}, ${lng.toFixed(5)}. Press "Save & sync to all maps" to publish it.`;
+          adminPickupStatus.style.color = "var(--muted)";
+        }
+      });
+    }
+
+    // Render Real Dashboard
+    function renderDashboard() {
+      const orders = getOrders();
+
+      kpiTotalOrders.textContent = orders.length;
+      const ongoing = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled');
+      const delivered = orders.filter(o => o.status === 'delivered');
+      const totalRev = orders.reduce((sum, o) => sum + (o.total || 0), 0);
+
+      kpiOngoingOrders.textContent = ongoing.length;
+      kpiDeliveredOrders.textContent = delivered.length;
+      kpiRevenue.textContent = `GH₵${totalRev}`;
+
+      if (ongoing.length === 0) {
+        ongoingTableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--muted); padding:30px;">No ongoing orders at the moment. Real orders will populate here automatically.</td></tr>`;
+      } else {
+        ongoingTableBody.innerHTML = buildOngoingRows(orders);
+      }
+
+      refreshActionPanel();
+      renderRiderRoster();
+      renderRecordsTable();
+      populateInformDropdown();
+      updateMapMarkers(ongoing);
+      renderFoodMenuTab();
+      updateSessionUI();
+    }
+
+    // Search / status filter / sort for the live data panel.
+    function buildOngoingRows(allOrders) {
+      const query = (ongoingSearch && ongoingSearch.value ? ongoingSearch.value : '').trim().toLowerCase();
+      const filter = ongoingFilterStatus && ongoingFilterStatus.value ? ongoingFilterStatus.value : 'ONGOING';
+      const sort = ongoingSort && ongoingSort.value ? ongoingSort.value : 'newest';
+
+      let rows = allOrders.filter(o => {
+        if (filter === 'ONGOING') {
+          if (o.status === 'delivered' || o.status === 'cancelled') return false;
+        } else if (filter !== 'ALL' && o.status !== filter) {
+          return false;
+        }
+        if (!query) return true;
+        const driverName = (o.driver && o.driver.name) || '';
+        const haystack = [o.id, o.customer, o.phone, o.location, driverName, o.status, o.pickupPin]
+          .filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(query);
+      });
+
+      rows = rows.slice().sort((a, b) => {
+        if (sort === 'total') return (b.total || 0) - (a.total || 0);
+        const ta = new Date(a.createdAt || 0).getTime();
+        const tb = new Date(b.createdAt || 0).getTime();
+        return sort === 'oldest' ? ta - tb : tb - ta;
+      });
+
+      if (rows.length === 0) {
+        return `<tr><td colspan="6" style="text-align:center; color:var(--muted); padding:30px;">No orders match this filter yet.</td></tr>`;
+      }
+
+      const findDriver = (order) => {
+        if (order.driver && order.driver.phone) return order.driver;
+        const name = order.driver && order.driver.name;
+        if (!name) return null;
+        return (liveDrivers || []).find(d => (d.name || `${d.fname || ''} ${d.lname || ''}`).trim().toLowerCase() === name.toLowerCase()) || order.driver;
+      };
+
+      return rows.map(o => {
+        const itemsSummary = o.items && o.items.length
+          ? o.items.map(i => `${i.quantity}× ${i.name}${i.noodle ? ` (${i.noodle})` : ''}`).join('<br>')
+          : 'Noodles';
+        const custTel = formatTelHref(o.phone);
+        const driver = findDriver(o);
+        const driverPhone = resolveDriverPhone(o) || (driver && driver.phone) || '';
+        const driverTel = driverPhone ? formatTelHref(driverPhone) : '';
+        const driverName = driver && driver.name ? driver.name : 'Unassigned';
+        const photo = driver && driver.photo ? driver.photo : null;
+        const selected = selectedOrderId === o.id ? 'background:#f7f1e2; box-shadow:inset 3px 0 0 var(--orange);' : '';
+        const receiptTag = o.momoReceipt
+          ? `<br><small style="color:${o.momoReceipt.verified ? '#166534' : '#92400e'}; font-weight:700;">${o.momoReceipt.verified ? '✅ MoMo verified' : '⏳ MoMo pending'}</small>`
+          : '';
+
+        return `
+          <tr class="order-row" data-id="${o.id}" style="cursor:pointer; ${selected}">
+            <td>
+              <strong>${o.id}</strong><br>
+              <span style="font-family:monospace; font-size:0.75rem; color:#d97706; background:#fef3c7; padding:1px 6px; border-radius:4px;">PIN ${o.pickupPin || '—'}</span>
+              <br><small style="color:var(--muted);">${o.createdAt ? new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</small>
+            </td>
+            <td>
+              <strong>${o.customer || 'Customer'}</strong><br>
+              <small>${o.phone || 'no phone'}</small><br>
+              <small style="color:var(--muted);">${o.location || 'Adabraka'}</small>
+            </td>
+            <td><small>${itemsSummary}</small><br><strong>GH₵${o.total || 0}</strong>${receiptTag}</td>
+            <td><span class="badge badge-${o.status}">${String(o.status || '').toUpperCase()}</span></td>
+            <td>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="roster-photo" style="width:30px;height:30px;font-size:0.9rem;border-width:1px;">
+                  ${photo ? `<img src="${photo}" alt="${driverName}">` : '🛵'}
+                </span>
+                <div>
+                  <div style="font-size:0.82rem; font-weight:700;">${driverName}</div>
+                  <small style="color:var(--muted);">${driverPhone || 'no phone yet'}</small>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div style="display:flex; flex-direction:column; gap:4px;">
+                ${custTel
+                  ? `<a class="btn btn-outline btn-sm" href="${custTel}" title="Call ${o.customer} on ${o.phone}">📞 Customer</a>`
+                  : `<span style="font-size:0.75rem;color:var(--muted);">No customer phone</span>`}
+                ${driverTel
+                  ? `<a class="btn btn-orange btn-sm" href="${driverTel}" title="Call ${driverName} on ${driverPhone}">📞 Rider</a>`
+                  : `<span style="font-size:0.75rem;color:var(--muted);">No rider phone</span>`}
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderRecordsTable() {
+      const orders = getOrders();
+      const query = (recordSearch.value || '').trim().toLowerCase();
+      const statusFilter = recordFilterStatus.value;
+
+      const filtered = orders.filter(o => {
+        const matchesQuery = !query ||
+          o.id.toLowerCase().includes(query) ||
+          o.customer.toLowerCase().includes(query) ||
+          o.phone.toLowerCase().includes(query) ||
+          (o.location && o.location.toLowerCase().includes(query));
+
+        const matchesStatus = statusFilter === 'ALL' || o.status === statusFilter;
+        return matchesQuery && matchesStatus;
+      });
+
+      if (filtered.length === 0) {
+        allRecordsTableBody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--muted); padding:30px;">No matching real order records found.</td></tr>`;
+        return;
+      }
+
+      allRecordsTableBody.innerHTML = filtered.map(o => {
+        const itemsSummary = o.items ? o.items.map(i => `${i.name} (${i.noodle}) x${i.quantity}`).join(', ') : 'Noodles';
+        const sessionInfo = `Session #${o.sessionNumber || 1}`;
+
+        return `
+          <tr>
+            <td><strong>${o.id}</strong><br><span style="font-family:monospace; font-size:0.75rem; color:#d97706; background:#fef3c7; padding:1px 6px; border-radius:4px;">PIN: ${o.pickupPin || '—'}</span></td>
+            <td><small>${new Date(o.createdAt).toLocaleString([], { dateStyle:'short', timeStyle:'short' })}</small></td>
+            <td><strong>${o.customer}</strong></td>
+            <td>${o.phone}</td>
+            <td><small>${o.fulfilment} · ${o.location || 'Adabraka'}</small></td>
+            <td><small>${itemsSummary}</small></td>
+            <td><strong>GH₵${o.total}</strong></td>
+            <td>${o.driver ? o.driver.name : '<span style="color:var(--muted);">—</span>'}</td>
+            <td><span class="badge badge-${o.status}">${o.status.toUpperCase()}</span></td>
+            <td><small style="color:var(--muted);">${sessionInfo}</small></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function populateInformDropdown() {
+      const orders = getOrders();
+      const currentSelected = informOrderSelect.value;
+      informOrderSelect.innerHTML = orders.map(o => `
+        <option value="${o.id}">
+          ${o.id} - ${o.customer} (${o.status.toUpperCase()} · GH₵${o.total})
+        </option>
+      `).join('');
+
+      if (currentSelected && orders.some(o => o.id === currentSelected)) {
+        informOrderSelect.value = currentSelected;
+      }
+      generateInformMessage();
+    }
+
+    let activeTemplate = 'enroute';
+    function generateInformMessage() {
+      const orderId = informOrderSelect.value;
+      const order = getOrderById(orderId);
+      if (!order) {
+        informMessagePreview.textContent = "Select an order to generate notification message.";
+        return;
+      }
+
+      const note = informCustomNote.value.trim();
+      const driverName = order.driver ? order.driver.name : "our YEBS delivery rider";
+      const driverPhone = resolveDriverPhone(order) || "the number shown on your live tracking page";
+      const trackingUrl = `${window.location.origin}${window.location.pathname.replace(/admin\.html.*$/, 'index.html')}?track=${order.id}`;
+
+      let msg = "";
+      if (activeTemplate === 'confirmed') {
+        msg = `Hello ${order.customer}! 🍜\n\nYour YEBS Noodles order #${order.id} has been CONFIRMED and is now being freshly prepared in our kitchen.\n\nItems: ${order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}\nTotal: GH₵${order.total}\n\nWe will update you as soon as your delivery driver hits the road!`;
+      } else if (activeTemplate === 'enroute') {
+        msg = `Hello ${order.customer}! 🛵\n\nYour YEBS Noodles order #${order.id} is now EN ROUTE!\n\nDriver: ${driverName} (${driverPhone})\nDelivery to: ${order.location}\n${note ? `Note: ${note}\n` : ''}\n👉 View LIVE GPS TRACKING of your driver here just like Bolt/Yango:\n${trackingUrl}\n\nEnjoy your meal!`;
+      } else if (activeTemplate === 'arrived') {
+        msg = `Hello ${order.customer}! 📍\n\nYour YEBS delivery rider (${driverName}) has ARRIVED at your location with your hot noodles!\n\nPlease meet the driver or confirm delivery. Call rider: ${driverPhone}`;
+      } else if (activeTemplate === 'delivered') {
+        msg = `Thank you ${order.customer}! 🎉\n\nYour YEBS Noodles order #${order.id} has been DELIVERED successfully.\n\nWe hope you love every bite of The Standard of Delicacy! Rate us or order again anytime: 055 910 3452.`;
+      }
+
+      informMessagePreview.textContent = msg;
+      informWhatsAppLink.href = formatWhatsAppUrl(order.phone, msg);
+    }
+
+    function updateMapMarkers(ongoingOrders) {
+      initMap();
+      if (!map || !markersLayer) {
+        if (adminMapFallback) {
+          adminMapFallback.style.display = 'inline';
+          adminMapFallback.textContent = ' · Map unavailable — open the kitchen location in Google Maps instead.';
+        }
+        return;
+      }
+      if (adminMapFallback) adminMapFallback.style.display = 'none';
+      markersLayer.clearLayers();
+
+      ongoingOrders.forEach(o => {
+        if (o.mapPin && typeof o.mapPin.lat === 'number') {
+          const custIcon = L.divIcon({
+            html: `<div style="background:#173d30; color:white; width:28px; height:28px; border-radius:50%; display:grid; place-items:center; border:2px solid white; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,0.3);">📍</div>`,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+          });
+          L.marker([o.mapPin.lat, o.mapPin.lng], { icon: custIcon })
+            .bindPopup(`<b>${o.customer}</b><br>${o.location || ''}<br>Status: ${String(o.status || '').toUpperCase()}`)
+            .addTo(markersLayer);
+        }
+
+        if (o.driver && o.driver.currentLocation) {
+          const driverIcon = L.divIcon({
+            html: `<div style="background:#e57a45; color:white; width:30px; height:30px; border-radius:50%; display:grid; place-items:center; border:2px solid white; font-size:15px; box-shadow:0 2px 8px rgba(0,0,0,0.3);">🛵</div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+          });
+          L.marker([o.driver.currentLocation.lat, o.driver.currentLocation.lng], { icon: driverIcon })
+            .bindPopup(`<b>Driver: ${o.driver.name}</b><br>${o.driver.vehicle || ''}<br>Order: ${o.id}<br>${o.driver.statusText || 'En route'}`)
+            .addTo(markersLayer);
+        }
+      });
+      (liveDrivers || []).forEach(d => {
+        if (d.lat && d.lng && !isDriverOffMap(d)) {
+          L.circleMarker([d.lat, d.lng], {
+            radius: 9,
+            color: '#173d30',
+            weight: 2,
+            fillColor: '#22c55e',
+            fillOpacity: 0.9
+          }).bindPopup(`<b>${d.name || 'Rider'}</b><br>${d.vehicle || ''}<br>${d.phone || ''}`).addTo(markersLayer);
+        }
+      });
+    }
+
+    function isDriverOffMap(driver) {
+      return !isDriverOnline(driver);
+    }
+
+    function refreshActionPanel() {
+      const driverSelect = document.getElementById('actionDriverSelect');
+      const summary = document.getElementById('actionSelectedSummary');
+      const callCust = document.getElementById('actionCallCustomerBtn');
+      const callDrv = document.getElementById('actionCallDriverBtn');
+      const etaText = document.getElementById('actionEtaText');
+      if (!driverSelect || !summary || !callCust || !callDrv) return;
+
+      const drivers = (liveDrivers && liveDrivers.length) ? liveDrivers : getDispatchDrivers();
+      driverSelect.innerHTML = `<option value="">— Choose rider —</option>` + drivers.map(d => {
+        const name = d.name || `${d.fname || ''} ${d.lname || ''}`.trim();
+        const state = isDriverOnline(d) ? 'online' : 'offline';
+        return `<option value="${name}">${name} · ${d.vehicle || 'Rider'} · ${d.phone || 'no phone'} (${state})</option>`;
+      }).join('');
+
+      const order = selectedOrderId ? getOrderById(selectedOrderId) : null;
+      if (!order) {
+        summary.textContent = 'No order selected. Click any row in the data panel.';
+        callCust.href = '#';
+        callCust.setAttribute('aria-disabled', 'true');
+        callCust.textContent = '📞 Customer';
+        callDrv.href = '#';
+        callDrv.setAttribute('aria-disabled', 'true');
+        callDrv.textContent = '📞 Rider';
+        etaText.textContent = 'ETA appears when a rider is on the map.';
+        if (actionPhoneHint) actionPhoneHint.textContent = 'Phone numbers appear once an order is selected.';
+        if (actionReceiptReview) { actionReceiptReview.classList.remove('active'); actionReceiptReview.innerHTML = ''; }
+        if (actionPaymentSummary) actionPaymentSummary.textContent = 'Select an order to see its payment state.';
+        if (actionVerifyMomoBtn) { actionVerifyMomoBtn.disabled = true; actionVerifyMomoBtn.textContent = '✅ Approve payment'; }
+        if (actionRejectPaymentBtn) { actionRejectPaymentBtn.disabled = true; }
+        return;
+      }
+
+      const driverName = order.driver && order.driver.name ? order.driver.name : 'Unassigned';
+      const driverPhone = resolveDriverPhone(order) || '';
+      const customerPhone = order.phone || '';
+      summary.innerHTML = `
+        <strong>${order.id}</strong> · ${order.customer || 'Customer'}<br>
+        <span style="color:var(--muted);">PIN ${order.pickupPin || '—'} · ${String(order.status || '').toUpperCase()} · GH₵${order.total || 0}</span><br>
+        <span style="color:var(--muted);">Rider: ${driverName}</span>
+      `;
+
+      if (customerPhone) {
+        callCust.href = formatTelHref(customerPhone);
+        callCust.removeAttribute('aria-disabled');
+        callCust.textContent = `📞 ${customerPhone}`;
+        callCust.title = `Call ${order.customer || 'customer'} on ${customerPhone}`;
+      } else {
+        callCust.href = '#';
+        callCust.setAttribute('aria-disabled', 'true');
+        callCust.textContent = '📞 No customer phone';
+      }
+
+      if (driverPhone) {
+        callDrv.href = formatTelHref(driverPhone);
+        callDrv.removeAttribute('aria-disabled');
+        callDrv.textContent = `📞 ${driverPhone}`;
+        callDrv.title = `Call ${driverName} on ${driverPhone}`;
+      } else {
+        callDrv.href = '#';
+        callDrv.setAttribute('aria-disabled', 'true');
+        callDrv.textContent = '📞 No rider phone';
+      }
+
+      if (actionPhoneHint) {
+        actionPhoneHint.textContent = `Customer: ${customerPhone || 'not provided'} · Rider: ${driverPhone || 'not assigned yet'}`;
+      }
+
+      if (order.driver && order.driver.currentLocation && order.mapPin) {
+        const eta = estimateEtaMinutes(order.driver.currentLocation.lat, order.driver.currentLocation.lng, order.mapPin.lat, order.mapPin.lng);
+        etaText.textContent = `ETA to customer pin: ~${eta} mins · ${order.driver.vehicle || 'Rider'}`;
+      } else {
+        etaText.textContent = order.driver ? `${driverName} assigned. Waiting for live GPS.` : 'Assign a rider to start tracking.';
+      }
+      if (order.driver && order.driver.name) driverSelect.value = order.driver.name;
+
+      // Payment state — transparent, auto-verified, conflict-free.
+      const paid = order.paymentStatus === 'paid';
+      const review = order.paymentStatus === 'review';
+      const mode = order.paymentMode === 'cash' ? 'Cash on delivery' : 'Mobile Money';
+      if (actionPaymentSummary) {
+        const statusLabel = paid ? '✅ PAID' : (review ? '⚠️ REVIEW' : '⏳ UNPAID');
+        const statusColor = paid ? '#166534' : (review ? '#b45309' : '#92400e');
+        const when = order.paidAt ? new Date(order.paidAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '';
+        actionPaymentSummary.innerHTML = `
+          <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+            <strong style="color:${statusColor};">${statusLabel}</strong>
+            <span style="font-weight:800; color:var(--forest);">GH₵${Number(order.total || 0).toFixed(2)}</span>
+          </div>
+          <div style="margin-top:2px;">${mode} · ${order.payment || ''}</div>
+          <div style="margin-top:2px; font-family:ui-monospace,monospace;">Ref: ${order.paymentRef || order.id}${order.momoTransactionRef ? ` · Txn: ${order.momoTransactionRef}` : ''}</div>
+          ${order.momoAmount ? `<div style="margin-top:2px;">Amount received: GH₵${Number(order.momoAmount).toFixed(2)}</div>` : ''}
+          ${order.verificationMethod ? `<div style="margin-top:2px;">Verified by: ${order.verificationMethod}${when ? ` · ${when}` : ''}</div>` : ''}
+          ${review ? `<div style="margin-top:4px; color:#b45309;">Flagged for a quick check. The customer's order is still moving.</div>` : ''}
+        `;
+      }
+      if (actionVerifyMomoBtn) {
+        actionVerifyMomoBtn.disabled = paid;
+        actionVerifyMomoBtn.textContent = paid ? '✅ Payment already verified' : '✅ Approve payment';
+      }
+      if (actionRejectPaymentBtn) {
+        actionRejectPaymentBtn.disabled = !order.paymentStatus || order.paymentStatus === 'unpaid';
+        actionRejectPaymentBtn.textContent = '✖ Flag / reject';
+      }
+
+      // MoMo receipt reviewer (the proof itself)
+      if (actionReceiptReview) {
+        const receipt = order.momoReceipt;
+        if (receipt && receipt.image) {
+          actionReceiptReview.classList.add('active');
+          actionReceiptReview.innerHTML = `
+            <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+              <strong style="color:#166534;">MoMo proof ${receipt.verified ? 'verified ✅' : 'awaiting check'}</strong>
+              <span style="font-size:0.72rem; color:var(--muted);">${receipt.transactionRef ? `Ref: ${receipt.transactionRef}` : 'No ref given'}</span>
+            </div>
+            <img src="${receipt.image}" alt="MoMo receipt for ${order.id}">
+            <div style="display:flex; gap:6px; margin-top:8px;">
+              <button type="button" class="btn btn-success btn-sm" id="actionAcceptReceiptBtn" style="flex:1;">✅ Approve (paid)</button>
+              <button type="button" class="btn btn-outline btn-sm" id="actionRejectReceiptBtn" style="flex:1;">✖ Reject</button>
+            </div>
+          `;
+          const acceptBtn = document.getElementById('actionAcceptReceiptBtn');
+          const rejectBtn = document.getElementById('actionRejectReceiptBtn');
+          if (acceptBtn) acceptBtn.onclick = () => setReceiptVerification(order.id, true);
+          if (rejectBtn) rejectBtn.onclick = () => setReceiptVerification(order.id, false);
+        } else {
+          actionReceiptReview.classList.remove('active');
+          actionReceiptReview.innerHTML = '';
+        }
+      }
+    }
+
+    async function setReceiptVerification(orderId, verified) {
+      const order = getOrderById(orderId);
+      if (!order) return;
+      try {
+        await apiReviewPayment(orderId, verified, verified ? 'Admin approved proof' : 'Admin rejected proof');
+      } catch (e) {}
+      renderDashboard();
+      refreshActionPanel();
+      loadAuditLogs();
+    }
+
+    // Rider roster with live-captured photo, vehicle and real phone number
+    function renderRiderRoster() {
+      if (!adminRiderRoster) return;
+      const drivers = (liveDrivers && liveDrivers.length) ? liveDrivers : getDispatchDrivers();
+      if (!drivers.length) {
+        adminRiderRoster.innerHTML = `<div class="action-meta">No riders registered yet. Riders appear here after signing up in the Driver Portal.</div>`;
+        return;
+      }
+      adminRiderRoster.innerHTML = drivers.map(d => {
+        const name = d.name || `${d.fname || ''} ${d.lname || ''}`.trim() || 'YEBS Rider';
+        const phone = d.phone || '';
+        const online = isDriverOnline(d);
+        const tel = phone ? formatTelHref(phone) : '';
+        const wa = phone ? formatWhatsAppUrl(phone, `Hello ${name}, this is YEBS Noodles dispatch.`) : '';
+        return `
+          <div class="roster-card">
+            <div class="roster-photo">${d.photo ? `<img src="${d.photo}" alt="${name}">` : '🛵'}</div>
+            <div style="flex:1; min-width:0;">
+              <div class="roster-name">${name}</div>
+              <div class="roster-meta">
+                <span class="online-dot ${online ? '' : 'off' }"></span>${online ? 'Online' : 'Offline'}<br>
+                🛵 ${d.vehicle || 'Vehicle not set'}<br>
+                ${phone ? `📞 ${phone}` : '📞 No phone on file'}
+              </div>
+              <div class="roster-actions">
+                ${tel ? `<a class="btn btn-forest btn-sm" href="${tel}">📞 Call</a>` : `<span class="btn btn-outline btn-sm" aria-disabled="true" style="opacity:0.5;">No phone</span>`}
+                ${wa ? `<a class="btn btn-outline btn-sm" href="${wa}" target="_blank" rel="noopener">💬 WhatsApp</a>` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Event Handlers
+    ongoingTableBody.addEventListener('click', (e) => {
+      const row = e.target.closest('.order-row');
+      if (row) {
+        selectedOrderId = row.dataset.id;
+        renderDashboard();
+      }
+    });
+
+    document.getElementById('actionAssignDriverBtn').addEventListener('click', () => {
+      if (!selectedOrderId) return alert('Select an order in the data panel first.');
+      const driverName = document.getElementById('actionDriverSelect').value;
+      const driverObj = (liveDrivers.length ? liveDrivers : getDispatchDrivers()).find(d => (d.name || `${d.fname || ''} ${d.lname || ''}`.trim()) === driverName);
+      if (!driverObj) return alert('Choose a rider.');
+      updateOrderStatus(selectedOrderId, 'kitchen', {
+        driver: {
+          id: driverObj.id,
+          name: driverObj.name || driverName,
+          phone: driverObj.phone,
+          vehicle: driverObj.vehicle,
+          photo: driverObj.photo || null,
+          currentLocation: (driverObj.lat && driverObj.lng)
+            ? { lat: driverObj.lat, lng: driverObj.lng }
+            : { lat: RESTAURANT_COORDS.lat, lng: RESTAURANT_COORDS.lng }
+        }
+      });
+      renderDashboard();
+    });
+
+    document.querySelectorAll('.status-advance-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!selectedOrderId) return alert('Select an order first.');
+        updateOrderStatus(selectedOrderId, btn.dataset.status);
+        renderDashboard();
+      });
+    });
+
+    if (actionVerifyMomoBtn) {
+      actionVerifyMomoBtn.addEventListener('click', async () => {
+        if (!selectedOrderId) return alert('Select an order first.');
+        const order = getOrderById(selectedOrderId);
+        if (!order) return;
+        if (order.paymentStatus === 'paid') {
+          return alert(`${order.id} is already paid. No further action is needed.`);
+        }
+        if (!confirm(`Approve the payment for ${order.id} (GH₵${order.total})? This will mark the order paid.`)) return;
+        const res = await apiReviewPayment(selectedOrderId, true, 'Approved from action panel');
+        if (res && res.success) {
+          renderDashboard();
+          refreshActionPanel();
+          loadAuditLogs();
+        } else {
+          alert((res && res.message) || 'Could not approve the payment.');
+        }
+      });
+    }
+
+    if (actionRejectPaymentBtn) {
+      actionRejectPaymentBtn.addEventListener('click', async () => {
+        if (!selectedOrderId) return alert('Select an order first.');
+        const reason = prompt('Reason for flagging this payment (shown in the audit log):', 'Amount or transaction could not be confirmed');
+        if (reason === null) return;
+        const res = await apiReviewPayment(selectedOrderId, false, reason);
+        if (res && res.success) {
+          renderDashboard();
+          refreshActionPanel();
+          loadAuditLogs();
+        } else {
+          alert((res && res.message) || 'Could not flag the payment.');
+        }
+      });
+    }
+
+    if (momoSmsVerifyBtn) {
+      momoSmsVerifyBtn.addEventListener('click', async () => {
+        const sms = momoSmsInput ? momoSmsInput.value.trim() : '';
+        if (sms.length < 10) {
+          if (momoSmsStatus) { momoSmsStatus.textContent = 'Paste the full MoMo confirmation SMS first.'; momoSmsStatus.style.color = '#b45309'; }
+          return;
+        }
+        momoSmsVerifyBtn.disabled = true;
+        momoSmsVerifyBtn.textContent = 'Checking…';
+        try {
+          const res = await apiVerifyMomoSms(sms);
+          if (momoSmsStatus) {
+            momoSmsStatus.textContent = (res && res.message) || 'No result.';
+            momoSmsStatus.style.color = res && res.success ? '#166534' : (res && res.needsReview ? '#b45309' : '#b91c1c');
+          }
+          if (res && res.success) {
+            if (momoSmsInput) momoSmsInput.value = '';
+            renderDashboard();
+            refreshActionPanel();
+            loadAuditLogs();
+          }
+        } finally {
+          momoSmsVerifyBtn.disabled = false;
+          momoSmsVerifyBtn.textContent = '⚡ Auto-match & verify payment';
+        }
+      });
+    }
+
+    // ----------------------------------------------------
+    // Shared pickup point (reflects on every portal's map)
+    // ----------------------------------------------------
+    const PICKUP_PRESETS = {
+      "Circle Odo Rice Junction / VIP Station": { lat: 5.5612, lng: -0.2155 },
+      "Adabraka Police Station Bus Stop": { lat: 5.5580, lng: -0.2105 },
+      "Accra Ridge Hospital Main Gate": { lat: 5.5628, lng: -0.2035 },
+      "Efex Hotel, Adabraka (YEBS Kitchen)": { lat: 5.56246, lng: -0.21289 },
+      "Osu Danquah Circle": { lat: 5.5600, lng: -0.1820 },
+      "Kaneshie Market": { lat: 5.5690, lng: -0.2450 }
+    };
+    let pickupDraftMarker = null;
+    let pickupDraft = null;
+
+    function fillPickupForm(point) {
+      if (!point) return;
+      if (adminPickupName) adminPickupName.value = point.name || '';
+      if (adminPickupLat) adminPickupLat.value = Number(point.lat).toFixed(6);
+      if (adminPickupLng) adminPickupLng.value = Number(point.lng).toFixed(6);
+      if (adminPickupStatus) {
+        adminPickupStatus.textContent = `Current shared pin: ${point.name} (${Number(point.lat).toFixed(5)}, ${Number(point.lng).toFixed(5)})`;
+        adminPickupStatus.style.color = 'var(--muted)';
+      }
+    }
+
+    function placePickupMarker(lat, lng, name) {
+      if (!map || !L) return;
+      const icon = L.divIcon({
+        html: `<div style="background:#e57a45;color:#fff;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;border:3px solid white;box-shadow:0 4px 14px rgba(0,0,0,0.35);font-size:18px;">📍</div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18]
+      });
+      if (!pickupDraftMarker) {
+        pickupDraftMarker = L.marker([lat, lng], { icon, draggable: true }).addTo(map);
+        pickupDraftMarker.on('dragend', () => {
+          const pos = pickupDraftMarker.getLatLng();
+          pickupDraft = { lat: pos.lat, lng: pos.lng };
+          if (adminPickupLat) adminPickupLat.value = pos.lat.toFixed(6);
+          if (adminPickupLng) adminPickupLng.value = pos.lng.toFixed(6);
+          if (adminPickupStatus) adminPickupStatus.textContent = 'Pin moved. Press "Save & sync to all maps" to publish it.';
+        });
+      } else {
+        pickupDraftMarker.setLatLng([lat, lng]);
+      }
+      pickupDraftMarker.bindPopup(`<b>Pickup point</b><br>${name || 'Selected location'}`);
+      pickupDraftMarker.setZIndexOffset(900);
+    }
+
+    async function loadSharedPickupPoint() {
+      const session = await apiFetchSession();
+      if (session && session.pickupPoint) {
+        fillPickupForm(session.pickupPoint);
+        placePickupMarker(session.pickupPoint.lat, session.pickupPoint.lng, session.pickupPoint.name);
+      }
+    }
+
+    if (adminPickupPreset) {
+      adminPickupPreset.addEventListener('change', () => {
+        const name = adminPickupPreset.value;
+        if (!name) return;
+        const coords = PICKUP_PRESETS[name];
+        if (adminPickupName) adminPickupName.value = name;
+        if (coords) {
+          pickupDraft = coords;
+          if (adminPickupLat) adminPickupLat.value = coords.lat.toFixed(6);
+          if (adminPickupLng) adminPickupLng.value = coords.lng.toFixed(6);
+          placePickupMarker(coords.lat, coords.lng, name);
+          if (map) map.setView([coords.lat, coords.lng], Math.max(map.getZoom(), 14));
+        }
+        if (adminPickupStatus) adminPickupStatus.textContent = 'Press "Save & sync to all maps" to publish this point.';
+      });
+    }
+
+    if (adminPickupUseGpsBtn) {
+      adminPickupUseGpsBtn.addEventListener('click', () => {
+        if (!navigator.geolocation) {
+          if (adminPickupStatus) adminPickupStatus.textContent = 'This browser cannot read GPS. Type the coordinates or click the map.';
+          return;
+        }
+        if (adminPickupStatus) adminPickupStatus.textContent = 'Getting your GPS pin…';
+        navigator.geolocation.getCurrentPosition(pos => {
+          pickupDraft = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          if (adminPickupLat) adminPickupLat.value = pos.coords.latitude.toFixed(6);
+          if (adminPickupLng) adminPickupLng.value = pos.coords.longitude.toFixed(6);
+          placePickupMarker(pickupDraft.lat, pickupDraft.lng, adminPickupName ? adminPickupName.value : 'My GPS pin');
+          if (adminPickupStatus) adminPickupStatus.textContent = 'GPS pin captured. Press "Save & sync to all maps".';
+          if (map) map.setView([pickupDraft.lat, pickupDraft.lng], Math.max(map.getZoom(), 15));
+        }, () => {
+          if (adminPickupStatus) adminPickupStatus.textContent = 'Could not read GPS. Type coordinates or click the map instead.';
+        }, { enableHighAccuracy: true, timeout: 9000 });
+      });
+    }
+
+    if (adminPickupSaveBtn) {
+      adminPickupSaveBtn.addEventListener('click', async () => {
+        const name = adminPickupName ? adminPickupName.value.trim() : '';
+        const lat = adminPickupLat && adminPickupLat.value !== '' ? Number(adminPickupLat.value) : (pickupDraft ? pickupDraft.lat : null);
+        const lng = adminPickupLng && adminPickupLng.value !== '' ? Number(adminPickupLng.value) : (pickupDraft ? pickupDraft.lng : null);
+        if (!name) {
+          if (adminPickupStatus) { adminPickupStatus.textContent = 'Give the pickup point a name first.'; adminPickupStatus.style.color = '#b91c1c'; }
+          return;
+        }
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          if (adminPickupStatus) { adminPickupStatus.textContent = 'Choose a landmark, click the map, or enter coordinates.'; adminPickupStatus.style.color = '#b91c1c'; }
+          return;
+        }
+        adminPickupSaveBtn.disabled = true;
+        adminPickupSaveBtn.textContent = 'Saving…';
+        try {
+          const res = await apiSetPickupPoint(name, { lat, lng }, name);
+          if (res && res.success) {
+            fillPickupForm(res.pickupPoint);
+            placePickupMarker(res.pickupPoint.lat, res.pickupPoint.lng, res.pickupPoint.name);
+            if (map) map.setView([res.pickupPoint.lat, res.pickupPoint.lng], Math.max(map.getZoom(), 14));
+            if (adminPickupStatus) {
+              adminPickupStatus.textContent = `✅ Saved and synced: ${res.pickupPoint.name}. Customer and rider maps update automatically.`;
+              adminPickupStatus.style.color = '#166534';
+            }
+            loadAuditLogs();
+          } else {
+            if (adminPickupStatus) {
+              adminPickupStatus.textContent = (res && res.message) || 'Could not save the pickup point.';
+              adminPickupStatus.style.color = '#b91c1c';
+            }
+          }
+        } finally {
+          adminPickupSaveBtn.disabled = false;
+          adminPickupSaveBtn.textContent = '💾 Save & sync to all maps';
+        }
+      });
+    }
+
+    document.querySelectorAll('.inform-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeTemplate = btn.dataset.template;
+        generateInformMessage();
+      });
+    });
+
+    // Keep the pickup pin + payment states in step with other portals.
+    setInterval(() => {
+      if (!checkAdminAuth()) return;
+      if (selectedOrderId) {
+        const order = getOrderById(selectedOrderId);
+        if (order) refreshActionPanel();
+      }
+    }, 7000);
+
+    informOrderSelect.addEventListener('change', generateInformMessage);
+    informCustomNote.addEventListener('input', generateInformMessage);
+
+    document.getElementById('copyMessageBtn').addEventListener('click', () => {
+      navigator.clipboard.writeText(informMessagePreview.textContent);
+      alert("Notification message copied to clipboard!");
+    });
+
+    recordSearch.addEventListener('input', renderRecordsTable);
+    recordFilterStatus.addEventListener('change', renderRecordsTable);
+
+    exportCsvBtn.addEventListener('click', () => {
+      const orders = getOrders();
+      const headers = ["Order ID", "Date", "Customer", "Phone", "Fulfilment", "Address", "Total (GHS)", "Status", "Driver"];
+      const rows = orders.map(o => [
+        o.id,
+        new Date(o.createdAt).toLocaleString(),
+        `"${o.customer.replace(/"/g, '""')}"`,
+        o.phone,
+        o.fulfilment,
+        `"${(o.location || '').replace(/"/g, '""')}"`,
+        o.total,
+        o.status,
+        `"${(o.driver ? o.driver.name : '').replace(/"/g, '""')}"`
+      ]);
+      const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `YEBS_Noodles_Orders_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+
+    document.getElementById('refreshOngoingBtn').addEventListener('click', () => {
+      renderDashboard();
+      refreshDrivers();
+    });
+
+    if (ongoingSearch) ongoingSearch.addEventListener('input', () => {
+      ongoingTableBody.innerHTML = buildOngoingRows(getOrders());
+    });
+    if (ongoingFilterStatus) ongoingFilterStatus.addEventListener('change', () => {
+      ongoingTableBody.innerHTML = buildOngoingRows(getOrders());
+    });
+    if (ongoingSort) ongoingSort.addEventListener('change', () => {
+      ongoingTableBody.innerHTML = buildOngoingRows(getOrders());
+    });
+    if (refreshRidersBtn) refreshRidersBtn.addEventListener('click', refreshDrivers);
+
+    onSyncEvent((evt) => {
+      if (!sessionStorage.getItem('yebs_admin_token')) return;
+      renderDashboard();
+      if (evt && evt.type === "MENU_UPDATED") {
+        renderFoodMenuTab();
+      }
+    });
+
+    // Cross-device sync: pull orders and riders created on other phones/browsers.
+    startLiveOrderSync(() => {
+      if (!sessionStorage.getItem('yebs_admin_token')) return;
+      renderDashboard();
+    }, 5000);
+
+    setInterval(() => {
+      if (!sessionStorage.getItem('yebs_admin_token')) return;
+      refreshDrivers();
+    }, 15000);
+
+    // ----------------------------------------------------
+    // Admin Food Cards & Poster Template Manager Engine
+    // ----------------------------------------------------
+    const adminMenuCardsContainer = document.getElementById('adminMenuCardsContainer');
+    const adminSaveAllMenuBtn = document.getElementById('adminSaveAllMenuBtn');
+    const adminResetMenuBtn = document.getElementById('adminResetMenuBtn');
+    const adminMenuFeedback = document.getElementById('adminMenuFeedback');
+
+    const LOCAL_IMAGES_LIST = [
+      { file: "img_food_3.jpg", label: "img_food_3.jpg — Sliced Sausage & Veggies (15 Cedis default)" },
+      { file: "img_food_2.jpg", label: "img_food_2.jpg — Sunny Fried Egg on Noodles (20 Cedis default)" },
+      { file: "img_food_1.jpg", label: "img_food_1.jpg — Chicken Drumstick & Egg Bowl (30 Cedis default)" },
+      { file: "ghana_spag_chicken.jpg", label: "ghana_spag_chicken.jpg — Golden Chicken Feast (40 Cedis default)" },
+      { file: "img_food_4.jpg", label: "img_food_4.jpg — Multi-Plate Big Feast (60 Cedis default)" },
+      { file: "img_menu_poster.jpg", label: "img_menu_poster.jpg — Official Poster Graphic" },
+      { file: "food_photo.png", label: "food_photo.png — YEBS Signature Dish" }
+    ];
+
+    function showMenuFeedback(msg, isSuccess = true) {
+      if (!adminMenuFeedback) return;
+      adminMenuFeedback.style.display = 'block';
+      adminMenuFeedback.style.background = isSuccess ? '#f0fdf4' : '#fef2f2';
+      adminMenuFeedback.style.border = isSuccess ? '1.5px solid #86efac' : '1.5px solid #fecaca';
+      adminMenuFeedback.style.color = isSuccess ? '#166534' : '#b91c1c';
+      adminMenuFeedback.textContent = msg;
+      setTimeout(() => {
+        adminMenuFeedback.style.display = 'none';
+      }, 4000);
+    }
+
+    function renderFoodMenuTab() {
+      if (!adminMenuCardsContainer) return;
+      const items = getMenuItems();
+
+      adminMenuCardsContainer.innerHTML = items.map((item, idx) => {
+        const formulaClean = (item.formula || item.desc || "").replace(/^=\s*/, '');
+        const templateStyle = item.template || "poster-capsule";
+
+        const imageOptions = LOCAL_IMAGES_LIST.map(img => `
+          <option value="${img.file}" ${item.image === img.file ? 'selected' : ''}>${img.label}</option>
+        `).join('');
+
+        return `
+          <div class="admin-menu-card-item" data-id="${item.id}" id="admin-card-item-${item.id}">
+            <!-- Card Live Poster Preview -->
+            <div style="background:#ffffff; border-bottom:1px solid var(--line);">
+              <div class="poster-capsule-bar" id="prev-bar-${item.id}">
+                <div class="poster-price-badge">
+                  <span class="poster-price-num" id="prev-price-${item.id}">${item.price}</span>
+                  <span class="poster-price-unit">CEDIS</span>
+                </div>
+                <div class="poster-capsule-info">
+                  <div class="poster-capsule-title" id="prev-title-${item.id}">${item.name}</div>
+                  <p class="poster-capsule-formula" id="prev-formula-${item.id}"><span class="eq">=</span> ${formulaClean}</p>
+                </div>
+              </div>
+
+              <div style="position:relative; height:180px; width:100%; overflow:hidden; background:#eee;">
+                <img src="${item.image}" alt="${item.name}" id="prev-img-${item.id}" style="width:100%; height:100%; object-fit:cover;">
+                <span style="position:absolute; bottom:10px; right:10px; background:rgba(17,43,33,0.9); color:var(--gold); border:1px solid var(--gold); font-size:0.7rem; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;" id="prev-tag-${item.id}">
+                  ${item.tag || item.badge || `${item.price} CEDIS`}
+                </span>
+              </div>
+            </div>
+
+            <!-- Card Edit Form -->
+            <div class="admin-card-edit-body">
+              <div class="admin-field-row">
+                <div>
+                  <label class="admin-edit-label">Price (Cedis):</label>
+                  <input type="number" class="admin-edit-input edit-price" data-id="${item.id}" value="${item.price}" min="1">
+                </div>
+                <div>
+                  <label class="admin-edit-label">Highlight Tag / Badge:</label>
+                  <input type="text" class="admin-edit-input edit-tag" data-id="${item.id}" value="${item.tag || item.badge || ''}" placeholder="e.g. Free Beta Malt">
+                </div>
+              </div>
+
+              <div>
+                <label class="admin-edit-label">Food Category / Title:</label>
+                <input type="text" class="admin-edit-input edit-name" data-id="${item.id}" value="${item.name}" placeholder="e.g. SPAGHETTI / INDOMIE">
+              </div>
+
+              <div>
+                <label class="admin-edit-label">Recipe Formula (Poster text):</label>
+                <textarea class="admin-edit-textarea edit-formula" data-id="${item.id}" rows="2" placeholder="e.g. Add scrambled egg + Cut half sausage...">${formulaClean}</textarea>
+              </div>
+
+              <div>
+                <label class="admin-edit-label">Choose Food Image:</label>
+                <select class="admin-edit-select edit-image-select" data-id="${item.id}">
+                  ${imageOptions}
+                </select>
+                <input type="text" class="admin-edit-input edit-image-custom" data-id="${item.id}" placeholder="Or custom image URL..." value="${!LOCAL_IMAGES_LIST.some(i => i.file === item.image) ? item.image : ''}" style="margin-top:6px; font-size:0.8rem;">
+              </div>
+
+              <div>
+                <label class="admin-edit-label">Card Template Theme:</label>
+                <select class="admin-edit-select edit-template" data-id="${item.id}">
+                  <option value="poster-capsule" ${templateStyle === 'poster-capsule' ? 'selected' : ''}>Poster Capsule Theme (Yellow Brush + Forest Pill)</option>
+                  <option value="modern-glass" ${templateStyle === 'modern-glass' ? 'selected' : ''}>Modern Glassmorphism Theme</option>
+                  <option value="street-classic" ${templateStyle === 'street-classic' ? 'selected' : ''}>Street Food Classic Theme</option>
+                </select>
+              </div>
+
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+                <span style="font-size:0.75rem; color:var(--muted); font-family:monospace;">ID: ${item.id}</span>
+                <button type="button" class="btn btn-forest btn-sm save-single-card-btn" data-id="${item.id}">
+                  💾 Update Card
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Wire live preview typing listeners
+      adminMenuCardsContainer.querySelectorAll('.admin-menu-card-item').forEach(cardEl => {
+        const id = cardEl.dataset.id;
+        const priceInput = cardEl.querySelector('.edit-price');
+        const nameInput = cardEl.querySelector('.edit-name');
+        const formulaInput = cardEl.querySelector('.edit-formula');
+        const tagInput = cardEl.querySelector('.edit-tag');
+        const imgSelect = cardEl.querySelector('.edit-image-select');
+        const imgCustom = cardEl.querySelector('.edit-image-custom');
+
+        const prevPrice = document.getElementById(`prev-price-${id}`);
+        const prevTitle = document.getElementById(`prev-title-${id}`);
+        const prevFormula = document.getElementById(`prev-formula-${id}`);
+        const prevTag = document.getElementById(`prev-tag-${id}`);
+        const prevImg = document.getElementById(`prev-img-${id}`);
+
+        priceInput.addEventListener('input', () => { if (prevPrice) prevPrice.textContent = priceInput.value; });
+        nameInput.addEventListener('input', () => { if (prevTitle) prevTitle.textContent = nameInput.value; });
+        formulaInput.addEventListener('input', () => { if (prevFormula) prevFormula.innerHTML = `<span class="eq">=</span> ${formulaInput.value}`; });
+        tagInput.addEventListener('input', () => { if (prevTag) prevTag.textContent = tagInput.value || `${priceInput.value} CEDIS`; });
+
+        imgSelect.addEventListener('change', () => {
+          if (prevImg) prevImg.src = imgSelect.value;
+        });
+        imgCustom.addEventListener('input', () => {
+          if (imgCustom.value.trim() && prevImg) prevImg.src = imgCustom.value.trim();
+        });
+
+        // Single Card Save
+        const saveBtn = cardEl.querySelector('.save-single-card-btn');
+        saveBtn.addEventListener('click', async () => {
+          const items = getMenuItems();
+          const target = items.find(m => m.id === id);
+          if (target) {
+            target.price = parseFloat(priceInput.value) || target.price;
+            target.name = nameInput.value.trim() || target.name;
+            target.formula = formulaInput.value.trim();
+            target.desc = `= ${target.formula}`;
+            target.tag = tagInput.value.trim();
+            target.badge = target.tag || `${target.price} CEDIS`;
+            target.image = imgCustom.value.trim() || imgSelect.value;
+            target.template = cardEl.querySelector('.edit-template').value;
+
+            saveMenuItems(items);
+            await apiSaveMenu(items);
+            showMenuFeedback(`✅ Card "${target.name} (${target.price} Cedis)" updated and broadcast live!`);
+          }
+        });
+      });
+    }
+
+    if (adminSaveAllMenuBtn) {
+      adminSaveAllMenuBtn.addEventListener('click', async () => {
+        const items = getMenuItems();
+        adminMenuCardsContainer.querySelectorAll('.admin-menu-card-item').forEach(cardEl => {
+          const id = cardEl.dataset.id;
+          const target = items.find(m => m.id === id);
+          if (target) {
+            target.price = parseFloat(cardEl.querySelector('.edit-price').value) || target.price;
+            target.name = cardEl.querySelector('.edit-name').value.trim() || target.name;
+            target.formula = cardEl.querySelector('.edit-formula').value.trim();
+            target.desc = `= ${target.formula}`;
+            target.tag = cardEl.querySelector('.edit-tag').value.trim();
+            target.badge = target.tag || `${target.price} CEDIS`;
+            target.image = cardEl.querySelector('.edit-image-custom').value.trim() || cardEl.querySelector('.edit-image-select').value;
+            target.template = cardEl.querySelector('.edit-template').value;
+          }
+        });
+
+        saveMenuItems(items);
+        await apiSaveMenu(items);
+        showMenuFeedback(`🎉 All 5 food cards saved to database and published live across the website!`);
+        renderFoodMenuTab();
+      });
+    }
+
+    if (adminResetMenuBtn) {
+      adminResetMenuBtn.addEventListener('click', async () => {
+        if (confirm("Reset all 5 menu cards back to the official poster defaults (15, 20, 30, 40, 60 Cedis)?")) {
+          await apiResetMenu();
+          renderFoodMenuTab();
+          showMenuFeedback("🔄 Menu restored to original poster specifications.");
+        }
+      });
+    }
+
+    // Initial fetch from server for Menu
+    apiFetchMenu().then(() => {
+      renderFoodMenuTab();
+    });
+
+    // ----------------------------------------------------
+    // Authentication Guard & Audit Logs Integration
+    // ----------------------------------------------------
+    const adminAuthModal = document.getElementById('adminAuthModal');
+    const adminLoginForm = document.getElementById('adminLoginForm');
+    const adminUsernameInput = document.getElementById('adminUsernameInput');
+    const adminPasswordInput = document.getElementById('adminPasswordInput');
+    const adminAuthError = document.getElementById('adminAuthError');
+    const adminUserBadge = document.getElementById('adminUserBadge');
+    const adminLogoutBtn = document.getElementById('adminLogoutBtn');
+    const auditLogsTableBody = document.getElementById('auditLogsTableBody');
+    const logSearchInput = document.getElementById('logSearchInput');
+    const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+
+    let cachedLogs = [];
+    const ADMIN_SESSION_MS = 12 * 60 * 60 * 1000;
+
+    function clearAdminSession() {
+      ['yebs_admin_token', 'yebs_admin_user', 'yebs_admin_login_at'].forEach(k => sessionStorage.removeItem(k));
+      ['yebs_admin_token_persist', 'yebs_admin_user_persist', 'yebs_admin_login_at_persist'].forEach(k => localStorage.removeItem(k));
+    }
+
+    function readAdminSession() {
+      let token = sessionStorage.getItem('yebs_admin_token');
+      let userRaw = sessionStorage.getItem('yebs_admin_user');
+      let loginAt = sessionStorage.getItem('yebs_admin_login_at');
+
+      // Restore a remembered session after a browser restart.
+      if ((!token || token === 'undefined') && localStorage.getItem('yebs_admin_token_persist')) {
+        token = localStorage.getItem('yebs_admin_token_persist');
+        userRaw = localStorage.getItem('yebs_admin_user_persist');
+        loginAt = localStorage.getItem('yebs_admin_login_at_persist');
+        sessionStorage.setItem('yebs_admin_token', token);
+        if (userRaw) sessionStorage.setItem('yebs_admin_user', userRaw);
+        if (loginAt) sessionStorage.setItem('yebs_admin_login_at', loginAt);
+      }
+
+      if (!token || token === 'undefined') return null;
+      const started = parseInt(loginAt || '0', 10);
+      if (started && (Date.now() - started) > ADMIN_SESSION_MS) return null;
+      return { token, userRaw };
+    }
+
+    function persistAdminSession(remember) {
+      if (!remember) return;
+      const token = sessionStorage.getItem('yebs_admin_token');
+      localStorage.setItem('yebs_admin_token_persist', token || '');
+      localStorage.setItem('yebs_admin_user_persist', sessionStorage.getItem('yebs_admin_user') || '{}');
+      localStorage.setItem('yebs_admin_login_at_persist', sessionStorage.getItem('yebs_admin_login_at') || Date.now().toString());
+    }
+
+    function checkAdminAuth() {
+      const session = readAdminSession();
+      if (!session) {
+        clearAdminSession();
+        document.body.classList.add('admin-locked');
+        if (adminAuthModal) adminAuthModal.style.display = 'flex';
+        if (adminUserBadge) adminUserBadge.style.display = 'none';
+        if (adminLogoutBtn) adminLogoutBtn.style.display = 'none';
+        return false;
+      }
+      document.body.classList.remove('admin-locked');
+      if (adminAuthModal) adminAuthModal.style.display = 'none';
+      if (adminUserBadge) adminUserBadge.style.display = 'inline-block';
+      if (adminLogoutBtn) adminLogoutBtn.style.display = 'inline-block';
+      if (session.userRaw) {
+        try {
+          const user = JSON.parse(session.userRaw);
+          adminUserBadge.textContent = `👤 ${user.username || 'admin'}`;
+        } catch(e) {}
+      }
+      return true;
+    }
+
+    function unlockDashboard() {
+      checkAdminAuth();
+      renderDashboard();
+      loadAuditLogs();
+      refreshDrivers();
+      setTimeout(() => { initMap(); if (map) map.invalidateSize(); }, 220);
+      // Load the shared pickup point as soon as the dashboard is unlocked.
+      setTimeout(() => { loadSharedPickupPoint(); }, 420);
+    }
+
+    const toggleAdminPasswordBtn = document.getElementById('toggleAdminPasswordBtn');
+    if (toggleAdminPasswordBtn) {
+      toggleAdminPasswordBtn.addEventListener('click', () => {
+        const showing = adminPasswordInput.type === 'text';
+        adminPasswordInput.type = showing ? 'password' : 'text';
+        toggleAdminPasswordBtn.textContent = showing ? 'Show' : 'Hide';
+      });
+    }
+
+    adminLoginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      adminAuthError.style.display = 'none';
+      const username = adminUsernameInput.value.trim();
+      const password = adminPasswordInput.value.trim();
+
+      if (!username || !password) {
+        adminAuthError.textContent = 'Enter both the admin username and password.';
+        adminAuthError.style.display = 'block';
+        return;
+      }
+
+      const btn = document.getElementById('adminLoginSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Verifying credentials...';
+
+      const res = await apiAdminLogin(username, password);
+      btn.disabled = false;
+      btn.textContent = '🔒 Secure Admin Login';
+
+      if (res.success) {
+        const remember = document.getElementById('adminRememberMe');
+        persistAdminSession(!!(remember && remember.checked));
+        adminPasswordInput.value = '';
+        unlockDashboard();
+      } else {
+        adminAuthError.textContent = res.error || 'Authentication failed. Check your admin credentials.';
+        adminAuthError.style.display = 'block';
+      }
+    });
+
+    adminLogoutBtn.addEventListener('click', () => {
+      if (confirm('Log out of YEBS Admin Dashboard?')) {
+        clearAdminSession();
+        if (map) { try { map.remove(); } catch (e) {} map = null; markersLayer = null; }
+        checkAdminAuth();
+      }
+    });
+
+    async function loadAuditLogs() {
+      if (!checkAdminAuth()) return;
+      try {
+        const logs = await apiFetchLogs();
+        cachedLogs = Array.isArray(logs) ? logs : [];
+        renderAuditLogs();
+      } catch(err) {
+        console.warn("Could not load logs", err);
+      }
+    }
+
+    function renderAuditLogs() {
+      if (!auditLogsTableBody) return;
+      const term = (logSearchInput ? logSearchInput.value : '').toLowerCase().trim();
+      const filtered = cachedLogs.filter(log => {
+        if (!term) return true;
+        return (log.action || '').toLowerCase().includes(term) ||
+               (log.actor || '').toLowerCase().includes(term) ||
+               (log.entity || '').toLowerCase().includes(term) ||
+               JSON.stringify(log.details || '').toLowerCase().includes(term);
+      });
+
+      if (filtered.length === 0) {
+        auditLogsTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:30px; color:var(--muted);">No matching audit logs found in database.</td></tr>`;
+        return;
+      }
+
+      auditLogsTableBody.innerHTML = filtered.map(log => {
+        const dateStr = new Date(log.timestamp).toLocaleString();
+        let actionColor = "#173d30";
+        let actionBg = "#e8f0ec";
+        if (log.action.includes("LOGIN")) { actionColor = "#2563eb"; actionBg = "#eff6ff"; }
+        if (log.action.includes("FAILED") || log.action.includes("ERROR")) { actionColor = "#dc2626"; actionBg = "#fef2f2"; }
+        if (log.action.includes("DELIVER") || log.action.includes("PIN")) { actionColor = "#16a34a"; actionBg = "#f0fdf4"; }
+
+        const detailsText = typeof log.details === 'object' ? JSON.stringify(log.details) : (log.details || '-');
+
+        return `
+          <tr>
+            <td style="font-family:monospace; font-size:0.8rem; white-space:nowrap;">${dateStr}</td>
+            <td><span class="log-badge" style="background:${actionBg}; color:${actionColor};">${log.action}</span></td>
+            <td><strong>${log.actor || 'SYSTEM'}</strong></td>
+            <td><code style="font-size:0.82rem;">${log.entity || '-'}</code></td>
+            <td style="font-size:0.82rem; color:var(--muted); max-width:320px; word-break:break-word;">${detailsText}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    if (logSearchInput) logSearchInput.addEventListener('input', renderAuditLogs);
+    if (refreshLogsBtn) refreshLogsBtn.addEventListener('click', loadAuditLogs);
+
+    async function refreshDrivers() {
+      if (!checkAdminAuth()) return;
+      liveDrivers = await apiFetchAllDrivers();
+      refreshActionPanel();
+      renderRiderRoster();
+    }
+
+    // Confirm a remembered token is still valid on this server (it may have
+    // expired, been signed with an old secret, or belong to a removed account).
+    async function validateAdminSessionOnServer() {
+      const session = readAdminSession();
+      if (!session) return false;
+      const info = await apiValidateSession('admin');
+      if (!info || info.role !== 'admin') {
+        clearAdminSession();
+        checkAdminAuth();
+        if (adminAuthError) {
+          adminAuthError.textContent = 'Your session expired. Sign in again to continue.';
+          adminAuthError.style.display = 'block';
+        }
+        return false;
+      }
+      // Keep the badge in step with the account the server just confirmed.
+      if (adminUserBadge && info.admin) {
+        adminUserBadge.textContent = `👤 ${info.admin.username || 'admin'}`;
+      }
+      return true;
+    }
+
+    // Initial Auth & Render — nothing renders while the gate is locked.
+    (async () => {
+      if (!checkAdminAuth()) {
+        updateSessionUI();
+        apiFetchMenu().then(() => renderFoodMenuTab());
+        return;
+      }
+      const valid = await validateAdminSessionOnServer();
+      if (!valid) {
+        updateSessionUI();
+        apiFetchMenu().then(() => renderFoodMenuTab());
+        return;
+      }
+      unlockDashboard();
+    })();
+
+    // ============================================================
+    // DRIVER MANAGEMENT TAB
+    // ============================================================
+    async function loadDriverManagement() {
+      if (!checkAdminAuth()) return;
+      const token = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
+      const all = await apiFetchAllDrivers();
+      const pending = all.filter(d => d.approvalStatus === 'pending' || (!d.approvalStatus && !d.approvedAt && !d.isActive));
+      const approved = all.filter(d => d.approvalStatus === 'approved' || (d.approvedAt && d.approvalStatus !== 'pending'));
+
+      const pendingGrid = document.getElementById('pendingDriversGrid');
+      const approvedGrid = document.getElementById('approvedDriversGrid');
+
+      if (pendingGrid) {
+        pendingGrid.innerHTML = pending.length === 0
+          ? `<div style="color:var(--muted); padding:16px; font-size:0.9rem;">✅ No pending approval requests.</div>`
+          : pending.map(d => `
+            <div class="roster-card" style="border-color:#fbbf24; background:#fffbeb;">
+              <div class="roster-photo" style="background:#d97706;">
+                ${d.photo ? `<img src="${d.photo}" alt="${d.name}">` : '🧑'}
+              </div>
+              <div style="flex:1;">
+                <div class="roster-name">${d.name || d.username}</div>
+                <div class="roster-meta">${d.phone || ''}<br>${d.vehicle || ''}</div>
+                <div class="roster-meta" style="color:#92400e; font-weight:700; margin-top:4px;">⏳ Awaiting Approval</div>
+                <div class="roster-actions">
+                  <button type="button" class="btn btn-success btn-sm approve-driver-btn" data-id="${d.id}" data-name="${d.name}">✅ Approve</button>
+                  <button type="button" class="btn btn-outline btn-sm reject-driver-btn" data-id="${d.id}" data-name="${d.name}" style="border-color:#dc2626; color:#dc2626;">✖ Reject</button>
+                </div>
+              </div>
+            </div>
+          `).join('');
+
+        pendingGrid.querySelectorAll('.approve-driver-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            const name = btn.dataset.name;
+            if (!confirm(`Approve ${name} as a YEBS driver?`)) return;
+            btn.disabled = true; btn.textContent = 'Approving…';
+            await fetch('/api/auth/driver/approve', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ driverId: id, approved: true })
+            });
+            loadDriverManagement();
+          });
+        });
+        pendingGrid.querySelectorAll('.reject-driver-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            const name = btn.dataset.name;
+            const reason = prompt(`Reason for rejecting ${name} (optional):`);
+            if (reason === null) return;
+            btn.disabled = true;
+            await fetch('/api/auth/driver/approve', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ driverId: id, approved: false, reason: reason || 'Not approved' })
+            });
+            loadDriverManagement();
+          });
+        });
+      }
+
+      if (approvedGrid) {
+        approvedGrid.innerHTML = approved.length === 0
+          ? `<div style="color:var(--muted); padding:16px;">No approved drivers yet.</div>`
+          : approved.map(d => `
+            <div class="roster-card">
+              <div class="roster-photo">
+                ${d.photo ? `<img src="${d.photo}" alt="${d.name}">` : '🛵'}
+              </div>
+              <div style="flex:1;">
+                <div class="roster-name"><span class="online-dot${d.isActive ? '' : ' off'}"></span>${d.name || d.username}</div>
+                <div class="roster-meta">${d.phone || ''}<br>${d.vehicle || ''}<br><span style="color:var(--muted);">Joined: ${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '?'}</span></div>
+                <div class="roster-actions">
+                  <button type="button" class="btn btn-outline btn-sm toggle-driver-btn" data-id="${d.id}" data-active="${d.isActive}">${d.isActive ? '⏸ Deactivate' : '▶ Activate'}</button>
+                  <button type="button" class="btn btn-sm remove-driver-btn" data-id="${d.id}" data-name="${d.name}" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca;">🗑 Remove</button>
+                </div>
+              </div>
+            </div>
+          `).join('');
+
+        approvedGrid.querySelectorAll('.toggle-driver-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            btn.disabled = true;
+            await fetch(`/api/drivers/${id}/toggle`, { method: 'PATCH', headers: { 'Authorization': `Bearer ${token}` } });
+            loadDriverManagement();
+          });
+        });
+        approvedGrid.querySelectorAll('.remove-driver-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            const name = btn.dataset.name;
+            if (!confirm(`Permanently remove ${name} from the system? This cannot be undone.`)) return;
+            btn.disabled = true;
+            await fetch(`/api/drivers/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+            loadDriverManagement();
+          });
+        });
+      }
+    }
+
+    const refreshDriversApprovalBtn = document.getElementById('refreshDriversApprovalBtn');
+    const refreshApprovedDriversBtn = document.getElementById('refreshApprovedDriversBtn');
+    if (refreshDriversApprovalBtn) refreshDriversApprovalBtn.addEventListener('click', loadDriverManagement);
+    if (refreshApprovedDriversBtn) refreshApprovedDriversBtn.addEventListener('click', loadDriverManagement);
+
+    // ============================================================
+    // DAILY REPORT TAB
+    // ============================================================
+    async function loadDailyReport(dateStr) {
+      if (!checkAdminAuth()) return;
+      const token = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
+      const url = `/api/reports/daily${dateStr ? `?date=${encodeURIComponent(dateStr)}` : ''}`;
+      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!res.ok) { alert('Could not load report.'); return; }
+      const json = await res.json();
+      const r = json.report;
+      document.getElementById('rptTotalOrders').textContent = r.summary.totalOrders;
+      document.getElementById('rptDelivered').textContent = r.summary.delivered;
+      document.getElementById('rptIncome').textContent = `GH₵${r.summary.totalIncome.toFixed(2)}`;
+      document.getElementById('rptMomoIncome').textContent = `GH₵${r.summary.momoIncome.toFixed(2)}`;
+      document.getElementById('rptCashIncome').textContent = `GH₵${r.summary.cashIncome.toFixed(2)}`;
+      document.getElementById('rptUnpaid').textContent = r.summary.unpaidOrders;
+      document.getElementById('dailyReportSummary').style.display = 'block';
+
+      const tbody = document.getElementById('dailyReportTableBody');
+      tbody.innerHTML = r.orders.length === 0
+        ? `<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--muted);">No orders for this day.</td></tr>`
+        : r.orders.map(o => `<tr>
+            <td><strong>${o.id}</strong></td>
+            <td style="font-family:monospace;">${o.pin}</td>
+            <td>${o.customer}</td>
+            <td style="font-size:0.8rem;">${o.items}</td>
+            <td>GH₵${o.total}</td>
+            <td><span style="font-size:0.75rem;background:${o.paymentMode==='momo'?'#eff6ff':'#fef3c7'};padding:2px 6px;border-radius:4px;">${o.paymentMode}</span></td>
+            <td><span class="badge badge-${o.status}">${o.status}</span></td>
+            <td>${o.driver || '—'}</td>
+            <td style="font-size:0.78rem;white-space:nowrap;">${o.createdAt ? new Date(o.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''}</td>
+          </tr>`).join('');
+      document.getElementById('dailyReportTableWrap').style.display = 'block';
+
+      const atbody = document.getElementById('dailyActivityTableBody');
+      atbody.innerHTML = r.activityLog.length === 0
+        ? `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--muted);">No activity recorded.</td></tr>`
+        : r.activityLog.map(l => `<tr>
+            <td style="font-size:0.78rem;white-space:nowrap;">${new Date(l.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</td>
+            <td><span class="log-badge" style="background:#e8f0ec;color:#173d30;">${l.action}</span></td>
+            <td>${l.actor}</td>
+            <td style="font-size:0.78rem;color:var(--muted);">${typeof l.details==='object'?JSON.stringify(l.details):(l.details||'')}</td>
+          </tr>`).join('');
+      document.getElementById('dailyReportActivityWrap').style.display = 'block';
+
+      const csvBtn = document.getElementById('exportDailyReportCsvBtn');
+      if (csvBtn) csvBtn.href = `/api/reports/daily/csv${dateStr ? `?date=${encodeURIComponent(dateStr)}` : ''}`;
+    }
+
+    const generateReportBtn = document.getElementById('generateReportBtn');
+    const closeOfDayBtn = document.getElementById('closeOfDayBtn');
+    const reportDatePicker = document.getElementById('reportDatePicker');
+
+    if (reportDatePicker) {
+      const today = new Date().toISOString().split('T')[0];
+      reportDatePicker.value = today;
+    }
+
+    if (generateReportBtn) generateReportBtn.addEventListener('click', () => {
+      loadDailyReport(reportDatePicker ? reportDatePicker.value : '');
+    });
+
+    if (closeOfDayBtn) closeOfDayBtn.addEventListener('click', async () => {
+      if (!confirm('Close the day and generate today\'s final audit report?')) return;
+      const token = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
+      const res = await fetch('/api/reports/close-of-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ date: reportDatePicker ? reportDatePicker.value : '' })
+      });
+      const j = await res.json();
+      if (j.success) {
+        alert(`Day closed! Report generated for ${j.report.reportDate}. ${j.report.summary.delivered} deliveries · GH₵${j.report.summary.totalIncome} income.`);
+        loadDailyReport(reportDatePicker ? reportDatePicker.value : '');
+      } else {
+        alert('Failed to close day: ' + (j.message || 'Server error'));
+      }
+    });
+
+    // ============================================================
+    // SETTINGS TAB
+    // ============================================================
+    const adminSettingsForm = document.getElementById('adminSettingsForm');
+    const settingsFeedback = document.getElementById('settingsFeedback');
+
+    function showSettingsFeedback(msg, ok) {
+      if (!settingsFeedback) return;
+      settingsFeedback.style.display = 'block';
+      settingsFeedback.style.background = ok ? '#f0fdf4' : '#fef2f2';
+      settingsFeedback.style.border = ok ? '1.5px solid #86efac' : '1.5px solid #fecaca';
+      settingsFeedback.style.color = ok ? '#166534' : '#b91c1c';
+      settingsFeedback.textContent = msg;
+    }
+
+    if (adminSettingsForm) {
+      adminSettingsForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const currentPwd = document.getElementById('settingsCurrentPwd').value;
+        const newUsername = document.getElementById('settingsNewUsername').value.trim();
+        const newPwd = document.getElementById('settingsNewPwd').value;
+        const confirmPwd = document.getElementById('settingsConfirmPwd').value;
+
+        if (newPwd && newPwd !== confirmPwd) {
+          showSettingsFeedback('New passwords do not match.', false); return;
+        }
+        if (newPwd && newPwd.length < 8) {
+          showSettingsFeedback('Password must be at least 8 characters.', false); return;
+        }
+        const token = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
+        const res = await fetch('/api/admin/settings/credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ currentPassword: currentPwd, newUsername: newUsername || undefined, newPassword: newPwd || undefined })
+        });
+        const json = await res.json();
+        if (json.success) {
+          showSettingsFeedback(json.message || 'Credentials updated.', true);
+          // Update stored token with the refreshed one
+          if (json.token) {
+            sessionStorage.setItem('yebs_admin_token', json.token);
+            localStorage.setItem('yebs_admin_token_persist', json.token);
+          }
+          if (json.admin && adminUserBadge) adminUserBadge.textContent = `👤 ${json.admin.username}`;
+          adminSettingsForm.reset();
+        } else {
+          showSettingsFeedback(json.message || 'Failed to update credentials.', false);
+        }
+      });
+    }
+
+    // Password show/hide toggles for settings form
+    document.querySelectorAll('.toggle-pwd-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const inp = document.getElementById(btn.dataset.target);
+        if (!inp) return;
+        const showing = inp.type === 'text';
+        inp.type = showing ? 'password' : 'text';
+        btn.textContent = showing ? 'Show' : 'Hide';
+      });
+    });
+
+    // Load driver management when that tab is opened
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        if (tab === 'driversTab') loadDriverManagement();
+        if (tab === 'reportTab') loadDailyReport(reportDatePicker ? reportDatePicker.value : '');
+        if (tab === 'settingsTab') { /* already reactive */ }
+      });
+    });
+  </script>
+</body>
+</html>

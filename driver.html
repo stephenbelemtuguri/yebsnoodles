@@ -1,0 +1,2191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173d30">
+  <link rel="manifest" href="manifest.json">
+  <title>YEBS Noodles | Driver Batch Dispatch & Pickup Point Verification</title>
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';">
+  <style>
+    :root {
+      --forest: #173d30;
+      --forest-dark: #0f2820;
+      --forest-card: #15382c;
+      --leaf: #52785b;
+      --orange: #e57a45;
+      --orange-hover: #d26532;
+      --gold: #e9bd68;
+      --cream: #fbf8f0;
+      --paper: #fffefa;
+      --ink: #1e2621;
+      --muted: #6e7971;
+      --line: #e4dfd3;
+      --shadow: 0 12px 36px rgba(18, 44, 34, 0.08);
+      --serif: Georgia, "Times New Roman", serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--cream);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: var(--forest);
+      color: white;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .header-wrap {
+      max-width: 1260px;
+      margin: 0 auto;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .brand-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: white;
+    }
+    .brand-logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--gold);
+      background: white;
+    }
+    .brand-title {
+      font-family: var(--serif);
+      font-size: 1.3rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+    .brand-badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--gold);
+      background: rgba(255,255,255,0.1);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .header-nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .nav-btn {
+      color: #e2ede5;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.08);
+      transition: all 0.2s;
+    }
+    .nav-btn:hover { background: rgba(255,255,255,0.18); color: white; }
+    .nav-btn.active { background: var(--orange); color: white; }
+
+    .main-wrap {
+      max-width: 1260px;
+      margin: 24px auto;
+      padding: 0 20px;
+      flex: 1;
+      width: 100%;
+    }
+
+    /* PWA Install Banner */
+    .pwa-banner {
+      background: #173d30;
+      color: white;
+      border-radius: 10px;
+      padding: 10px 16px;
+      margin-bottom: 16px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--gold);
+    }
+
+    /* Closing Time Strip */
+    .closing-notice-bar {
+      background: #fbf0ea;
+      border: 1px solid #f2c7b3;
+      border-radius: 10px;
+      padding: 10px 16px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 0.85rem;
+      color: #9a3412;
+    }
+
+    /* Batch Session & Pickup Point Banner */
+    .batch-header-banner {
+      background: linear-gradient(135deg, var(--forest) 0%, #1c4b3b 100%);
+      color: white;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 24px rgba(23,61,48,0.15);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .batch-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .batch-pickup-indicator {
+      margin-top: 6px;
+      font-size: 0.95rem;
+      color: var(--gold);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Pickup Point Selection Card */
+    .pickup-config-card {
+      background: var(--paper);
+      border: 1.5px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 22px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .pickup-config-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    /* Google Maps Banner */
+    .gmap-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #e8f0fe;
+      color: #1a73e8;
+      font-weight: 700;
+      font-size: 0.78rem;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid #c2d7fa;
+    }
+
+    /* Grid Layout */
+    .driver-grid {
+      display: grid;
+      grid-template-columns: 480px 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 1040px) {
+      .driver-grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+    .card-title {
+      font-family: var(--serif);
+      font-size: 1.25rem;
+      margin: 0 0 14px;
+      color: var(--forest);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Package Card with PIN Security */
+    .package-card {
+      border: 1.5px solid var(--line);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 14px;
+      background: white;
+      transition: all 0.2s;
+    }
+    .package-card.accounted {
+      border-color: #22c55e;
+      background: #f0fdf4;
+    }
+    .package-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .package-order-id {
+      font-family: ui-monospace, monospace;
+      font-weight: 800;
+      font-size: 1.15rem;
+      color: var(--forest);
+      letter-spacing: 0.04em;
+    }
+    .package-cust-line {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .package-phone {
+      color: var(--forest);
+      font-weight: 700;
+      text-decoration: none;
+      background: #eef5f1;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .package-food-box {
+      background: #fbf9f4;
+      border: 1px solid #eee8db;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.85rem;
+      margin: 10px 0;
+      line-height: 1.5;
+    }
+
+    /* 4-Digit Security PIN Section */
+    .pin-verification-box {
+      background: #ffffff;
+      border: 1.5px dashed var(--gold);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .pin-input {
+      width: 90px;
+      font-family: monospace;
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: 0.2em;
+      text-align: center;
+      padding: 6px;
+      border: 1.5px solid var(--line);
+      border-radius: 6px;
+    }
+
+    /* Map & Google Map */
+    #driverGoogleMap {
+      height: 380px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      margin-bottom: 14px;
+      background: #e8e4d8;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Webcam Capture Styles */
+    .webcam-capture-box {
+      background: #f8f6f0;
+      border: 2px dashed var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 14px;
+      text-align: center;
+    }
+    .webcam-capture-box.has-photo {
+      border-color: #22c55e;
+      border-style: solid;
+    }
+    .webcam-preview {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid var(--gold);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+      margin: 0 auto 8px;
+      display: block;
+      background: var(--forest);
+    }
+    #webcamVideo {
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid var(--orange);
+      box-shadow: 0 4px 18px rgba(229,122,69,0.3);
+      display: none;
+    }
+    .webcam-controls {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .driver-profile-card {
+      background: linear-gradient(135deg, #f8f6f0, #fff);
+      border: 1.5px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .driver-profile-avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid var(--gold);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      background: var(--forest);
+      display: grid;
+      place-items: center;
+      color: white;
+      font-size: 1.8rem;
+      flex-shrink: 0;
+    }
+    .driver-profile-avatar img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 18px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      border: 0;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+    .btn-forest { background: var(--forest); color: white; }
+    .btn-forest:hover { background: var(--forest-dark); }
+    .btn-orange { background: var(--orange); color: white; }
+    .btn-orange:hover { background: var(--orange-hover); }
+    .btn-success { background: #16a34a; color: white; }
+    .btn-success:hover { background: #15803d; }
+    .btn-outline { background: white; border: 1.5px solid var(--line); color: var(--forest); }
+    .btn-outline:hover { background: #f8f6f0; }
+
+    .action-panel-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    /* Auth Modal Overlay */
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 40, 32, 0.95);
+      backdrop-filter: blur(10px);
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .auth-modal {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+      border-radius: 16px;
+      max-width: 460px;
+      width: 100%;
+      overflow: hidden;
+      animation: modalSlideUp 0.3s ease-out;
+    }
+    @keyframes modalSlideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .auth-header {
+      background: var(--forest);
+      color: white;
+      padding: 24px 20px;
+      text-align: center;
+    }
+    .auth-tabs {
+      display: flex;
+      background: #f0ede4;
+      border-bottom: 1px solid var(--line);
+    }
+    .auth-tab-btn {
+      flex: 1;
+      padding: 12px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all 0.2s;
+    }
+    .auth-tab-btn.active {
+      background: #ffffff;
+      color: var(--forest);
+      border-bottom: 2px solid var(--orange);
+    }
+    .auth-body {
+      padding: 24px 20px;
+    }
+    .auth-form-group {
+      margin-bottom: 14px;
+    }
+    .auth-form-group label {
+      display: block;
+      font-size: 0.83rem;
+      font-weight: 700;
+      color: var(--forest);
+      margin-bottom: 5px;
+    }
+    .auth-input {
+      width: 100%;
+      padding: 11px 13px;
+      border: 1.5px solid var(--line);
+      border-radius: 8px;
+      font-size: 0.92rem;
+      transition: border 0.2s;
+    }
+    .auth-input:focus {
+      outline: none;
+      border-color: var(--orange);
+      box-shadow: 0 0 0 3px rgba(229,122,69,0.15);
+    }
+    .auth-error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.84rem;
+      margin-bottom: 14px;
+      display: none;
+    }
+    .auth-success-box {
+      background: #f0fdf4;
+      border: 1.5px solid #86efac;
+      color: #166534;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 0.86rem;
+      margin-bottom: 16px;
+      line-height: 1.5;
+      display: none;
+    }
+    footer {
+      background: var(--forest-dark);
+      color: #9cb3a4;
+      text-align: center;
+      padding: 20px;
+      font-size: 0.8rem;
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    if (location.protocol === 'file:') {
+      document.addEventListener('DOMContentLoaded', function () {
+        var b = document.createElement('div');
+        b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:999999;background:#7f1d1d;color:#fff;font:600 13px/1.5 system-ui,sans-serif;padding:12px 16px;text-align:center;';
+        b.innerHTML = '⚠️ Open this page through the local server. Run <strong>start.bat</strong> (or <strong>npm start</strong>) and visit <a href="http://localhost:3000/driver.html" style="color:#fde68a;font-weight:800;">http://localhost:3000/driver.html</a> — the live camera and GPS need the server address.';
+        document.body.appendChild(b);
+      });
+    }
+  </script>
+  <header>
+    <div class="header-wrap">
+      <a href="index.html" class="brand-link">
+        <img src="logo.png" alt="YEBS Noodles Logo" class="brand-logo">
+        <div>
+          <div class="brand-title">YEBS Noodles</div>
+          <span class="brand-badge">Driver Portal · PIN Verification & Audio</span>
+        </div>
+      </a>
+      <nav class="header-nav">
+        <a href="index.html" class="nav-btn">Customer Store</a>
+        <a href="driver.html" class="nav-btn active">Driver Portal</a>
+        <a href="public/driver-earnings.html" class="nav-btn">💰 Earnings</a>
+        <a href="admin.html" class="nav-btn">Admin Dashboard</a>
+        <span id="driverUserBadge" style="display:none; font-size:0.75rem; color:var(--gold); background:rgba(255,255,255,0.12); padding:5px 10px; border-radius:6px; border:1px solid rgba(233,189,104,0.4); font-weight:700;">🛵 Driver</span>
+        <button id="driverLogoutBtn" type="button" style="display:none; background:#d26532; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:0.8rem; cursor:pointer;">Logout</button>
+      </nav>
+    </div>
+  </header>
+
+  <div class="main-wrap">
+    <!-- PWA Install Prompt Banner -->
+    <div id="pwaInstallBanner" class="pwa-banner">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:1.4rem;">📱</span>
+        <div>
+          <strong>Install YEBS Driver App</strong>
+          <div style="font-size:0.75rem; opacity:0.9;">Install directly to your home screen for instant access with no address bar.</div>
+        </div>
+      </div>
+      <button id="pwaInstallBtn" class="btn btn-orange btn-sm">Install App</button>
+    </div>
+
+    <!-- 6:00 PM to 9:00 PM Operating Hours Schedule Indicator -->
+    <div class="closing-notice-bar" id="closingNoticeBar">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:1.2rem;">⏰</span>
+        <div>
+          <strong>Kitchen Schedule: Daily 6:00 PM to 9:00 PM (18:00 – 21:00)</strong>
+          <span id="kitchenStatusText" style="margin-left:8px; font-weight:700;">● Kitchen is OPEN</span>
+        </div>
+      </div>
+      <div id="closingCountdownClock" style="font-family:monospace; font-weight:700;"></div>
+    </div>
+
+    <!-- Batch Session & Pickup Point Banner -->
+    <div class="batch-header-banner">
+      <div>
+        <div class="batch-title">
+          <span>🛵</span> <span id="sessionBatchTitle">Session #1: All Foods Delivery to Pickup Point</span>
+        </div>
+        <div class="batch-pickup-indicator">
+          <span>📍 Target Pickup Point:</span>
+          <strong id="activePickupPointName">Circle Odo Rice Junction / VIP Station</strong>
+        </div>
+        <div style="font-size:0.84rem; opacity:0.9; margin-top:4px;">
+          All customer food packages are bundled for collective delivery. Hand over each order with the customer's Order ID (its last 4 digits are their PIN).
+        </div>
+      </div>
+      <div style="display:flex; gap:12px; align-items:center;">
+        <div style="background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); border-radius:8px; padding:10px 16px; text-align:center;">
+          <div id="packagesAccountedRatio" style="font-size:1.6rem; font-weight:800; color:var(--gold); font-family:monospace;">0 / 0</div>
+          <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.05em; opacity:0.85;">PINs Verified</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pickup Point Configuration Strip -->
+    <div class="pickup-config-card">
+      <div class="pickup-config-left">
+        <span style="font-size:2rem;">📍</span>
+        <div>
+          <strong style="color:var(--forest);">Designated Session Pickup Point:</strong>
+          <div style="font-size:0.82rem; color:var(--muted); margin-top:2px;">
+            Set where all customers will gather to collect their fresh noodles packages.
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <select id="pickupPointSelect" style="padding:10px 14px; border-radius:8px; border:1px solid var(--line); font-size:0.88rem; font-weight:600; background:white;">
+          <!-- Populated from DEFAULT_PICKUP_POINTS -->
+        </select>
+        <button type="button" id="setCustomPickupBtn" class="btn btn-outline btn-sm">
+          ✏️ Custom Landmark
+        </button>
+        <div id="customPickupWrap" style="display:none; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input id="customPickupInput" type="text" autocomplete="off" placeholder="e.g. Kaneshie Market"
+            style="padding:9px 12px; border-radius:8px; border:1px solid var(--line); font-size:0.86rem; min-width:190px;">
+          <button type="button" id="customPickupSaveBtn" class="btn btn-orange btn-sm">Save point</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Order ID Lookup & Handover Validation -->
+    <div class="card" style="margin-bottom:18px;" id="driverLookupCard">
+      <div class="card-title">
+        <div>
+          <span>🔎 Order ID Handover Check</span>
+          <span class="badge" style="background:#ecfdf5; color:#166534; border:1px solid #bbf7d0; font-size:0.7rem;">Validated on the server</span>
+        </div>
+      </div>
+      <p style="font-size:0.82rem; color:var(--muted); margin:0 0 12px; line-height:1.45;">
+        Type the customer's <strong>Order ID</strong> (e.g. <strong>YB-3041</strong>) or its <strong>last 4 digits</strong>.
+        The order is fetched and checked instantly — the last 4 digits are the customer's PIN.
+      </p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <input id="driverLookupInput" type="text" inputmode="text" autocomplete="off" placeholder="e.g. YB-3041 or 3041"
+          style="flex:1; min-width:200px; padding:11px 13px; border:1px solid var(--line); border-radius:8px; font-size:0.95rem; font-family:ui-monospace, monospace; letter-spacing:0.05em;">
+        <button id="driverLookupBtn" class="btn btn-orange" style="min-height:44px;">🔎 Fetch order</button>
+      </div>
+      <div id="driverLookupStatus" style="font-size:0.82rem; margin-top:8px; line-height:1.45;"></div>
+      <div id="driverLookupResult" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="driver-grid">
+      <!-- Left Column: Package Accounting List with Customer Details, Phone, and 4-Digit PIN Security -->
+      <div>
+        <div class="card">
+          <div class="card-title">
+            <span>📦 Session Packages & Customers</span>
+            <span id="sessionBatchOrdersBadge" style="background:var(--orange); color:white; font-size:0.75rem; font-weight:700; padding:3px 10px; border-radius:999px;">0 Orders</span>
+          </div>
+          <p style="font-size:0.82rem; color:var(--muted); margin:0 0 16px; line-height:1.4;">
+            Each customer's <strong>4-digit PIN is the last 4 digits of their Order ID</strong> (e.g. Order YB-3041 → PIN 3041). Ask for it, verify it below, then hand over the food. Cash orders are recorded here too.
+          </p>
+
+          <div id="sessionPackagesList">
+            <!-- Dynamic package cards populated with Order ID, Customer Name, Phone, and 4-Digit Security PIN -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Google Maps, Voice Announcements & Batch Action Controls -->
+      <div>
+        <div class="card">
+          <div class="card-title">
+            <div>
+              <span>🗺️ Live Delivery Map</span>
+              <span class="gmap-badge">Google Maps Live</span>
+            </div>
+            <a id="openGoogleMapsAppBtn" href="#" target="_blank" class="btn btn-outline btn-sm" style="font-size:0.78rem;">
+              ↗ Open in Google Maps
+            </a>
+          </div>
+
+          <!-- Leaflet styled with Free Google Maps Roadmap Tiles -->
+          <div id="driverGoogleMap"></div>
+
+          <div style="font-size:0.78rem; color:var(--muted); margin-top:8px; margin-bottom:4px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+            <span>🟢 Kitchen: Adabraka</span>
+            <span>📍 Pickup: <span id="mapPickupPointLabel">Circle Odo Rice</span></span>
+            <span>🛵 Rider GPS: <span id="riderGpsCoords">Live</span></span>
+          </div>
+          <!-- Live ETA display -->
+          <div id="driverEtaDisplay" style="display:none; font-size:0.82rem; font-weight:700; color:#173d30; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:6px 12px; margin-bottom:10px;"></div>
+
+          <!-- Bilingual Voice Arrival Megaphone Button -->
+          <div style="margin-bottom:14px; background:#faf7f0; border:1px solid #ebd8c7; border-radius:10px; padding:12px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+            <div style="font-size:0.85rem;">
+              <strong>🔊 Crowd Voice Megaphone:</strong>
+              <div style="font-size:0.76rem; color:var(--muted);">Plays English + Twi voice alert calling customers to pickup point.</div>
+            </div>
+            <button id="playVoiceBroadcastBtn" class="btn btn-outline btn-sm" style="border-color:var(--orange); color:var(--orange);">
+              📢 Play Voice (English + Twi)
+            </button>
+          </div>
+
+          <!-- Synchronous Action Panel -->
+          <div class="action-panel-buttons">
+            <!-- 1. En Route to Pickup Point -->
+            <button id="driverStartEnRouteBtn" class="btn btn-orange">
+              🚀 1. Start En Route to Pickup Point (Begins 3-Min Loop)
+            </button>
+
+            <!-- 2. Arrived at Pickup Point: Alerts all customers in the session -->
+            <button id="driverArrivedPickupPointBtn" class="btn btn-forest" style="display:none;">
+              📍 2. Arrived at Pickup Point (Notify Customers & Play Voice)
+            </button>
+
+            <!-- 3. Delivery Successful: Complete all deliveries, log in admin, send WhatsApp to owner -->
+            <button id="driverCompleteDeliveryBtn" class="btn btn-success" style="display:none;">
+              ✅ 3. All Deliveries Accounted — Mark Delivery Successful & Notify Owner on WhatsApp
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>🛵 Active Rider & Vehicle</span>
+          </div>
+          <!-- Driver Profile Card with Photo -->
+          <div class="driver-profile-card" id="driverProfileCard">
+            <div class="driver-profile-avatar" id="driverProfileAvatar">🛵</div>
+            <div style="flex:1;">
+              <strong id="riderNameDisplay" style="font-size:1.05rem; color:var(--forest);">Kwame Mensah</strong>
+              <div id="riderVehicleDisplay" style="font-size:0.8rem; color:var(--muted);">Royal 125 Motorcycle · Live GPS Streaming</div>
+              <div id="riderPhoneDisplay" style="font-size:0.78rem; color:var(--leaf); margin-top:2px;"></div>
+            </div>
+            <select id="riderSelectDropdown" style="padding:8px 12px; border-radius:6px; border:1px solid var(--line); font-size:0.85rem;">
+              <option value="Kwame Mensah">Kwame Mensah</option>
+              <option value="Kofi Owusu">Kofi Owusu</option>
+              <option value="Emmanuel Tetteh">Emmanuel Tetteh</option>
+            </select>
+          </div>
+          <div style="font-size:0.78rem; color:var(--muted); margin-top:4px; background:#f9f7f2; padding:8px 12px; border-radius:8px;">
+            📡 This driver's photo, name, vehicle type, and phone will be visible to all customers tracking their delivery in real-time.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    YEBS Noodles Driver Portal · 4-Digit Pickup PIN Security · Bilingual Voice Megaphone (English + Twi) · PWA Ready
+  </footer>
+
+  <!-- Driver Authentication Modal must exist before the module script runs -->
+  <div id="driverAuthModal" class="auth-overlay" style="display:flex;">
+    <div class="auth-modal">
+      <div class="auth-header">
+        <img src="logo.png" alt="YEBS" style="width:48px; height:48px; border-radius:50%; border:2px solid var(--gold); margin-bottom:6px; background:white;">
+        <h2 style="margin:0; font-family:var(--serif); font-size:1.35rem;">YEBS Driver Verification</h2>
+        <div style="font-size:0.8rem; color:#e2ede5; margin-top:4px;">Batch Delivery & PIN Handover System</div>
+      </div>
+      <div class="auth-tabs">
+        <button type="button" id="driverAuthTabLogin" class="auth-tab-btn active">🔑 Rider Login</button>
+        <button type="button" id="driverAuthTabSignup" class="auth-tab-btn">📝 Driver Sign Up</button>
+      </div>
+      <div class="auth-body">
+        <div id="driverAuthError" class="auth-error"></div>
+        <div id="driverSignupSuccessBox" class="auth-success-box"></div>
+        <div id="driverLoginFormWrap">
+          <form id="driverLoginForm">
+            <div class="auth-form-group">
+              <label for="driverLoginUsername">Driver Username or Phone</label>
+              <input type="text" id="driverLoginUsername" class="auth-input" placeholder="e.g. kwamemensah1 or 0541234567" required autocomplete="username">
+            </div>
+            <div class="auth-form-group">
+              <label for="driverLoginPassword">Password</label>
+              <input type="password" id="driverLoginPassword" class="auth-input" placeholder="••••••••" required autocomplete="current-password">
+            </div>
+            <button type="submit" id="driverLoginSubmitBtn" class="btn btn-orange" style="width:100%; padding:12px; font-size:0.95rem; margin-top:8px;">
+              🛵 Rider Portal Login
+            </button>
+          </form>
+          <div style="background:#f8f6f0; border:1px solid #e8e3d6; border-radius:8px; padding:12px; margin-top:14px; font-size:0.8rem; color:var(--muted); line-height:1.4;">
+            New rider joining YEBS? Click the <strong>Driver Sign Up</strong> tab above to create an account and receive your auto-generated rider username.
+          </div>
+        </div>
+        <div id="driverSignupFormWrap" style="display:none;">
+          <form id="driverSignupForm">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+              <div class="auth-form-group">
+                <label for="driverSignupFname">First Name</label>
+                <input type="text" id="driverSignupFname" class="auth-input" placeholder="e.g. Kwame" required autocomplete="given-name">
+              </div>
+              <div class="auth-form-group">
+                <label for="driverSignupLname">Last Name</label>
+                <input type="text" id="driverSignupLname" class="auth-input" placeholder="e.g. Mensah" required autocomplete="family-name">
+              </div>
+            </div>
+            <div class="auth-form-group">
+              <label for="driverSignupPhone">Ghana Mobile / WhatsApp Number</label>
+              <input type="tel" id="driverSignupPhone" class="auth-input" placeholder="e.g. 054 123 4567" required autocomplete="tel">
+            </div>
+            <div class="auth-form-group">
+              <label for="driverSignupVehicle">Vehicle Type & Details</label>
+              <select id="driverSignupVehicle" class="auth-input" required>
+                <option value="">— Select your vehicle type —</option>
+                <option value="Royal 125 Motorcycle">🏍️ Royal 125 Motorcycle</option>
+                <option value="Boxer 150 Motorcycle">🏍️ Boxer 150 Motorcycle</option>
+                <option value="Honda Ace Scooter">🛵 Honda Ace Scooter</option>
+                <option value="Honda CG 125">🏍️ Honda CG 125</option>
+                <option value="Apsonic Motorcycle">🏍️ Apsonic Motorcycle</option>
+                <option value="Suzuki EN 125">🏍️ Suzuki EN 125</option>
+                <option value="Haojue Motorcycle">🏍️ Haojue Motorcycle</option>
+                <option value="Electric Bike / E-Scooter">⚡ Electric Bike / E-Scooter</option>
+                <option value="Bicycle">🚲 Bicycle</option>
+                <option value="Tricycle (Pragia)">🛺 Tricycle (Pragia)</option>
+                <option value="Other">📦 Other Vehicle</option>
+              </select>
+            </div>
+            <div class="auth-form-group" id="driverSignupVehicleOtherWrap" style="display:none;">
+              <label for="driverSignupVehicleOther">Describe your vehicle</label>
+              <input type="text" id="driverSignupVehicleOther" class="auth-input" placeholder="e.g. Haojue 125 / Kia truck / Electric scooter" autocomplete="off">
+            </div>
+            <div class="auth-form-group">
+              <label for="driverSignupPlate">Number Plate / Registration (Optional)</label>
+              <input type="text" id="driverSignupPlate" class="auth-input" placeholder="e.g. GN-4819-24" autocomplete="off">
+            </div>
+            <div class="auth-form-group">
+              <label for="driverSignupPassword">Create Password</label>
+              <input type="password" id="driverSignupPassword" class="auth-input" placeholder="••••••••" required minlength="4" autocomplete="new-password">
+            </div>
+            <div class="webcam-capture-box" id="webcamCaptureBox">
+              <div style="font-weight:700; color:var(--forest); font-size:0.88rem; margin-bottom:8px;">📸 Live face photo (visible to customers)</div>
+              <div style="font-size:0.72rem; color:#b91c1c; font-weight:800; letter-spacing:0.04em; margin-bottom:6px;">● LIVE CAMERA ONLY — GALLERY UPLOADS DISABLED</div>
+              <div style="font-size:0.76rem; color:var(--muted); margin-bottom:10px;">This becomes the profile picture customers see while you deliver their food. Look at the camera and take the photo in good light.</div>
+              <video id="webcamVideo" autoplay playsinline muted></video>
+              <canvas id="webcamCanvas" style="display:none;"></canvas>
+              <img id="webcamPreview" class="webcam-preview" src="" alt="Driver profile photo" style="display:none;">
+              <div id="webcamPlaceholder" style="width:100px; height:100px; border-radius:50%; background:var(--forest); color:white; display:grid; place-items:center; font-size:2.5rem; margin:0 auto 8px; border:3px solid var(--gold);">🛵</div>
+              <div class="webcam-controls">
+                <button type="button" id="startCameraBtn" class="btn btn-outline btn-sm" style="border-color:var(--orange); color:var(--orange);">📷 Open Camera</button>
+                <button type="button" id="capturePhotoBtn" class="btn btn-orange btn-sm" style="display:none;">📸 Take Photo</button>
+                <button type="button" id="retakePhotoBtn" class="btn btn-outline btn-sm" style="display:none;">🔄 Retake</button>
+              </div>
+            </div>
+            <button type="submit" id="driverSignupSubmitBtn" class="btn btn-forest" style="width:100%; padding:12px; font-size:0.95rem; margin-top:8px;">
+              ✨ Complete Registration & Login
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script>
+    if (!window.L) {
+      document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');
+    }
+  </script>
+  <script type="module">
+    import {
+      initStore,
+      getOrders,
+      updateOrderStatus,
+      verifyOrderPin,
+      updateDriverLocationOnAllOrders,
+      getSessionState,
+      setSessionPickupPoint,
+      notifySessionArrivalAtPickupPoint,
+      completeSessionDeliveriesAndNotifyOwner,
+      isKitchenOpen,
+      DEFAULT_PICKUP_POINTS,
+      RESTAURANT_COORDS,
+      onSyncEvent,
+      playChime,
+      playVoiceArrivalAnnouncement,
+      formatWhatsAppUrl,
+      formatTelHref,
+      addReliableBasemap,
+      OWNER_WHATSAPP_NUMBER,
+      apiDriverSignup,
+      apiDriverLogin,
+      apiSetPickupPoint,
+      apiFetchSession,
+      apiValidateSession,
+      apiUpdateDriverLocation,
+      apiLookupOrder,
+      apiPayCash,
+      apiFetchOrder,
+      getPickupPoint,
+      applyServerSession,
+      startLiveOrderSync
+    } from './shared.js';
+
+    initStore();
+
+    // Register Service Worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW error', err));
+    }
+
+    let deferredPrompt = null;
+    const pwaInstallBanner = document.getElementById('pwaInstallBanner');
+    const pwaInstallBtn = document.getElementById('pwaInstallBtn');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      pwaInstallBanner.style.display = 'flex';
+    });
+
+    pwaInstallBtn.addEventListener('click', async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          pwaInstallBanner.style.display = 'none';
+        }
+        deferredPrompt = null;
+      }
+    });
+
+    // Map & Markers
+    let map = null;
+    let driverMarker = null;
+    let pickupMarker = null;
+    let currentCoords = { lat: RESTAURANT_COORDS.lat, lng: RESTAURANT_COORDS.lng };
+    let watchId = null;
+    let lastPickupAppliedAt = 0;
+
+    // DOM Elements
+    const sessionBatchTitle = document.getElementById('sessionBatchTitle');
+    const activePickupPointName = document.getElementById('activePickupPointName');
+    const packagesAccountedRatio = document.getElementById('packagesAccountedRatio');
+    const pickupPointSelect = document.getElementById('pickupPointSelect');
+    const setCustomPickupBtn = document.getElementById('setCustomPickupBtn');
+    const customPickupWrap = document.getElementById('customPickupWrap');
+    const customPickupInput = document.getElementById('customPickupInput');
+    const customPickupSaveBtn = document.getElementById('customPickupSaveBtn');
+    const sessionBatchOrdersBadge = document.getElementById('sessionBatchOrdersBadge');
+    const sessionPackagesList = document.getElementById('sessionPackagesList');
+    const mapPickupPointLabel = document.getElementById('mapPickupPointLabel');
+    const riderGpsCoords = document.getElementById('riderGpsCoords');
+    const openGoogleMapsAppBtn = document.getElementById('openGoogleMapsAppBtn');
+    const playVoiceBroadcastBtn = document.getElementById('playVoiceBroadcastBtn');
+    const driverStartEnRouteBtn = document.getElementById('driverStartEnRouteBtn');
+    const driverArrivedPickupPointBtn = document.getElementById('driverArrivedPickupPointBtn');
+    const driverCompleteDeliveryBtn = document.getElementById('driverCompleteDeliveryBtn');
+    const riderSelectDropdown = document.getElementById('riderSelectDropdown');
+    const riderNameDisplay = document.getElementById('riderNameDisplay');
+    const kitchenStatusText = document.getElementById('kitchenStatusText');
+    const closingCountdownClock = document.getElementById('closingCountdownClock');
+
+    // Order ID handover lookup
+    const driverLookupInput = document.getElementById('driverLookupInput');
+    const driverLookupBtn = document.getElementById('driverLookupBtn');
+    const driverLookupStatus = document.getElementById('driverLookupStatus');
+    const driverLookupResult = document.getElementById('driverLookupResult');
+    let lookedUpOrderId = null;
+
+    // Setup Pickup Point Dropdown & Live Geocoding
+    let pickupPointsInitialized = false;
+    function initPickupPoints() {
+      if (pickupPointsInitialized) return;
+      pickupPointsInitialized = true;
+      pickupPointSelect.innerHTML = DEFAULT_PICKUP_POINTS.map(p => `
+        <option value="${p.name}">${p.name}</option>
+      `).join('');
+
+      const session = getSessionState();
+      if (session.pickupPoint) {
+        pickupPointSelect.value = session.pickupPoint.name;
+        activePickupPointName.textContent = session.pickupPoint.name;
+        mapPickupPointLabel.textContent = session.pickupPoint.name;
+      }
+
+      pickupPointSelect.addEventListener('change', async () => {
+        const selected = DEFAULT_PICKUP_POINTS.find(p => p.name === pickupPointSelect.value);
+        if (selected) {
+          activePickupPointName.textContent = selected.name;
+          mapPickupPointLabel.textContent = selected.name;
+          updatePickupMarker(selected.lat, selected.lng, selected.name);
+          setSessionPickupPoint(selected.name, { lat: selected.lat, lng: selected.lng });
+          // Persist to database server so all customers' live maps automatically pin it
+          const res = await apiSetPickupPoint(selected.name, selected.lat, selected.lng);
+          if (res && res.pickupPoint) {
+            lastPickupAppliedAt = res.pickupPoint.updatedAt ? Date.parse(res.pickupPoint.updatedAt) : Date.now();
+          }
+        }
+      });
+
+      setCustomPickupBtn.addEventListener('click', () => {
+        if (!customPickupWrap) return;
+        const showing = customPickupWrap.style.display !== 'none' && customPickupWrap.style.display !== '';
+        customPickupWrap.style.display = showing ? 'none' : 'flex';
+        if (!showing && customPickupInput) {
+          customPickupInput.value = '';
+          customPickupInput.focus();
+        }
+      });
+
+      const saveCustomPickup = async () => {
+        const customName = customPickupInput ? customPickupInput.value.trim() : '';
+        if (!customName) {
+          if (customPickupInput) customPickupInput.focus();
+          return;
+        }
+        if (customPickupSaveBtn) { customPickupSaveBtn.disabled = true; customPickupSaveBtn.textContent = 'Saving…'; }
+
+        // Use current GPS coords if available, otherwise let server geocode by name
+        const lat = Number.isFinite(currentCoords.lat) ? currentCoords.lat : null;
+        const lng = Number.isFinite(currentCoords.lng) ? currentCoords.lng : null;
+
+        // If driver clicked on the map first, use that pin position
+        const mapClickLat = window._driverMapClickLat || lat;
+        const mapClickLng = window._driverMapClickLng || lng;
+
+        const res = await apiSetPickupPoint(customName, mapClickLat, mapClickLng);
+        if (customPickupSaveBtn) { customPickupSaveBtn.disabled = false; customPickupSaveBtn.textContent = 'Save point'; }
+
+        if (res && res.pickupPoint) {
+          const point = res.pickupPoint;
+          activePickupPointName.textContent = point.name;
+          mapPickupPointLabel.textContent = point.name;
+          lastPickupAppliedAt = point.updatedAt ? Date.parse(point.updatedAt) : Date.now();
+          setSessionPickupPoint(point.name, { lat: point.lat, lng: point.lng });
+          updatePickupMarker(point.lat, point.lng, point.name);
+          drawRouteToPickup(point.lat, point.lng);
+          if (customPickupWrap) customPickupWrap.style.display = 'none';
+          if (customPickupInput) customPickupInput.value = '';
+          // Clear the map-click draft
+          window._driverMapClickLat = null;
+          window._driverMapClickLng = null;
+          // Add to dropdown so it persists for the session
+          if (pickupPointSelect) {
+            const exists = Array.from(pickupPointSelect.options).some(o => o.value === point.name);
+            if (!exists) {
+              const opt = document.createElement('option');
+              opt.value = point.name;
+              opt.textContent = `📍 ${point.name} (custom)`;
+              pickupPointSelect.appendChild(opt);
+            }
+            pickupPointSelect.value = point.name;
+          }
+          alert(`✅ Pickup point "${point.name}" saved and synced to all maps!`);
+        } else {
+          alert(res && res.message ? res.message : 'Could not save pickup point. Make sure the server is running.');
+          setSessionPickupPoint(customName);
+        }
+      };
+
+      if (customPickupSaveBtn) customPickupSaveBtn.addEventListener('click', saveCustomPickup);
+      if (customPickupInput) {
+        customPickupInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); saveCustomPickup(); }
+        });
+      }
+    }
+
+    // Pull the shared pickup point set by the admin (or another rider) so every
+    // portal's map/heandover point matches exactly.
+    async function syncSharedPickupPoint() {
+      try {
+        const session = await apiFetchSession();
+        if (!session || !session.pickupPoint) return;
+        const point = session.pickupPoint;
+        const stamp = point.updatedAt ? Date.parse(point.updatedAt) : 0;
+        // Ignore a poll that started before a pickup change we just saved.
+        if (stamp && stamp < lastPickupAppliedAt) return;
+        lastPickupAppliedAt = Math.max(lastPickupAppliedAt, stamp || Date.now());
+        applyServerSession(session);
+        if (activePickupPointName) activePickupPointName.textContent = point.name;
+        if (mapPickupPointLabel) mapPickupPointLabel.textContent = point.name;
+        if (pickupPointSelect) {
+          const exists = Array.from(pickupPointSelect.options).some(o => o.value === point.name);
+          if (!exists) {
+            const opt = document.createElement('option');
+            opt.value = point.name;
+            opt.textContent = `${point.name} (shared)`;
+            pickupPointSelect.appendChild(opt);
+          }
+          pickupPointSelect.value = point.name;
+        }
+        if (map && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))) {
+          updatePickupMarker(Number(point.lat), Number(point.lng), point.name);
+        }
+      } catch (e) {}
+    }
+
+    // Check 6:00 PM to 9:00 PM Schedule
+    function updateClosingTimeDisplay() {
+      const status = isKitchenOpen();
+      const now = new Date();
+      if (status.isOpen) {
+        kitchenStatusText.textContent = "● Kitchen is OPEN (Closes at 9:00 PM)";
+        kitchenStatusText.style.color = "#16a34a";
+        
+        const target = new Date();
+        target.setHours(21, 0, 0, 0);
+        const diffMs = target - now;
+        const diffHrs = Math.floor(diffMs / 3600000);
+        const diffMins = Math.floor((diffMs % 3600000) / 60000);
+        closingCountdownClock.textContent = `${diffHrs}h ${diffMins}m until 9:00 PM closing`;
+      } else {
+        kitchenStatusText.textContent = "● Kitchen CLOSED (Daily Hours: 6:00 PM – 9:00 PM)";
+        kitchenStatusText.style.color = "#dc2626";
+        closingCountdownClock.textContent = "Orders open 6:00 PM – 9:00 PM";
+      }
+    }
+    setInterval(updateClosingTimeDisplay, 1000);
+
+    // ===============================================
+    // GOOGLE MAPS INTEGRATION (NO API KEY NEEDED)
+    // ===============================================
+    function initGoogleMap() {
+      if (map) return;
+      const session = getSessionState();
+      const targetPoint = session.pickupPoint || DEFAULT_PICKUP_POINTS[0];
+
+      const mapContainer = document.getElementById('driverGoogleMap');
+      if (!mapContainer) return;
+      if (typeof L === 'undefined') {
+        mapContainer.innerHTML = `<div style="height:100%; min-height:220px; display:grid; place-items:center; text-align:center; padding:20px; color:var(--muted); font-size:0.9rem;">Map library could not load.<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(targetPoint.name + ', Accra')}" target="_blank" style="color:var(--orange); font-weight:700;">Open pickup point in Google Maps ↗</a></div>`;
+        return;
+      }
+      if (mapContainer.offsetHeight === 0) {
+        mapContainer.style.minHeight = '380px';
+      }
+
+      map = L.map('driverGoogleMap', {
+        zoomControl: true,
+        attributionControl: true
+      }).setView([targetPoint.lat, targetPoint.lng], 14);
+      addReliableBasemap(map);
+
+      const pickupIcon = L.divIcon({
+        html: `<div style="background:#173d30; color:white; width:38px; height:38px; border-radius:50%; display:grid; place-items:center; border:3px solid #e9bd68; box-shadow:0 4px 14px rgba(0,0,0,0.35); font-size:18px;">📍</div>`,
+        iconSize: [38, 38],
+        iconAnchor: [19, 19]
+      });
+      pickupMarker = L.marker([targetPoint.lat, targetPoint.lng], { icon: pickupIcon }).addTo(map)
+        .bindPopup(`<b>Target Pickup Point</b><br>${targetPoint.name}`);
+
+      const riderIcon = L.divIcon({
+        html: `<div style="background:#e57a45; color:white; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; border:2px solid white; box-shadow:0 3px 12px rgba(229,122,69,0.5); font-size:18px;">🛵</div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18]
+      });
+      driverMarker = L.marker([currentCoords.lat, currentCoords.lng], { icon: riderIcon }).addTo(map);
+
+      updateGoogleMapsAppLink(targetPoint.lat, targetPoint.lng);
+    }
+
+    function updatePickupMarker(lat, lng, name) {
+      if (pickupMarker) {
+        pickupMarker.setLatLng([lat, lng]).bindPopup(`<b>Target Pickup Point</b><br>${name}`).openPopup();
+        map.setView([lat, lng], 14);
+        updateGoogleMapsAppLink(lat, lng);
+      }
+    }
+
+    function updateGoogleMapsAppLink(lat, lng) {
+      openGoogleMapsAppBtn.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    }
+
+    // Current authenticated rider (name, real phone number, vehicle + live photo)
+    function getCurrentDriver() {
+      let user = {};
+      try { user = JSON.parse(sessionStorage.getItem('yebs_driver_user') || '{}'); } catch (e) {}
+      const name = user.name || `${user.fname || ''} ${user.lname || ''}`.trim() || riderSelectDropdown.value || "YEBS Rider";
+      return {
+        id: user.id,
+        username: user.username,
+        name,
+        phone: user.phone || "",
+        vehicle: user.vehicle || "",
+        photo: user.photo || sessionStorage.getItem('yebs_driver_photo') || null
+      };
+    }
+
+    function publishDriverLocation(speed) {
+      riderGpsCoords.textContent = `${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)} (${speed} km/h)`;
+      if (driverMarker) driverMarker.setLatLng([currentCoords.lat, currentCoords.lng]);
+      const driver = getCurrentDriver();
+      updateDriverLocationOnAllOrders(driver.name, {
+        lat: currentCoords.lat,
+        lng: currentCoords.lng,
+        speedKmh: speed,
+        statusText: `Rider en route to pickup point (${speed} km/h)`,
+        driverPhone: driver.phone,
+        vehicle: driver.vehicle,
+        photo: driver.photo
+      });
+      apiUpdateDriverLocation(driver.id || driver.username || driver.phone, {
+        lat: currentCoords.lat,
+        lng: currentCoords.lng,
+        speedKmh: speed,
+        statusText: `Rider en route (${speed} km/h)`,
+        name: driver.name,
+        phone: driver.phone,
+        vehicle: driver.vehicle,
+        photo: driver.photo
+      });
+      // Update ETA to current pickup point
+      const session = getSessionState();
+      const pickup = session && session.pickupPoint;
+      if (pickup && Number.isFinite(Number(pickup.lat))) {
+        // Throttle: update ETA every ~5s, route line every ~15s
+        const now = Date.now();
+        if (!window._lastEtaUpdate || now - window._lastEtaUpdate > 5000) {
+          window._lastEtaUpdate = now;
+          import('./shared.js').then(({ computeRoadEta }) => {
+            if (!computeRoadEta) return;
+            const eta = computeRoadEta(
+              { lat: currentCoords.lat, lng: currentCoords.lng },
+              { lat: Number(pickup.lat), lng: Number(pickup.lng) },
+              { speedKmh: speed }
+            );
+            const etaEl = document.getElementById('driverEtaDisplay');
+            if (etaEl) {
+              const icon = eta.wrongTurn ? '⚠️ Wrong turn — ' : (eta.improving ? '✅ On track · ' : '🛵 ');
+              etaEl.textContent = `${icon}ETA to pickup: ~${eta.etaMinutes} min · ${eta.distanceKm} km road distance`;
+              etaEl.style.display = 'block';
+              etaEl.style.background = eta.wrongTurn ? '#fef3c7' : '#f0fdf4';
+              etaEl.style.borderColor = eta.wrongTurn ? '#fbbf24' : '#bbf7d0';
+              etaEl.style.color = eta.wrongTurn ? '#92400e' : '#166534';
+            }
+          }).catch(() => {});
+        }
+        if (!window._lastRouteUpdate || now - window._lastRouteUpdate > 15000) {
+          window._lastRouteUpdate = now;
+          drawRouteToPickup(Number(pickup.lat), Number(pickup.lng));
+        }
+      }
+    }
+
+    function startSimulatedGps() {
+      if (watchId === 'sim') return;
+      watchId = 'sim';
+      setInterval(() => {
+        const session = getSessionState();
+        const target = (session && session.pickupPoint) || DEFAULT_PICKUP_POINTS[0];
+        currentCoords.lat += (target.lat - currentCoords.lat) * 0.12;
+        currentCoords.lng += (target.lng - currentCoords.lng) * 0.12;
+        publishDriverLocation(22);
+      }, 2500);
+    }
+
+    function startGpsStreaming() {
+      if (watchId) return;
+      if (!navigator.geolocation) {
+        startSimulatedGps();
+        return;
+      }
+      watchId = navigator.geolocation.watchPosition(
+        pos => {
+          currentCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          const speed = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 22;
+          publishDriverLocation(speed);
+        },
+        err => {
+          console.warn("GPS watch:", err.message);
+          startSimulatedGps();
+        },
+        { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 }
+      );
+    }
+
+    // ===============================================
+    // RENDER SESSION PACKAGES WITH 4-DIGIT PIN SECURITY
+    // ===============================================
+    function renderSessionPackages() {
+      const orders = getOrders();
+      const session = getSessionState();
+
+      const activeOrders = orders.filter(o => o.status !== 'cancelled');
+      sessionBatchOrdersBadge.textContent = `${activeOrders.length} Packages`;
+      sessionBatchTitle.textContent = `Session #${session.sessionNumber || 1}: All Foods Delivery to Pickup Point`;
+
+      const accountedCount = activeOrders.filter(o => o.verifiedByDriver || o.status === 'delivered').length;
+      packagesAccountedRatio.textContent = `${accountedCount} / ${activeOrders.length}`;
+
+      if (activeOrders.length === 0) {
+        sessionPackagesList.innerHTML = `
+          <div style="text-align:center; padding:30px 10px; color:var(--muted); font-size:0.88rem;">
+            No food orders currently in this session. Real orders placed by customers will appear here automatically.
+          </div>
+        `;
+        return;
+      }
+
+      sessionPackagesList.innerHTML = activeOrders.map(order => {
+        const isVerified = order.verifiedByDriver || order.status === 'delivered';
+        const itemsText = order.items && order.items.length
+          ? order.items.map(i => `• <strong>${i.name}</strong> (${i.noodle}) x${i.quantity} = GH₵${i.price * i.quantity}`).join('<br>')
+          : 'Ghanaian Street Noodles';
+
+        return `
+          <div class="package-card ${isVerified ? 'accounted' : ''}" data-id="${order.id}">
+            <div class="package-header">
+              <span class="package-order-id">#${order.id}</span>
+              <span class="badge" style="background:${isVerified ? '#dcfce7' : '#fef3c7'}; color:${isVerified ? '#166534' : '#92400e'}; padding:3px 8px; border-radius:999px; font-size:0.72rem; font-weight:800; text-transform:uppercase;">
+                ${isVerified ? '✅ PIN VERIFIED' : order.status.toUpperCase()}
+              </span>
+            </div>
+
+            <!-- Customer Details & Number -->
+            <div class="package-cust-line">
+              <span>👤 <strong>${order.customer}</strong></span>
+              <a href="${formatTelHref(order.phone)}" class="package-phone">📞 ${order.phone}</a>
+              <a href="${formatWhatsAppUrl(order.phone, `Hello ${order.customer}! I am your YEBS driver at the pickup point with order #${order.id}.`)}" target="_blank" style="color:#16a34a; font-size:0.85rem; text-decoration:none; font-weight:700;">💬 WhatsApp</a>
+            </div>
+
+            <!-- Food Details -->
+            <div class="package-food-box">
+              <div style="font-weight:700; color:var(--forest); margin-bottom:4px;">🍜 Food Items:</div>
+              <div>${itemsText}</div>
+              <div style="margin-top:6px; font-weight:700; color:var(--ink);">
+                Total: GH₵${order.total} · Payment: ${order.payment || 'MTN MoMo / Cash'}
+              </div>
+              ${order.notes ? `<div style="font-size:0.8rem; color:var(--orange); margin-top:4px;">Note: "${order.notes}"</div>` : ''}
+            </div>
+
+            <!-- Payment state (cash is collected by the rider at handover) -->
+            <div style="margin-top:8px; font-size:0.78rem; background:#fbfbf9; border:1px solid #eceae4; border-radius:8px; padding:7px 10px;">
+              ${order.paymentStatus === 'paid'
+                ? `✅ <strong style="color:#166534;">PAID</strong>${order.verificationMethod === 'cash-driver' ? ' · cash collected' : ' · MoMo verified'} · GH₵${Number(order.total || 0).toFixed(2)}`
+                : order.paymentStatus === 'review'
+                  ? `⚠️ <strong style="color:#b45309;">Payment needs a check</strong> · GH₵${Number(order.total || 0).toFixed(2)}`
+                  : (order.paymentMode === 'cash' || /cash|pay on delivery/i.test(order.payment || ''))
+                    ? `💵 <strong style="color:#92400e;">Cash due on delivery</strong> · GH₵${Number(order.total || 0).toFixed(2)}
+                       <button type="button" class="btn btn-orange btn-sm cash-collected-btn" data-id="${order.id}" style="margin-left:6px; min-height:28px; font-size:0.72rem;">💵 Cash received</button>`
+                    : `💳 <strong style="color:#92400e;">MoMo unpaid</strong> · ask customer to verify on their tracking screen`
+              }
+            </div>
+
+            <!-- 4-Digit Pickup PIN Security Verification -->
+            <div class="pin-verification-box">
+              <div>
+                <strong style="font-size:0.85rem; color:var(--forest);">🔐 Customer PIN = last 4 of Order ID:</strong>
+                <div style="font-size:0.72rem; color:var(--muted);">e.g. YB-3041 → PIN 3041</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                ${isVerified ? `
+                  <span style="font-family:monospace; font-weight:800; color:#166534; font-size:1.1rem; background:#dcfce7; padding:4px 10px; border-radius:6px;">
+                    PIN: ${order.pickupPin || 'OK'} ✓
+                  </span>
+                ` : `
+                  <input type="text" maxlength="4" placeholder="PIN" class="pin-input" data-id="${order.id}" id="pinInput-${order.id}">
+                  <button type="button" class="btn btn-orange btn-sm verify-pin-btn" data-id="${order.id}">
+                    Verify PIN
+                  </button>
+                  <button type="button" class="btn btn-outline btn-sm quick-verify-btn" data-id="${order.id}" title="Quick override verification">
+                    ✓
+                  </button>
+                `}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Manage Action Buttons State
+      const anyEnroute = activeOrders.some(o => o.status === 'enroute');
+      const anyArrived = activeOrders.some(o => o.status === 'arrived');
+      const allDelivered = activeOrders.length > 0 && activeOrders.every(o => o.status === 'delivered');
+
+      if (!anyEnroute && !anyArrived && !allDelivered) {
+        driverStartEnRouteBtn.style.display = 'inline-flex';
+        driverArrivedPickupPointBtn.style.display = 'none';
+        driverCompleteDeliveryBtn.style.display = 'none';
+      } else if (anyEnroute && !anyArrived) {
+        driverStartEnRouteBtn.style.display = 'none';
+        driverArrivedPickupPointBtn.style.display = 'inline-flex';
+        driverCompleteDeliveryBtn.style.display = 'none';
+      } else if (anyArrived || anyEnroute) {
+        driverStartEnRouteBtn.style.display = 'none';
+        driverArrivedPickupPointBtn.style.display = 'none';
+        driverCompleteDeliveryBtn.style.display = 'inline-flex';
+      } else if (allDelivered) {
+        driverStartEnRouteBtn.style.display = 'none';
+        driverArrivedPickupPointBtn.style.display = 'none';
+        driverCompleteDeliveryBtn.style.display = 'inline-flex';
+        driverCompleteDeliveryBtn.textContent = '✅ Deliveries Completed (Send Report to Owner WhatsApp)';
+      }
+    }
+
+    // PIN Verification Button Listener
+    sessionPackagesList.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('verify-pin-btn')) {
+        const orderId = e.target.dataset.id;
+        const input = document.getElementById(`pinInput-${orderId}`);
+        const enteredPin = input ? input.value.trim() : '';
+
+        if (!enteredPin || enteredPin.length !== 4) {
+          alert("Please enter the customer's 4-digit Order ID PIN (the last 4 digits of their Order ID).");
+          return;
+        }
+
+        e.target.disabled = true;
+        const res = await verifyOrderPin(orderId, enteredPin);
+        e.target.disabled = false;
+        if (res.success) {
+          renderSessionPackages();
+          if (lookedUpOrderId === orderId) renderLookupResult(getOrders().find(o => o.id === orderId));
+        } else {
+          alert(res.message);
+        }
+      }
+
+      if (e.target.classList.contains('quick-verify-btn')) {
+        const orderId = e.target.dataset.id;
+        const order = getOrders().find(o => o.id === orderId);
+        if (order) {
+          const pin = order.pickupPin || String(order.id).slice(-4);
+          const res = await verifyOrderPin(orderId, pin);
+          if (!res.success) alert(res.message);
+          renderSessionPackages();
+        }
+      }
+
+      if (e.target.classList.contains('cash-collected-btn')) {
+        const orderId = e.target.dataset.id;
+        const order = getOrders().find(o => o.id === orderId);
+        if (!order) return;
+        if (order.paymentStatus === 'paid') {
+          alert(`${order.id} is already paid. Do not collect cash again.`);
+          return;
+        }
+        // Open the validated handover card so the rider types the exact amount
+        // received in a real input (no browser prompts).
+        if (driverLookupInput) driverLookupInput.value = orderId;
+        await lookupOrderByCode(orderId);
+        const card = document.getElementById('driverLookupCard');
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setTimeout(() => {
+          const cashInput = document.getElementById('driverCashAmount');
+          if (cashInput) { cashInput.focus(); cashInput.select(); }
+        }, 350);
+      }
+    });
+
+    // ----------------------------------------------------
+    // ORDER ID LOOKUP & HANDOVER VALIDATION
+    // ----------------------------------------------------
+    function paymentSummaryHtml(order) {
+      const paid = order.paymentStatus === 'paid';
+      const review = order.paymentStatus === 'review';
+      const isCash = (order.paymentMode || '') === 'cash' || /cash|pay on delivery/i.test(order.payment || '');
+      const badge = paid
+        ? `<span style="color:#166534; font-weight:800;">✅ PAID</span>`
+        : review
+          ? `<span style="color:#b45309; font-weight:800;">⚠️ NEEDS CHECK</span>`
+          : isCash
+            ? `<span style="color:#92400e; font-weight:800;">💵 CASH DUE</span>`
+            : `<span style="color:#92400e; font-weight:800;">💳 UNPAID (MoMo)</span>`;
+      const how = paid
+        ? (order.verificationMethod === 'cash-driver' ? 'Cash collected by rider' : 'MoMo verified')
+        : (isCash ? 'Collect cash at handover' : 'Customer pays by MoMo before collection');
+      return `${badge} · <strong>GH₵${Number(order.total || 0).toFixed(2)}</strong><br>
+        <span style="font-size:0.76rem; color:var(--muted);">${how}${order.momoTransactionRef ? ` · Ref ${order.momoTransactionRef}` : ''}</span>`;
+    }
+
+    let lookupNotice = null;      // { text, tone } — survives live re-renders
+    let lookupPinDraft = '';      // keeps whatever the rider is typing
+    let lookupRenderSig = '';     // avoids rebuilding the card on every poll
+
+    function renderLookupResult(order) {
+      if (!driverLookupResult) return;
+      if (!order) {
+        driverLookupResult.innerHTML = '';
+        return;
+      }
+      const typedPin = document.getElementById('driverLookupPin');
+      if (typedPin) lookupPinDraft = typedPin.value;
+      const paid = order.paymentStatus === 'paid';
+      const isCash = (order.paymentMode || '') === 'cash' || /cash|pay on delivery/i.test(order.payment || '');
+      const itemsText = (order.items || []).length
+        ? order.items.map(i => `• ${i.name}${i.noodle ? ` (${i.noodle})` : ''} ×${i.quantity}`).join('<br>')
+        : 'No item detail available';
+
+      driverLookupResult.innerHTML = `
+        <div style="border:2px solid ${order.verifiedByDriver ? '#86efac' : '#fcd34d'}; background:${order.verifiedByDriver ? '#f0fdf4' : '#fffbeb'}; border-radius:12px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center;">
+            <div>
+              <div style="font-family:ui-monospace, monospace; font-size:1.15rem; font-weight:900; color:var(--forest);">${order.id}</div>
+              <div style="font-size:0.82rem; color:var(--muted);">Status: <strong>${String(order.status || '').toUpperCase()}</strong>${order.verifiedByDriver ? ' · PIN verified ✅' : ''}</div>
+            </div>
+            <a href="${formatTelHref(order.phone)}" class="btn btn-outline btn-sm">📞 Call ${order.customer}</a>
+          </div>
+
+          <div style="margin-top:10px; font-size:0.86rem;">
+            <div>👤 <strong>${order.customer}</strong>${order.phone ? ` · ${order.phone}` : ''}</div>
+            <div style="color:var(--muted); font-size:0.8rem; margin-top:2px;">📍 ${order.location || 'Pickup point'}${order.notes ? ` · Note: "${order.notes}"` : ''}</div>
+          </div>
+
+          <div style="margin-top:8px; font-size:0.82rem; background:white; border:1px solid #e5e7eb; border-radius:8px; padding:8px 10px;">
+            ${itemsText}
+            <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #e5e7eb;">${paymentSummaryHtml(order)}</div>
+          </div>
+
+          <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #e5e7eb;">
+            <div style="font-size:0.8rem; font-weight:800; color:var(--forest); margin-bottom:6px;">🔐 Confirm the customer's PIN (last 4 of the Order ID)</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <input type="text" maxlength="4" inputmode="numeric" id="driverLookupPin" placeholder="4 digits" value="${lookupPinDraft.replace(/"/g, '')}"
+                style="width:110px; padding:10px; border:1px solid var(--line); border-radius:8px; font-family:ui-monospace, monospace; font-size:1rem; letter-spacing:0.15em; text-align:center;">
+              <button type="button" id="driverLookupVerifyBtn" class="btn btn-forest btn-sm" style="min-height:40px;">✅ Verify &amp; hand over</button>
+              <span id="driverLookupPinStatus" style="font-size:0.8rem; color:${lookupNotice ? (lookupNotice.tone === 'ok' ? '#166534' : lookupNotice.tone === 'warn' ? '#b45309' : '#b91c1c') : 'var(--muted)'};">${lookupNotice && lookupNotice.kind === 'pin' ? lookupNotice.text : ''}</span>
+            </div>
+          </div>
+
+          ${isCash && !paid ? `
+            <div style="margin-top:10px; padding:12px; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px;">
+              <div style="font-size:0.82rem; font-weight:800; color:#92400e; margin-bottom:6px;">💵 Cash on delivery — record the amount received</div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <input type="number" step="0.01" min="0" id="driverCashAmount" value="${Number(order.total || 0).toFixed(2)}"
+                  style="width:130px; padding:10px; border:1px solid #fdba74; border-radius:8px; font-size:0.9rem;">
+                <button type="button" id="driverCashBtn" class="btn btn-orange btn-sm" style="min-height:40px;">💵 Cash received — mark paid</button>
+                <span id="driverCashStatus" style="font-size:0.8rem; color:${lookupNotice ? (lookupNotice.tone === 'ok' ? '#166534' : lookupNotice.tone === 'warn' ? '#b45309' : '#b91c1c') : '#92400e'};">${lookupNotice && lookupNotice.kind === 'cash' ? lookupNotice.text : ''}</span>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+
+      const verifyBtn = document.getElementById('driverLookupVerifyBtn');
+      if (verifyBtn) {
+        verifyBtn.onclick = async () => {
+          const input = document.getElementById('driverLookupPin');
+          const status = document.getElementById('driverLookupPinStatus');
+          const pin = input ? input.value.trim() : '';
+          if (!/^\d{4}$/.test(pin)) {
+            if (status) { status.textContent = 'Enter the 4 digits from the customer.'; status.style.color = '#b91c1c'; }
+            return;
+          }
+          verifyBtn.disabled = true;
+          const res = await verifyOrderPin(order.id, pin);
+          verifyBtn.disabled = false;
+          lookupNotice = {
+            kind: 'pin',
+            text: res.message || (res.success ? 'Verified.' : 'Incorrect code.'),
+            tone: res.success ? 'ok' : 'err'
+          };
+          if (res.success) {
+            lookupPinDraft = '';
+            const input2 = document.getElementById('driverLookupPin');
+            if (input2) input2.value = '';
+            playChime('general');
+            renderSessionPackages();
+          }
+          lookupRenderSig = '';
+          renderLookupResult(res.order || getOrders().find(o => o.id === order.id) || order);
+        };
+      }
+
+      const cashBtn = document.getElementById('driverCashBtn');
+      if (cashBtn) {
+        cashBtn.onclick = async () => {
+          const amountInput = document.getElementById('driverCashAmount');
+          const status = document.getElementById('driverCashStatus');
+          const amount = amountInput ? Number(amountInput.value) : 0;
+          if (!Number.isFinite(amount) || amount <= 0) {
+            if (status) { status.textContent = 'Enter the cash amount received.'; status.style.color = '#b91c1c'; }
+            return;
+          }
+          cashBtn.disabled = true;
+          cashBtn.textContent = 'Recording…';
+          const res = await apiPayCash(order.id, amount);
+          cashBtn.disabled = false;
+          cashBtn.textContent = '💵 Cash received — mark paid';
+          lookupNotice = {
+            kind: 'cash',
+            text: (res && res.message) || 'No response from the server.',
+            tone: res && res.success ? 'ok' : (res && res.needsReview ? 'warn' : 'err')
+          };
+          if (res && res.success) {
+            playChime('general');
+            renderSessionPackages();
+          }
+          lookupRenderSig = '';
+          renderLookupResult((res && res.order) || getOrders().find(o => o.id === order.id) || order);
+        };
+      }
+
+      lookupRenderSig = `${order.id}|${order.status}|${order.paymentStatus}|${order.verifiedByDriver}|${order.verificationMethod}`;
+    }
+
+    async function lookupOrderByCode(code) {
+      if (!code) return;
+      lookupNotice = null;
+      lookupPinDraft = '';
+      if (driverLookupBtn) { driverLookupBtn.disabled = true; driverLookupBtn.textContent = 'Checking…'; }
+      if (driverLookupStatus) { driverLookupStatus.textContent = 'Looking up the order…'; driverLookupStatus.style.color = 'var(--muted)'; }
+      try {
+        const res = await apiLookupOrder(code);
+        if (res && res.success && res.order) {
+          lookedUpOrderId = res.order.id;
+          if (driverLookupStatus) {
+            driverLookupStatus.textContent = `Found ${res.order.id} for ${res.order.customer}.`;
+            driverLookupStatus.style.color = '#166534';
+          }
+          renderLookupResult(res.order);
+        } else {
+          lookedUpOrderId = null;
+          if (driverLookupResult) driverLookupResult.innerHTML = '';
+          if (driverLookupStatus) {
+            driverLookupStatus.textContent = (res && res.message) || 'No order matched that code.';
+            driverLookupStatus.style.color = '#b91c1c';
+          }
+        }
+      } finally {
+        if (driverLookupBtn) { driverLookupBtn.disabled = false; driverLookupBtn.textContent = '🔎 Fetch order'; }
+      }
+    }
+
+    if (driverLookupBtn) {
+      driverLookupBtn.addEventListener('click', () => {
+        const code = driverLookupInput ? driverLookupInput.value.trim() : '';
+        if (!code) {
+          if (driverLookupStatus) { driverLookupStatus.textContent = 'Type an Order ID like YB-3041, or just its 4 digits.'; driverLookupStatus.style.color = '#b91c1c'; }
+          return;
+        }
+        lookupOrderByCode(code);
+      });
+    }
+
+    if (driverLookupInput) {
+      driverLookupInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const code = driverLookupInput.value.trim();
+          if (code) lookupOrderByCode(code);
+        }
+      });
+    }
+
+    // 1. START EN ROUTE TO PICKUP POINT
+    driverStartEnRouteBtn.addEventListener('click', () => {
+      const orders = getOrders().filter(o => o.status !== 'cancelled' && o.status !== 'delivered');
+      if (orders.length === 0) {
+        alert("No active orders in this session to deliver.");
+        return;
+      }
+
+      const driver = getCurrentDriver();
+      orders.forEach(o => {
+        updateOrderStatus(o.id, 'enroute', {
+          driver: {
+            id: driver.id,
+            name: driver.name,
+            phone: driver.phone,
+            vehicle: driver.vehicle,
+            photo: driver.photo,
+            currentLocation: { ...currentCoords },
+            speedKmh: 22,
+            lastUpdated: new Date().toISOString()
+          }
+        });
+      });
+
+      playChime('general');
+      renderSessionPackages();
+      alert(`Driver en route with all ${orders.length} food packages to the pickup point! 3-minute intermission countdown has begun.`);
+    });
+
+    // 2. ARRIVED AT PICKUP POINT
+    driverArrivedPickupPointBtn.addEventListener('click', () => {
+      const session = getSessionState();
+      const pickupName = session.pickupPoint ? session.pickupPoint.name : activePickupPointName.textContent;
+      const driver = getCurrentDriver();
+
+      notifySessionArrivalAtPickupPoint(pickupName, driver.name, currentCoords, {
+        phone: driver.phone,
+        photo: driver.photo,
+        vehicle: driver.vehicle
+      });
+      renderSessionPackages();
+
+      alert(`📍 Arrival announced at "${pickupName}"! Voice alert (English + Twi) played, customers were notified, and your call button now shows ${driver.phone || 'your registered number'}.`);
+    });
+
+    // Megaphone Voice Broadcast Button
+    playVoiceBroadcastBtn.addEventListener('click', () => {
+      const session = getSessionState();
+      const pickupName = session.pickupPoint ? session.pickupPoint.name : activePickupPointName.textContent;
+      playVoiceArrivalAnnouncement(pickupName);
+    });
+
+    // 3. DELIVERY SUCCESSFUL & NOTIFY OWNER VIA WHATSAPP
+    driverCompleteDeliveryBtn.addEventListener('click', () => {
+      const session = getSessionState();
+      const pickupName = session.pickupPoint ? session.pickupPoint.name : activePickupPointName.textContent;
+
+      if (confirm(`Confirm batch delivery complete for all packages at "${pickupName}"? This will log in Admin panel and open WhatsApp to the owner.`)) {
+        const result = completeSessionDeliveriesAndNotifyOwner(session.sessionNumber, getCurrentDriver().name, pickupName);
+        playChime('neworder');
+        renderSessionPackages();
+
+        window.open(result.whatsappUrl, '_blank');
+        alert("Batch delivery successfully completed, archived in Admin records, and WhatsApp report sent to the owner!");
+      }
+    });
+
+    riderSelectDropdown.addEventListener('change', () => {
+      riderNameDisplay.textContent = riderSelectDropdown.value;
+    });
+
+    onSyncEvent(() => {
+      renderSessionPackages();
+    });
+
+    // ---------------------------------------------------------
+    // Driver Authentication Guard (Login & Auto-Generated Signup)
+    // ---------------------------------------------------------
+    const driverAuthModal = document.getElementById('driverAuthModal');
+    const driverUserBadge = document.getElementById('driverUserBadge');
+    const driverLogoutBtn = document.getElementById('driverLogoutBtn');
+    const driverAuthTabLogin = document.getElementById('driverAuthTabLogin');
+    const driverAuthTabSignup = document.getElementById('driverAuthTabSignup');
+    const driverLoginFormWrap = document.getElementById('driverLoginFormWrap');
+    const driverSignupFormWrap = document.getElementById('driverSignupFormWrap');
+    const driverLoginForm = document.getElementById('driverLoginForm');
+    const driverSignupForm = document.getElementById('driverSignupForm');
+    const driverAuthError = document.getElementById('driverAuthError');
+    const driverSignupSuccessBox = document.getElementById('driverSignupSuccessBox');
+
+    function bootDriverDashboard() {
+      initPickupPoints();
+      initGoogleMap();
+      startGpsStreaming();
+      updateClosingTimeDisplay();
+      renderSessionPackages();
+      setTimeout(syncSharedPickupPoint, 400);
+
+      // Keep the shared pickup point in step with admin/rider changes.
+      if (!window.__yebsDriverPickupPollStarted) {
+        window.__yebsDriverPickupPollStarted = true;
+        setInterval(syncSharedPickupPoint, 9000);
+      }
+
+      if (!window.__yebsDriverLiveSyncStarted) {
+        window.__yebsDriverLiveSyncStarted = true;
+        startLiveOrderSync(() => {
+          renderSessionPackages();
+          if (lookedUpOrderId) {
+            const fresh = getOrders().find(o => o.id === lookedUpOrderId);
+            if (fresh) {
+              const sig = `${fresh.id}|${fresh.status}|${fresh.paymentStatus}|${fresh.verifiedByDriver}|${fresh.verificationMethod}`;
+              if (sig !== lookupRenderSig) renderLookupResult(fresh);
+            }
+          }
+        }, 4000);
+      }
+    }
+
+    function checkDriverAuth() {
+      const token = sessionStorage.getItem('yebs_driver_token');
+      const userRaw = sessionStorage.getItem('yebs_driver_user');
+      if (!token || token === 'undefined') {
+        if (driverAuthModal) driverAuthModal.style.display = 'flex';
+        if (driverUserBadge) driverUserBadge.style.display = 'none';
+        if (driverLogoutBtn) driverLogoutBtn.style.display = 'none';
+        return false;
+      }
+      if (driverAuthModal) driverAuthModal.style.display = 'none';
+      if (driverUserBadge) driverUserBadge.style.display = 'inline-block';
+      if (driverLogoutBtn) driverLogoutBtn.style.display = 'inline-block';
+
+      if (userRaw) {
+        try {
+          const user = JSON.parse(userRaw);
+          const displayName = user.name || `${user.fname || ''} ${user.lname || ''}`.trim() || user.username;
+          driverUserBadge.textContent = `🛵 ${displayName} (@${user.username})`;
+          if (riderSelectDropdown) {
+            let exists = false;
+            for (let i = 0; i < riderSelectDropdown.options.length; i++) {
+              if (riderSelectDropdown.options[i].value === displayName) {
+                riderSelectDropdown.selectedIndex = i;
+                exists = true;
+                break;
+              }
+            }
+            if (!exists) {
+              const opt = document.createElement('option');
+              opt.value = displayName;
+              opt.textContent = `${displayName} (${user.vehicle || 'Rider'})`;
+              opt.selected = true;
+              riderSelectDropdown.appendChild(opt);
+            }
+            riderNameDisplay.textContent = displayName;
+          }
+
+          // Update driver profile card with photo and vehicle
+          const profileAvatar = document.getElementById('driverProfileAvatar');
+          const riderVehicleDisplay = document.getElementById('riderVehicleDisplay');
+          const riderPhoneDisplay = document.getElementById('riderPhoneDisplay');
+
+          const driverPhoto = user.photo || sessionStorage.getItem('yebs_driver_photo') || localStorage.getItem('yebs_driver_photo_' + user.username);
+          if (driverPhoto && profileAvatar) {
+            profileAvatar.innerHTML = `<img src="${driverPhoto}" alt="${displayName}">`;
+          }
+          if (riderVehicleDisplay) {
+            riderVehicleDisplay.textContent = `${user.vehicle || 'Delivery Motorbike'} · Live GPS Streaming`;
+          }
+          if (riderPhoneDisplay && user.phone) {
+            riderPhoneDisplay.innerHTML = `<a href="${formatTelHref(user.phone)}" style="color:inherit; font-weight:700;">📞 ${user.phone}</a>`;
+          }
+        } catch(e) {}
+      }
+      return true;
+    }
+
+    // Toggle between Login & Signup Tabs
+    driverAuthTabLogin.addEventListener('click', () => {
+      driverAuthTabLogin.classList.add('active');
+      driverAuthTabSignup.classList.remove('active');
+      driverLoginFormWrap.style.display = 'block';
+      driverSignupFormWrap.style.display = 'none';
+      driverAuthError.style.display = 'none';
+    });
+
+    driverAuthTabSignup.addEventListener('click', () => {
+      driverAuthTabSignup.classList.add('active');
+      driverAuthTabLogin.classList.remove('active');
+      driverSignupFormWrap.style.display = 'block';
+      driverLoginFormWrap.style.display = 'none';
+      driverAuthError.style.display = 'none';
+      const camBtn = document.getElementById('startCameraBtn');
+      if (camBtn) setTimeout(() => camBtn.click(), 250);
+    });
+
+    // Handle Driver Login
+    driverLoginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      driverAuthError.style.display = 'none';
+      const username = document.getElementById('driverLoginUsername').value.trim();
+      const password = document.getElementById('driverLoginPassword').value.trim();
+
+      const btn = document.getElementById('driverLoginSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Verifying rider account...';
+
+      const res = await apiDriverLogin(username, password);
+      btn.disabled = false;
+      btn.textContent = '🛵 Rider Portal Login';
+
+      if (res.success) {
+        checkDriverAuth();
+        bootDriverDashboard();
+      } else if (res.pending) {
+        // Account pending admin approval — show waiting screen
+        showApprovalPendingScreen(res.driverId, res.driverName || username);
+      } else if (res.rejected) {
+        driverAuthError.textContent = res.message || 'Your registration was not approved. Contact YEBS Noodles for assistance.';
+        driverAuthError.style.display = 'block';
+      } else {
+        driverAuthError.textContent = res.error || res.message || 'Invalid driver credentials. Please check your username and password.';
+        driverAuthError.style.display = 'block';
+      }
+    });
+
+    // Webcam Photo Capture Logic
+    let capturedPhotoData = null;
+    let cameraStream = null;
+    const webcamVideo = document.getElementById('webcamVideo');
+    const webcamCanvas = document.getElementById('webcamCanvas');
+    const webcamPreview = document.getElementById('webcamPreview');
+    const webcamPlaceholder = document.getElementById('webcamPlaceholder');
+    const startCameraBtn = document.getElementById('startCameraBtn');
+    const capturePhotoBtn = document.getElementById('capturePhotoBtn');
+    const retakePhotoBtn = document.getElementById('retakePhotoBtn');
+    const webcamCaptureBox = document.getElementById('webcamCaptureBox');
+
+    startCameraBtn.addEventListener('click', async () => {
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 320, height: 320, facingMode: 'user' }, 
+          audio: false 
+        });
+        webcamVideo.srcObject = cameraStream;
+        webcamVideo.style.display = 'block';
+        webcamPlaceholder.style.display = 'none';
+        webcamPreview.style.display = 'none';
+        startCameraBtn.style.display = 'none';
+        capturePhotoBtn.style.display = 'inline-flex';
+        retakePhotoBtn.style.display = 'none';
+      } catch (err) {
+        const insecure = location.protocol === 'file:';
+        alert(insecure
+          ? 'The camera only works when the site is opened through the server.\n\nOpen http://localhost:3000/driver.html and try again.'
+          : 'Could not access camera. Please allow camera permission in your browser, then try again.');
+        console.warn('Camera error:', err);
+      }
+    });
+
+    capturePhotoBtn.addEventListener('click', () => {
+      if (!webcamVideo.srcObject) return;
+      const SIZE = 480;
+      webcamCanvas.width = SIZE;
+      webcamCanvas.height = SIZE;
+      const ctx = webcamCanvas.getContext('2d');
+      // Neutral backdrop so the circular cut-out does not turn black in JPEG.
+      ctx.fillStyle = '#f3f4f6';
+      ctx.fillRect(0, 0, SIZE, SIZE);
+      // Draw circular crop
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(webcamVideo, 0, 0, SIZE, SIZE);
+      ctx.restore();
+
+      capturedPhotoData = webcamCanvas.toDataURL('image/jpeg', 0.82);
+      webcamPreview.src = capturedPhotoData;
+      webcamPreview.style.display = 'block';
+      webcamVideo.style.display = 'none';
+      capturePhotoBtn.style.display = 'none';
+      retakePhotoBtn.style.display = 'inline-flex';
+      webcamCaptureBox.classList.add('has-photo');
+
+      // Stop camera stream
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+      }
+    });
+
+    retakePhotoBtn.addEventListener('click', async () => {
+      capturedPhotoData = null;
+      webcamPreview.style.display = 'none';
+      webcamCaptureBox.classList.remove('has-photo');
+      retakePhotoBtn.style.display = 'none';
+      // Re-open camera
+      startCameraBtn.click();
+    });
+
+    // Vehicle type: reveal free-text field for "Other"
+    const driverSignupVehicleSelect = document.getElementById('driverSignupVehicle');
+    const driverSignupVehicleOtherWrap = document.getElementById('driverSignupVehicleOtherWrap');
+    if (driverSignupVehicleSelect && driverSignupVehicleOtherWrap) {
+      driverSignupVehicleSelect.addEventListener('change', () => {
+        driverSignupVehicleOtherWrap.style.display = driverSignupVehicleSelect.value === 'Other' ? 'block' : 'none';
+      });
+    }
+
+    // Handle Driver Signup (Auto-Generates Username from fname + lname + vehicle + photo)
+    driverSignupForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      driverAuthError.style.display = 'none';
+      driverSignupSuccessBox.style.display = 'none';
+
+      const fname = document.getElementById('driverSignupFname').value.trim();
+      const lname = document.getElementById('driverSignupLname').value.trim();
+      const phone = document.getElementById('driverSignupPhone').value.trim();
+      let vehicleType = document.getElementById('driverSignupVehicle').value;
+      const otherVehicle = document.getElementById('driverSignupVehicleOther').value.trim();
+      const plate = document.getElementById('driverSignupPlate').value.trim();
+      const password = document.getElementById('driverSignupPassword').value.trim();
+
+      if (!vehicleType) {
+        driverAuthError.textContent = 'Please select your vehicle type.';
+        driverAuthError.style.display = 'block';
+        return;
+      }
+      if (vehicleType === 'Other') {
+        if (!otherVehicle) {
+          driverAuthError.textContent = 'Please describe your vehicle type.';
+          driverAuthError.style.display = 'block';
+          return;
+        }
+        vehicleType = otherVehicle;
+      }
+      if (!capturedPhotoData) {
+        driverAuthError.textContent = 'Take a live face photo with the camera before signing up. Customers will see this photo.';
+        driverAuthError.style.display = 'block';
+        return;
+      }
+
+      const vehicleFull = plate ? `${vehicleType} (${plate})` : vehicleType;
+
+      const btn = document.getElementById('driverSignupSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Creating account & generating username...';
+
+      const res = await apiDriverSignup({ fname, lname, phone, password, vehicle: vehicleFull, photo: capturedPhotoData });
+      btn.disabled = false;
+      btn.textContent = '✨ Complete Registration & Login';
+
+      if (res.success || res.pending) {
+        // Store photo locally
+        if (capturedPhotoData && res.username) {
+          localStorage.setItem('yebs_driver_photo_' + res.username, capturedPhotoData);
+          sessionStorage.setItem('yebs_driver_photo', capturedPhotoData);
+        }
+        if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+
+        if (res.pending) {
+          // New flow: show approval-pending screen
+          driverSignupSuccessBox.innerHTML = `
+            <strong>✅ Registration submitted!</strong><br>
+            Your username: <strong style="font-family:monospace;color:var(--orange);">${res.username || ''}</strong><br>
+            <span style="font-size:0.8rem;">Waiting for admin approval before you can log in…</span>
+          `;
+          driverSignupSuccessBox.style.display = 'block';
+          setTimeout(() => showApprovalPendingScreen(res.driverId, res.driverName || ''), 1400);
+        } else {
+          // Legacy path (pre-approved driver — should not happen with new system)
+          const username = res.driver ? res.driver.username : res.username;
+          driverSignupSuccessBox.innerHTML = `
+            <strong>🎉 Account Created!</strong><br>
+            Username: <strong style="color:var(--orange);font-family:monospace;">${username}</strong><br>
+            <span style="font-size:0.8rem;">Logging you in now…</span>
+          `;
+          driverSignupSuccessBox.style.display = 'block';
+          setTimeout(() => { checkDriverAuth(); bootDriverDashboard(); }, 1800);
+        }
+      } else {
+        driverAuthError.textContent = res.error || res.message || 'Registration failed. Please check your inputs.';
+        driverAuthError.style.display = 'block';
+      }
+    });
+
+    driverLogoutBtn.addEventListener('click', () => {
+      if (confirm('Log out from Driver Portal?')) {
+        sessionStorage.removeItem('yebs_driver_token');
+        sessionStorage.removeItem('yebs_driver_user');
+        checkDriverAuth();
+      }
+    });
+
+    // Confirm a remembered rider token still works on this server.
+    async function validateDriverSessionOnServer() {
+      const token = sessionStorage.getItem('yebs_driver_token');
+      if (!token) return false;
+      const info = await apiValidateSession('driver');
+      if (!info || info.role !== 'driver') {
+        sessionStorage.removeItem('yebs_driver_token');
+        sessionStorage.removeItem('yebs_driver_user');
+        checkDriverAuth();
+        if (driverAuthError) {
+          driverAuthError.textContent = 'Your session expired. Sign in again to continue.';
+          driverAuthError.style.display = 'block';
+        }
+        return false;
+      }
+      if (info.driver) {
+        sessionStorage.setItem('yebs_driver_user', JSON.stringify(info.driver));
+        if (info.driver.photo) sessionStorage.setItem('yebs_driver_photo', info.driver.photo);
+      }
+      checkDriverAuth();
+      return true;
+    }
+
+    // ── Approval-Pending Screen ─────────────────────────────────────────────
+    let _approvalPollTimer = null;
+
+    function showApprovalPendingScreen(driverId, driverName) {
+      if (driverAuthModal) driverAuthModal.style.display = 'none';
+      let overlay = document.getElementById('approvalPendingOverlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'approvalPendingOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,40,32,0.97);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px;';
+        document.body.appendChild(overlay);
+      }
+      overlay.innerHTML = `
+        <div style="background:#fff;border-radius:20px;max-width:460px;width:100%;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,0.4);animation:modalSlideUp 0.35s ease-out;">
+          <div style="background:#173d30;color:white;padding:28px 24px;text-align:center;">
+            <div style="font-size:3rem;margin-bottom:10px;">⏳</div>
+            <h2 style="margin:0;font-family:Georgia,serif;font-size:1.5rem;">Registration Submitted!</h2>
+            <p style="margin:8px 0 0;color:#b7d4bf;font-size:0.88rem;">Your application is under admin review.</p>
+          </div>
+          <div style="padding:28px 24px;text-align:center;">
+            <div style="font-size:1.1rem;font-weight:800;color:#173d30;margin-bottom:12px;">Welcome, ${driverName || 'Driver'}! 👋</div>
+            <div style="background:#fffbeb;border:1.5px solid #fbbf24;border-radius:12px;padding:18px;margin-bottom:20px;font-size:0.9rem;color:#78350f;line-height:1.7;text-align:left;">
+              <strong>🔒 What happens next:</strong><br>
+              • The YEBS admin will review your application<br>
+              • Once approved, you'll get an instant notification here<br>
+              • Your login panel becomes available immediately after approval<br>
+              • You can safely close this page — we'll notify you when ready
+            </div>
+            <div id="approvalStatusIndicator" style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:0.9rem;color:#6b7280;margin-bottom:20px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:#fbbf24;animation:pulse 1.8s infinite;flex-shrink:0;"></div>
+              <span>Checking for approval every 8 seconds…</span>
+            </div>
+            <div id="approvalApprovedBanner" style="display:none;background:#f0fdf4;border:2px solid #22c55e;border-radius:12px;padding:16px;margin-bottom:16px;font-size:0.95rem;color:#166534;font-weight:700;">
+              ✅ Approved! Your login panel is now ready.
+            </div>
+            <button id="approvalGoToLoginBtn" style="display:none;width:100%;padding:14px;background:#e57a45;color:white;border:none;border-radius:8px;font-size:1rem;font-weight:800;cursor:pointer;margin-bottom:10px;">🛵 Go to Login</button>
+            <button id="approvalCheckNowBtn" style="width:100%;padding:12px;background:#173d30;color:white;border:none;border-radius:8px;font-size:0.9rem;font-weight:700;cursor:pointer;margin-bottom:10px;">🔄 Check Approval Now</button>
+            <button id="approvalBackBtn" style="width:100%;padding:10px;background:transparent;color:#6b7280;border:1px solid #e5e7eb;border-radius:8px;font-size:0.85rem;cursor:pointer;">← Back to Login</button>
+          </div>
+        </div>
+      `;
+      overlay.style.display = 'flex';
+
+      function onApprovalGranted() {
+        if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
+        const banner = document.getElementById('approvalApprovedBanner');
+        const goBtn  = document.getElementById('approvalGoToLoginBtn');
+        const ind    = document.getElementById('approvalStatusIndicator');
+        if (banner) banner.style.display = 'block';
+        if (goBtn)  goBtn.style.display  = 'block';
+        if (ind)    ind.style.display    = 'none';
+        // Native push notification
+        if ('Notification' in window) {
+          Notification.requestPermission().then(p => {
+            if (p === 'granted') new Notification('YEBS Noodles — Approved! 🎉', {
+              body: `Welcome ${driverName}! Your driver account is active. Log in now.`,
+              icon: 'logo.png'
+            });
+          });
+        }
+        // Approval chime
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          const actx = new AudioCtx();
+          const t = actx.currentTime;
+          [523, 659, 784, 1047].forEach((f, i) => {
+            const o = actx.createOscillator(); const g = actx.createGain();
+            o.frequency.value = f; o.type = 'sine';
+            g.gain.setValueAtTime(0.28, t+i*0.18);
+            g.gain.exponentialRampToValueAtTime(0.001, t+i*0.18+0.45);
+            o.connect(g); g.connect(actx.destination);
+            o.start(t+i*0.18); o.stop(t+i*0.18+0.5);
+          });
+        } catch(e) {}
+      }
+
+      async function checkApproval() {
+        if (!driverId) return;
+        try {
+          const r = await fetch(`/api/drivers/${encodeURIComponent(driverId)}/approval`, { cache: 'no-store' });
+          const d = await r.json();
+          if (d.approvalStatus === 'approved') { onApprovalGranted(); }
+          else if (d.approvalStatus === 'rejected') {
+            if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
+            const ind = document.getElementById('approvalStatusIndicator');
+            if (ind) ind.innerHTML = '<span style="color:#b91c1c;font-weight:700;">✖ Not approved. Contact YEBS Noodles for assistance.</span>';
+          }
+        } catch(e) {}
+      }
+
+      if (_approvalPollTimer) clearInterval(_approvalPollTimer);
+      if (driverId) {
+        checkApproval();
+        _approvalPollTimer = setInterval(checkApproval, 8000);
+        // SSE real-time push
+        if (typeof EventSource !== 'undefined') {
+          const es = new EventSource(`/api/sse/driver/${encodeURIComponent(driverId)}`);
+          es.onmessage = e => { try { const m=JSON.parse(e.data); if(m.type==='approved') onApprovalGranted(); } catch(_){} };
+          es.onerror = () => es.close();
+        }
+      }
+
+      document.getElementById('approvalCheckNowBtn').onclick = () => checkApproval();
+      document.getElementById('approvalGoToLoginBtn').onclick = () => {
+        if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
+        overlay.style.display = 'none';
+        if (driverAuthModal) driverAuthModal.style.display = 'flex';
+        if (typeof driverAuthTabLogin !== 'undefined') driverAuthTabLogin.click();
+      };
+      document.getElementById('approvalBackBtn').onclick = () => {
+        if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
+        overlay.style.display = 'none';
+        if (driverAuthModal) driverAuthModal.style.display = 'flex';
+        if (typeof driverAuthTabLogin !== 'undefined') driverAuthTabLogin.click();
+      };
+    }
+
+    // ── Initial Auth & Render ────────────────────────────────────────────────
+      if (!checkDriverAuth()) return;
+      if (!(await validateDriverSessionOnServer())) return;
+      bootDriverDashboard();
+    
+  </script>
+</body>
+</html>

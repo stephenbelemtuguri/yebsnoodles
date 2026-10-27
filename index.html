@@ -1,0 +1,2586 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173d30">
+  <meta name="description" content="Fresh, satisfying spaghetti and noodles from YEBS Noodles. Order for pickup or delivery with live real-time GPS tracking in Accra.">
+  <title>YEBS Noodles | Fresh from our kitchen & Live Order Tracking</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';">
+  <style>
+    :root {
+      color-scheme: light;
+      --forest: #173d30;
+      --forest-dark: #102c22;
+      --leaf: #52785b;
+      --cream: #fbf8f0;
+      --paper: #fffefa;
+      --ink: #20251f;
+      --muted: #71766d;
+      --line: #e8e5da;
+      --orange: #e57a45;
+      --orange-hover: #d26532;
+      --gold: #e9bd68;
+      --shadow: 0 18px 50px rgb(28 42 31 / 8%);
+      --serif: Georgia, "Times New Roman", serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Trebuchet MS", Arial, sans-serif;
+      color: var(--ink);
+      background: var(--cream);
+      scroll-behavior: smooth;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    a { color: inherit; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .wrap { width: min(1180px, calc(100% - 48px)); margin-inline: auto; }
+    
+    /* Topbar */
+    .topbar { background: var(--forest-dark); color: #f8f4e9; font-size: .76rem; letter-spacing: .06em; }
+    .topbar-inner { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .topbar-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); display: inline-block; }
+    .topbar-links a { color: #f8f4e9; text-decoration: none; margin-left: 14px; opacity: 0.85; transition: opacity .2s; }
+    .topbar-links a:hover { opacity: 1; text-decoration: underline; color: var(--gold); }
+    
+    /* Site Header */
+    .site-header { position: sticky; z-index: 100; top: 0; background: rgb(251 248 240 / 96%); border-bottom: 1px solid rgb(23 61 48 / 8%); backdrop-filter: blur(12px); }
+    .header-inner { min-height: 80px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .brand { display: inline-flex; align-items: center; gap: 12px; text-decoration: none; color: var(--forest); }
+    .brand-logo-img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--orange); box-shadow: 0 4px 12px rgba(229,122,69,0.2); }
+    .brand-copy { display: grid; gap: 2px; }
+    .brand-name { font-family: var(--serif); font-size: 1.35rem; font-weight: 700; letter-spacing: .02em; }
+    .brand-tagline { color: var(--orange); font-size: .65rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    
+    .main-nav { display: flex; align-items: center; gap: 18px; }
+    .main-nav a { color: #464d45; font-size: .88rem; font-weight: 700; text-decoration: none; transition: color .2s; }
+    .main-nav a:hover { color: var(--orange); }
+    .nav-track-btn { display: inline-flex; align-items: center; gap: 6px; background: #eef5f0; color: var(--forest) !important; padding: 7px 14px; border-radius: 6px; border: 1px solid #c9decb; }
+    .nav-track-btn:hover { background: #dceada; }
+    
+    .nav-cta, .button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 6px; padding: 0 20px; background: var(--forest); color: white; font-weight: 700; text-decoration: none; transition: background .18s ease, transform .18s ease; }
+    .nav-cta:hover, .button:hover { background: var(--forest-dark); transform: translateY(-1px); }
+    .button-orange { background: var(--orange); }
+    .button-orange:hover { background: var(--orange-hover); }
+    .button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    
+    /* ======================================================== */
+    /* 3-MINUTE SESSION CYCLE BANNER (INTERMISSION & COUNTDOWN) */
+    /* ======================================================== */
+    .session-cycle-banner {
+      padding: 14px 0;
+      transition: all 0.3s ease;
+      border-bottom: 2px solid transparent;
+    }
+    .session-cycle-banner.active-session {
+      background: #173d30;
+      color: #e5f4ec;
+      border-bottom-color: #22c55e;
+    }
+    .session-cycle-banner.intermission-session {
+      background: linear-gradient(90deg, #9a3412, #c2410c);
+      color: #fff7ed;
+      border-bottom-color: var(--gold);
+    }
+    .session-banner-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .session-indicator-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .session-live-pulse {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+      animation: pulse 1.8s infinite;
+    }
+    .session-cycle-banner.intermission-session .session-live-pulse {
+      background: #fbbf24;
+      box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7);
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+      70% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+    .session-clock-display {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: rgba(0,0,0,0.25);
+      padding: 4px 14px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.2);
+      letter-spacing: 0.08em;
+      color: var(--gold);
+    }
+
+    /* Live Track Search Strip */
+    .live-track-bar {
+      background: #f4efe2;
+      border-bottom: 1px solid var(--line);
+      padding: 10px 0;
+    }
+    .live-track-bar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .track-search-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .track-input {
+      background: white;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      outline: none;
+      min-width: 180px;
+    }
+    .track-input:focus { border-color: var(--forest); }
+
+    /* Hero Section */
+    .hero { padding: 48px 0 54px; overflow: hidden; }
+    .hero-grid { display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: 48px; }
+    .eyebrow { display: flex; align-items: center; gap: 9px; margin: 0 0 16px; color: var(--leaf); font-size: .75rem; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; }
+    .eyebrow::before { width: 27px; height: 2px; content: ""; background: var(--orange); }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { max-width: 600px; margin-bottom: 20px; color: var(--forest); font-family: var(--serif); font-size: clamp(3rem, 6.5vw, 5.2rem); font-weight: 500; letter-spacing: -.04em; line-height: 1.02; }
+    h1 em { color: var(--orange); font-style: normal; font-weight: 600; }
+    .hero-copy { max-width: 480px; margin-bottom: 28px; color: #586055; font-size: 1.05rem; line-height: 1.75; }
+    .hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+    .hero-visual { position: relative; min-height: 380px; }
+    .hero-image { position: absolute; inset: 0 18px 12px 0; width: calc(100% - 18px); height: calc(100% - 12px); object-fit: cover; border-radius: 36px 36px 8px 8px; box-shadow: var(--shadow); }
+    .hero-visual::after { position: absolute; z-index: -1; top: 18px; right: 0; bottom: 0; left: 24px; border: 2px solid var(--gold); border-radius: 36px 36px 8px 8px; content: ""; }
+    .hero-stamp { position: absolute; right: 0px; bottom: 30px; width: 120px; height: 120px; display: grid; align-content: center; justify-items: center; border: 5px solid var(--cream); border-radius: 50%; background: var(--forest); color: white; text-align: center; transform: rotate(8deg); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+    .hero-stamp strong { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; color: var(--gold); }
+    .hero-stamp span { color: #e4d6b7; font-size: .62rem; letter-spacing: .13em; text-transform: uppercase; }
+
+    .intro-strip { border-block: 1px solid var(--line); background: #fffdf8; }
+    .intro-items { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #555c53; font-size: .84rem; flex-wrap: wrap; }
+    .intro-item { display: flex; align-items: center; gap: 10px; }
+    .intro-icon { color: var(--orange); font-size: 1.1rem; }
+
+    /* Sections */
+    .section { padding: 80px 0; }
+    .section-heading { max-width: 650px; margin: 0 auto 36px; text-align: center; }
+    .section-heading .eyebrow { justify-content: center; }
+    .section-heading h2, .order-heading h2 { margin-bottom: 12px; color: var(--forest); font-family: var(--serif); font-size: clamp(2.2rem, 4vw, 3.2rem); font-weight: 500; letter-spacing: -.03em; }
+    .section-heading p, .order-heading p { margin-bottom: 0; color: var(--muted); font-size: .96rem; line-height: 1.7; }
+    .menu-section { background: var(--paper); }
+    
+    .promo-banner { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 0 25px; padding: 18px 22px; border: 1px solid #f0d9b4; border-radius: 8px; background: #fcf2df; }
+    .promo-banner strong { color: var(--forest); font-family: var(--serif); font-size: 1.15rem; font-weight: 500; }
+    .promo-banner span { color: #75694e; font-size: .85rem; line-height: 1.5; }
+    .promo-icon { flex: 0 0 auto; color: var(--orange); font-size: 1.65rem; }
+
+    /* ========================================= */
+    /* FOOD CARDS WITH GHANAIAN SPAGHETTI PHOTOS */
+    /* ========================================= */
+    .menu-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+    @media (max-width: 950px) { .menu-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px) { .menu-grid { grid-template-columns: 1fr; } }
+    
+    /* ========================================================= */
+    /* POSTER TEMPLATE CARDS (MATCHING OFFICIAL FIRST IMAGE)     */
+    /* ========================================================= */
+    .menu-grid { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); 
+      gap: 26px; 
+    }
+    @media (max-width: 650px) { .menu-grid { grid-template-columns: 1fr; } }
+    
+    .poster-card {
+      background: #ffffff;
+      border: 2px solid #e8e2d4;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(18, 44, 34, 0.08);
+      transition: all 0.28s ease;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .poster-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 18px 45px rgba(23, 61, 48, 0.16);
+      border-color: var(--gold);
+    }
+    
+    /* Poster Capsule Banner (Exact replica of Image 1) */
+    .poster-capsule-bar {
+      display: flex;
+      align-items: stretch;
+      background: linear-gradient(135deg, #0e3d2b, #154e38);
+      border-radius: 14px;
+      margin: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(233, 189, 104, 0.3);
+    }
+    
+    /* Brush Price Badge */
+    .poster-price-badge {
+      background: linear-gradient(135deg, #fbb017, #f39c12);
+      color: #0b3423;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-width: 90px;
+      position: relative;
+      clip-path: polygon(0 0, 90% 0, 100% 50%, 90% 100%, 0 100%);
+      font-weight: 900;
+      text-align: center;
+    }
+    .poster-price-num {
+      font-size: 2.2rem;
+      line-height: 0.95;
+      font-family: var(--serif);
+      letter-spacing: -0.04em;
+    }
+    .poster-price-unit {
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 800;
+      margin-top: 2px;
+    }
+    
+    /* Capsule Details */
+    .poster-capsule-info {
+      padding: 12px 16px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .poster-capsule-title {
+      font-size: 1.15rem;
+      font-weight: 900;
+      color: #ffd84d;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0 0 4px;
+      line-height: 1.2;
+    }
+    .poster-capsule-formula {
+      font-size: 0.85rem;
+      color: #ffffff;
+      font-weight: 600;
+      line-height: 1.4;
+      margin: 0;
+    }
+    .poster-capsule-formula span.eq {
+      color: #ffd84d;
+      font-weight: 900;
+      margin-right: 4px;
+    }
+    
+    /* Card Food Image */
+    .poster-food-img-wrap {
+      position: relative;
+      height: 220px;
+      width: 100%;
+      background: #f4efe2;
+      overflow: hidden;
+    }
+    .poster-food-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.4s ease;
+    }
+    .poster-card:hover .poster-food-img {
+      transform: scale(1.08);
+    }
+    
+    /* Floating Highlights */
+    .poster-tag-pill {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      background: rgba(17, 43, 33, 0.92);
+      backdrop-filter: blur(6px);
+      color: var(--gold);
+      border: 1px solid var(--gold);
+      font-size: 0.72rem;
+      font-weight: 800;
+      padding: 5px 12px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    /* Poster Card Footer */
+    .poster-card-footer {
+      padding: 16px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #ffffff;
+      margin-top: auto;
+    }
+    .noodle-select { width: 100%; min-height: 40px; margin: 0 0 12px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); }
+
+    /* Order / Checkout */
+    .order-section { background: var(--cream); }
+    .order-heading { margin-bottom: 35px; }
+    .order-layout { display: grid; grid-template-columns: .85fr 1.15fr; align-items: start; gap: 24px; }
+    @media (max-width: 850px) { .order-layout { grid-template-columns: 1fr; } }
+    
+    .order-panel { padding: 28px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); box-shadow: var(--shadow); }
+    .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; padding-bottom: 17px; border-bottom: 1px solid var(--line); }
+    .panel-title h3 { margin: 0; color: var(--forest); font-family: var(--serif); font-size: 1.45rem; font-weight: 500; }
+    .item-count { color: var(--muted); font-size: .77rem; }
+    .empty-cart { padding: 16px 0; color: var(--muted); font-size: .88rem; line-height: 1.6; }
+    
+    .cart-row { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #f0eee7; }
+    .cart-thumb { width: 50px; height: 50px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); }
+    .cart-name { color: var(--forest); font-size: .9rem; font-weight: 700; }
+    .cart-detail { margin-top: 3px; color: var(--muted); font-size: .75rem; }
+    .qty-control { display: flex; align-items: center; gap: 8px; }
+    .qty-control button { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 50%; background: white; color: var(--forest); }
+    .cart-price { color: var(--ink); font-size: .88rem; font-weight: 700; white-space: nowrap; }
+    .total-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 20px; color: var(--forest); font-size: 1.1rem; font-weight: 800; }
+    .fine-print { margin: 12px 0 0; color: var(--muted); font-size: .76rem; line-height: 1.55; }
+    
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+    @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+    .field { margin-bottom: 15px; }
+    .field-full { grid-column: 1 / -1; }
+    label, .field-label { display: block; margin-bottom: 6px; color: #343c34; font-size: .8rem; font-weight: 700; }
+    .required { color: var(--orange); }
+    input, select, textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #deded4; border-radius: 6px; outline: none; background: white; color: var(--ink); font-size: .86rem; }
+    textarea { min-height: 80px; resize: vertical; }
+    input:focus, select:focus, textarea:focus { border-color: var(--leaf); box-shadow: 0 0 0 3px rgb(82 120 91 / 12%); }
+    
+    .location-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 9px; }
+    .location-button { min-height: 36px; padding: 0 14px; border: 1px solid #cfd8cc; border-radius: 6px; background: #f4f7f0; color: var(--forest); font-size: .78rem; font-weight: 700; }
+    .location-button:hover { background: #e9efe5; }
+    .location-status { color: var(--muted); font-size: .75rem; }
+    .order-submit { width: 100%; margin-top: 10px; font-size: 1rem; padding: 14px; }
+    .clear-cart { border: 0; background: transparent; color: #9a5441; font-size: .76rem; font-weight: 700; }
+
+    /* ================================================= */
+    /* LIVE TRACKING DRAWER / MODAL (BOLT / YANGO STYLE) */
+    /* ================================================= */
+    .track-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(16, 44, 34, 0.7);
+      backdrop-filter: blur(6px);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .track-overlay.active { display: flex; }
+    .track-modal {
+      background: var(--paper);
+      width: min(850px, 100%);
+      max-height: 92vh;
+      border-radius: 16px;
+      overflow-y: auto;
+      box-shadow: 0 25px 70px rgba(0,0,0,0.3);
+      position: relative;
+      border: 1px solid var(--line);
+      animation: modalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes modalSlideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .track-modal-header {
+      background: var(--forest);
+      color: white;
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .track-modal-close {
+      background: rgba(255,255,255,0.15);
+      border: 0;
+      color: white;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 1.2rem;
+    }
+    .track-modal-close:hover { background: rgba(255,255,255,0.25); }
+    
+    .tracking-content {
+      padding: 24px;
+    }
+
+    .tracking-stepper {
+      display: flex;
+      justify-content: space-between;
+      position: relative;
+      margin-bottom: 24px;
+    }
+    .tracking-stepper::before {
+      content: "";
+      position: absolute;
+      top: 18px;
+      left: 30px;
+      right: 30px;
+      height: 4px;
+      background: #e4decb;
+      z-index: 1;
+    }
+    .tracking-progress-fill {
+      position: absolute;
+      top: 18px;
+      left: 30px;
+      height: 4px;
+      background: var(--orange);
+      z-index: 2;
+      transition: width 0.4s ease;
+    }
+    .step-node {
+      position: relative;
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 6px;
+    }
+    .step-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: white;
+      border: 3px solid #d4cbb8;
+      display: grid;
+      place-items: center;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--muted);
+      transition: all 0.3s;
+    }
+    .step-node.completed .step-circle {
+      background: #16a34a;
+      border-color: #16a34a;
+      color: white;
+    }
+    .step-node.active .step-circle {
+      background: var(--orange);
+      border-color: var(--orange);
+      color: white;
+      box-shadow: 0 0 0 5px rgba(229,122,69,0.25);
+    }
+    .step-title {
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: var(--muted);
+      max-width: 80px;
+    }
+    .step-node.active .step-title {
+      color: var(--orange);
+    }
+
+    .session-callout {
+      padding: 16px 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    .session-callout-kitchen {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+    }
+    .session-callout-enroute {
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      color: #065f46;
+    }
+
+    #liveTrackingMap {
+      height: 360px;
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .driver-card {
+      background: #f7f4ec;
+      border: 1px solid #e2ddd0;
+      border-radius: 12px;
+      padding: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .driver-card-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .driver-avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: var(--forest);
+      color: white;
+      display: grid;
+      place-items: center;
+      font-size: 1.6rem;
+      border: 2px solid var(--gold);
+      overflow: hidden;
+      flex: 0 0 auto;
+    }
+    .driver-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+    .driver-photo-lg { width: 64px; height: 64px; }
+    .driver-name {
+      font-weight: 800;
+      font-size: 1.05rem;
+      color: var(--forest);
+    }
+    .driver-vehicle {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .driver-card-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Educational Permission Modal & Arrival Push Pop Notification */
+    .edu-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 40, 32, 0.82);
+      backdrop-filter: blur(5px);
+      z-index: 10000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .edu-modal-backdrop.active { display: flex; }
+    .edu-modal-box {
+      background: var(--paper);
+      border-radius: 16px;
+      max-width: 540px;
+      width: 100%;
+      padding: 30px;
+      box-shadow: 0 24px 50px rgba(0,0,0,0.3);
+      border: 2px solid var(--gold);
+      animation: popModal 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes popModal {
+      from { transform: scale(0.92); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    .arrival-popup-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 40, 32, 0.88);
+      backdrop-filter: blur(6px);
+      z-index: 10001;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .arrival-popup-backdrop.active { display: flex; }
+    .arrival-popup-box {
+      background: #ffffff;
+      border-radius: 18px;
+      max-width: 520px;
+      width: 100%;
+      padding: 32px;
+      text-align: center;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.35);
+      border: 3px solid var(--orange);
+      animation: bounceArrival 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    @keyframes bounceArrival {
+      0% { transform: scale(0.8); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    footer { padding: 40px 0; background: var(--forest-dark); color: #e9ece5; }
+    .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+    .footer-brand { font-family: var(--serif); font-size: 1.3rem; display: flex; align-items: center; gap: 10px; }
+  </style>
+</head>
+<body>
+  <script>
+    if (location.protocol === 'file:') {
+      document.addEventListener('DOMContentLoaded', function () {
+        var b = document.createElement('div');
+        b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:999999;background:#7f1d1d;color:#fff;font:600 13px/1.5 system-ui,sans-serif;padding:12px 16px;text-align:center;';
+        b.innerHTML = '⚠️ Open this page through the local server. Run <strong>start.bat</strong> (or <strong>npm start</strong>) and visit <a href="http://localhost:3000/" style="color:#fde68a;font-weight:800;">http://localhost:3000/</a> — maps, ordering and live tracking cannot work from a file path.';
+        document.body.appendChild(b);
+      });
+    }
+  </script>
+  <!-- Top announcement bar -->
+  <div class="topbar">
+    <div class="wrap topbar-inner">
+      <div>
+        <span class="topbar-dot" aria-hidden="true"></span>
+        FRESHLY MADE NOODLES · ADABRAKA, ACCRA · REAL-TIME GPS TRACKING
+      </div>
+      <div class="topbar-links">
+        <a href="public/customer-portal.html">📦 My Orders</a>
+        <a href="public/receipts.html">🧾 Receipts</a>
+        <a href="public/customer-reviews.html">⭐ Reviews & Rewards</a>
+        <a href="driver.html">🛵 Driver Portal</a>
+        <a href="admin.html">📊 Admin Dashboard</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="index.html" aria-label="YEBS Noodles home">
+        <img src="logo.png" alt="YEBS Noodles Logo" class="brand-logo-img">
+        <span class="brand-copy">
+          <span class="brand-name">YEBS Noodles</span>
+          <span class="brand-tagline">The standard of delicacy</span>
+        </span>
+      </a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#menu">Menu</a>
+        <a href="#how-it-works">How it works</a>
+        <button type="button" class="nav-track-btn" id="openTrackModalBtn">
+          📍 Live Order Tracking
+        </button>
+        <a class="nav-cta button-orange" href="#order">Order now ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ======================================================== -->
+  <!-- 3-MINUTE SESSION CYCLE BANNER (INTERMISSION & COUNTDOWN) -->
+  <!-- ======================================================== -->
+  <div id="sessionCycleBanner" class="session-cycle-banner active-session">
+    <div class="wrap session-banner-inner">
+      <div class="session-indicator-box">
+        <span class="session-live-pulse" id="sessionPulseDot"></span>
+        <div>
+          <strong id="sessionTitleText" style="font-size:0.95rem;">Order Session #1 is ACTIVE</strong>
+          <div id="sessionDescText" style="font-size:0.8rem; opacity:0.9;">Kitchen is currently receiving and cooking fresh noodle orders.</div>
+        </div>
+      </div>
+      <div id="sessionCountdownContainer" style="display:none; align-items:center; gap:12px;">
+        <span style="font-size:0.85rem; font-weight:700;">New order session begins in:</span>
+        <div id="sessionCountdownDigits" class="session-clock-display">03:00</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Track Search Strip -->
+  <div class="live-track-bar">
+    <div class="wrap live-track-bar-inner">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:1.2rem;">🛵</span>
+        <span style="font-size:0.9rem; font-weight:700;">Live Delivery Progress:</span>
+        <span style="font-size:0.8rem; color:var(--muted);">View real-time GPS of your delivery rider just like Bolt or Yango</span>
+      </div>
+      <div class="track-search-box">
+        <input type="text" id="headerTrackInput" class="track-input" placeholder="Enter Order ID (e.g. YB-1082)">
+        <button type="button" id="headerTrackSubmit" class="button button-orange" style="min-height:36px; padding:0 14px; font-size:0.8rem;">
+          Track ↗
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <p class="eyebrow">Comfort food, made fresh</p>
+          <h1>A little joy in <em>every bite.</em></h1>
+          <p class="hero-copy">
+            Your favourite Ghanaian street-style spaghetti and noodles, prepared with sliced sausages, fried eggs, gizzard, and spicy veggies. 
+            Now with <strong>live real-time GPS tracking</strong> so you can watch your delivery rider arrive in real-time.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-orange" href="#menu">Explore the menu →</a>
+            <a class="button" href="#order" style="background:var(--forest);">Build your order ↗</a>
+            <button type="button" id="heroTrackDemoBtn" class="button" style="background:#eef5f0; color:var(--forest); border:1px solid #c9decb;">
+              View Live Tracking Demo
+            </button>
+          </div>
+        </div>
+        <div class="hero-visual">
+          <img class="hero-image" src="food_photo.png" alt="A freshly prepared Ghanaian spaghetti dish with sausage and egg" fetchpriority="high">
+          <div class="hero-stamp" aria-label="Freshly prepared">
+            <strong>Fresh</strong>
+            <span>made with care</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Intro strip -->
+    <div class="intro-strip">
+      <div class="wrap intro-items">
+        <div class="intro-item"><span class="intro-icon">✳</span><span>Made fresh when you order</span></div>
+        <div class="intro-item"><span class="intro-icon">🛵</span><span>Live real-time driver GPS tracking</span></div>
+        <div class="intro-item"><span class="intro-icon">♡</span><span>The standard of delicacy</span></div>
+        <div class="intro-item"><span class="intro-icon">◉</span><span>Direct WhatsApp confirmation</span></div>
+      </div>
+    </div>
+
+    <!-- Menu Section -->
+    <section class="section menu-section" id="menu">
+      <div class="wrap">
+        <div class="section-heading">
+          <p class="eyebrow">Good things, made to order</p>
+          <h2>Official YEBS Noodles Menu</h2>
+          <p>The Standard of Delicacy — Good Food · Great Taste · Always Fresh</p>
+          <div style="margin-top:16px;">
+            <button type="button" id="openMenuPosterModalBtn" class="button" style="background:#173d30; color:#e9bd68; border:1.5px solid #e9bd68; font-weight:700; font-size:0.88rem; padding:8px 20px; border-radius:999px; box-shadow:0 4px 14px rgba(0,0,0,0.12);">
+              📜 View Official Menu Poster (15 – 60 Cedis)
+            </button>
+          </div>
+        </div>
+        <div class="promo-banner">
+          <span class="promo-icon" aria-hidden="true">✳</span>
+          <div>
+            <strong>A little something extra.</strong><br>
+            <span>Orders of 30, 40, and 60 Cedis include a free chilled Beta Malt drink!</span>
+          </div>
+        </div>
+
+        <div class="menu-grid" id="menuGrid">
+          <!-- Populated dynamically with Image 1 Poster Template cards -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Order Section -->
+    <section class="section order-section" id="order">
+      <div class="wrap">
+        <div class="order-heading">
+          <p class="eyebrow">Fast & Satisfying</p>
+          <h2>Make it yours.</h2>
+          <p id="orderSectionSessionNotice">Your order session is currently active. When the delivery driver enters location and presses Start, the order session ends and live tracking begins!</p>
+        </div>
+        <div class="order-layout">
+          <!-- Cart Panel -->
+          <section class="order-panel" aria-labelledby="cart-title">
+            <div class="panel-title">
+              <h3 id="cart-title">Your order</h3>
+              <span>
+                <span class="item-count" id="itemCount">0 items</span>
+                <button class="clear-cart" id="clearCart" type="button" hidden>Clear</button>
+              </span>
+            </div>
+            <div id="cartItems"></div>
+            <div class="total-row">
+              <span>Meal subtotal</span>
+              <span id="total">GH₵0</span>
+            </div>
+            <div class="total-row" style="font-size:0.9rem; color:var(--muted); font-weight:normal; margin-top:8px;">
+              <span>Delivery fee (Accra)</span>
+              <span>GH₵15.00</span>
+            </div>
+            <p class="fine-print">Delivery riders share their live GPS coordinates with you once departure begins.</p>
+          </section>
+
+          <!-- Checkout Form -->
+          <form class="order-panel" id="checkoutForm">
+            <div class="panel-title">
+              <h3>Your details</h3>
+              <span class="item-count">All fields marked * are required</span>
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="customer">Your name <span class="required">*</span></label>
+                <input id="customer" name="customer" autocomplete="name" placeholder="Full name" required>
+              </div>
+              <div class="field">
+                <label for="phone">Phone number <span class="required">*</span></label>
+                <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="e.g. 024 123 4567" required>
+              </div>
+              <div class="field">
+                <label for="fulfilment">How would you like it? <span class="required">*</span></label>
+                <select id="fulfilment" name="fulfilment">
+                  <option value="Delivery">Delivery (with Live GPS Tracking)</option>
+                  <option value="Collection">Pickup / collection at Kitchen</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="timing">When do you need it? <span class="required">*</span></label>
+                <select id="timing" name="timing">
+                  <option value="As soon as possible">As soon as possible</option>
+                  <option value="Schedule for later">Schedule for later</option>
+                </select>
+              </div>
+              <div class="field field-full" id="addressField">
+                <label for="location">Delivery address / area in Accra <span class="required">*</span></label>
+                <input id="location" name="location" autocomplete="street-address" placeholder="Area, street, landmark (e.g. Ring Road, Ridge, Circle)" required>
+                <div class="location-tools">
+                  <button class="location-button" id="locateButton" type="button">⌖ Share my GPS pin</button>
+                  <span class="location-status" id="locationStatus">Share exact pin for instant driver navigation.</span>
+                </div>
+              </div>
+              <div class="field field-full">
+                <label for="payment">Payment preference <span class="required">*</span></label>
+                <select id="payment" name="payment">
+                  <option value="MTN Mobile Money">MTN Mobile Money — pay now, instant auto-verify</option>
+                  <option value="Telecel Cash">Telecel Cash — pay now, instant auto-verify</option>
+                  <option value="AT Money">AT Money — pay now, instant auto-verify</option>
+                  <option value="Pay on Delivery (Cash)">Pay on Delivery — cash to rider at handover</option>
+                </select>
+              </div>
+              <div class="field field-full">
+                <label for="notes">Anything else we should know?</label>
+                <textarea id="notes" name="notes" placeholder="Toppings, pepper level, gate instructions or landmarks"></textarea>
+              </div>
+            </div>
+
+            <button class="button button-orange order-submit" type="submit" id="submitOrderBtn">
+              Place Order & Start Live Session 🚀
+            </button>
+            <p id="formFeedback" style="color:#dc2626; font-size:0.85rem; margin-top:10px;"></p>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="section" id="how-it-works" style="background:var(--forest); color:white;">
+      <div class="wrap">
+        <div class="section-heading">
+          <p class="eyebrow" style="color:var(--gold);">Seamless Experience</p>
+          <h2 style="color:white;">How live delivery works.</h2>
+          <p style="color:#d5e2d8;">From our pans to your doorstep with full visibility.</p>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:28px;">
+          <div style="background:rgba(255,255,255,0.06); padding:24px; border-radius:10px; border:1px solid rgba(255,255,255,0.1);">
+            <div style="font-size:2rem; margin-bottom:10px;">🍳</div>
+            <h3 style="font-family:var(--serif); margin-bottom:8px;">1. Order Preparation Session</h3>
+            <p style="font-size:0.85rem; color:#c7d6cc; line-height:1.6;">Your order is received in our Adabraka kitchen. Chefs cook your noodles fresh with your preferred toppings.</p>
+          </div>
+          <div style="background:rgba(255,255,255,0.06); padding:24px; border-radius:10px; border:1px solid rgba(255,255,255,0.1);">
+            <div style="font-size:2rem; margin-bottom:10px;">🛵</div>
+            <h3 style="font-family:var(--serif); margin-bottom:8px;">2. Driver En Route & 3-Min Loop</h3>
+            <p style="font-size:0.85rem; color:#c7d6cc; line-height:1.6;">When the driver enters location and presses Start, the order session stops and a 3-minute visible timer counts down to the next session loop!</p>
+          </div>
+          <div style="background:rgba(255,255,255,0.06); padding:24px; border-radius:10px; border:1px solid rgba(255,255,255,0.1);">
+            <div style="font-size:2rem; margin-bottom:10px;">📍</div>
+            <h3 style="font-family:var(--serif); margin-bottom:8px;">3. Live Progress & Arrival</h3>
+            <p style="font-size:0.85rem; color:#c7d6cc; line-height:1.6;">Watch your rider move turn-by-turn on the map with estimated arrival time, distance, and direct driver call buttons.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================================== -->
+  <!-- LIVE ORDER TRACKING MODAL (BOLT/YANGO) -->
+  <!-- ===================================== -->
+  <div class="track-overlay" id="trackingOverlay">
+    <div class="track-modal" role="dialog" aria-modal="true" aria-labelledby="trackModalTitle">
+      <div class="track-modal-header">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <img src="logo.png" alt="YEBS Noodles Logo" style="width:36px; height:36px; border-radius:50%; background:white; object-fit:cover;">
+          <div>
+            <h3 id="trackModalTitle" style="margin:0; font-family:var(--serif); font-size:1.2rem;">Live Delivery Tracker</h3>
+            <div style="font-size:0.75rem; color:var(--gold);">Order #<span id="trackOrderIdDisplay">YB-1082</span></div>
+          </div>
+        </div>
+        <button type="button" class="track-modal-close" id="closeTrackModalBtn" aria-label="Close tracking window">✕</button>
+      </div>
+
+      <div class="tracking-content">
+        <!-- Bolt / Yango Stepper -->
+        <div class="tracking-stepper">
+          <div class="tracking-progress-fill" id="stepperProgressFill" style="width: 50%;"></div>
+          <div class="step-node completed" id="stepNode1">
+            <div class="step-circle">1</div>
+            <span class="step-title">Order Received</span>
+          </div>
+          <div class="step-node completed" id="stepNode2">
+            <div class="step-circle">2</div>
+            <span class="step-title">In Kitchen</span>
+          </div>
+          <div class="step-node active" id="stepNode3">
+            <div class="step-circle">3</div>
+            <span class="step-title">Driver En Route</span>
+          </div>
+          <div class="step-node" id="stepNode4">
+            <div class="step-circle">4</div>
+            <span class="step-title">Delivered</span>
+          </div>
+        </div>
+
+        <!-- Session Status Alert -->
+        <div id="trackSessionAlert" class="session-callout session-callout-enroute">
+          <span style="font-size:1.5rem;" id="trackSessionIcon">🛵</span>
+          <div>
+            <strong id="trackSessionHeading">Order Session Ended — Delivery Driver En Route!</strong>
+            <div id="trackSessionDetails" style="margin-top:3px;">
+              Driver Kwame Mensah has entered their live GPS location and is on the way to your delivery address.
+            </div>
+          </div>
+        </div>
+
+        <!-- Interactive Real-time Map -->
+        <div id="liveTrackingMap"></div>
+
+        <!-- Driver Info Card (Bolt / Yango Style) -->
+        <div class="driver-card" id="driverInfoCard">
+          <div class="driver-card-left">
+            <div class="driver-avatar driver-photo-lg" id="trackDriverAvatar">🛵</div>
+            <div>
+              <div class="driver-name" id="trackDriverName">Delivery rider assigned on dispatch</div>
+              <div class="driver-vehicle" id="trackDriverVehicle">Waiting for rider assignment…</div>
+              <div style="font-size:0.78rem; color:#16a34a; font-weight:700; margin-top:2px;">
+                ● <span id="trackDriverLiveText">Live GPS</span> · Speed: <span id="trackDriverSpeed">0 km/h</span>
+              </div>
+              <a id="trackDriverPhoneText" href="#" style="font-size:0.78rem; color:var(--forest); font-weight:700; text-decoration:none; display:inline-block; margin-top:2px;"></a>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:0.75rem; color:var(--muted); text-transform:uppercase;">Estimated Arrival</div>
+            <div style="font-size:1.4rem; font-weight:800; color:var(--orange);" id="trackDriverEta">~3 mins</div>
+            <div style="font-size:0.72rem; color:var(--muted);" id="trackDriverDistance">— km away</div>
+          </div>
+          <div class="driver-card-actions">
+            <a id="trackCallDriverLink" href="#" class="button" style="min-height:38px; padding:0 14px; font-size:0.8rem; background:white; color:var(--forest); border:1px solid var(--line);">
+              📞 Call rider
+            </a>
+            <a id="trackWaDriverLink" href="#" target="_blank" class="button button-orange" style="min-height:38px; padding:0 14px; font-size:0.8rem;">
+              💬 WhatsApp
+            </a>
+          </div>
+        </div>
+
+        <!-- Package contents -->
+        <div id="trackPackageSummary" style="margin-top:14px; border:1px solid var(--line); border-radius:12px; padding:14px 16px; background:#fffdf8; font-size:0.85rem;"></div>
+
+        <!-- 4-Digit Pickup PIN & QR Code Verification Card -->
+        <div style="background:#fffcf5; border:2px dashed var(--gold); border-radius:12px; padding:18px; margin-top:16px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+          <div style="flex:1; min-width:220px;">
+            <div style="display:inline-block; background:#fef3c7; color:#92400e; font-size:0.75rem; font-weight:800; padding:2px 8px; border-radius:4px; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">
+              🔐 Collection Security Code = Your Order ID
+            </div>
+            <div style="font-size:0.88rem; color:var(--forest); font-weight:700;">Show to driver at pickup point:</div>
+            <div style="font-family:ui-monospace, monospace; font-size:2.2rem; font-weight:900; letter-spacing:0.18em; color:var(--orange); margin:6px 0;" id="trackPickupPinDisplay">
+              8492
+            </div>
+            <div style="font-size:0.78rem; color:var(--muted); line-height:1.45;">
+              <strong style="color:var(--forest);">This 4-digit PIN is the last 4 digits of your Order ID</strong> (e.g. Order <strong>YB-8492</strong> → PIN <strong>8492</strong>). It is unique to you. The rider checks it before handing over your food.
+            </div>
+          </div>
+          <div style="text-align:center;">
+            <div id="trackQrCodeContainer" style="display:inline-block;"></div>
+            <div style="font-size:0.72rem; color:var(--muted); margin-top:4px; font-weight:600;">Driver Scan QR</div>
+          </div>
+        </div>
+
+        <!-- Live payment state: paid / review / cash due -->
+        <div id="trackPaymentPanel" style="margin-top:14px; border-radius:12px; padding:12px 16px; background:#f8fafc; border:1.5px solid #e2e8f0; font-size:0.85rem;">
+          <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center;">
+            <span id="trackPaymentStatusBadge" style="font-weight:800; color:#92400e;">💳 Payment pending</span>
+            <span style="color:var(--muted);">Total <strong id="trackPayAmount" style="color:var(--forest);">GH₵0</strong></span>
+          </div>
+          <div id="trackPaymentDetail" style="margin-top:4px; color:var(--muted); font-size:0.78rem;"></div>
+        </div>
+
+        <!-- Ghana Mobile Money (MoMo) Fast Payment Box -->
+        <div id="trackMomoBox" style="background:#f0fdf4; border:1.5px solid #bbf7d0; border-radius:12px; padding:16px; margin-top:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:1.4rem;">📱</span>
+              <div>
+                <strong style="color:#166534; font-size:0.92rem;">Pay with Mobile Money — auto-verified</strong>
+                <div style="font-size:0.78rem; color:#15803d;">MTN MoMo · Telecel Cash · AT Money</div>
+              </div>
+            </div>
+            <button type="button" id="copyMomoNumberBtn" class="button" style="min-height:32px; padding:0 12px; font-size:0.78rem; background:white; color:#166534; border:1px solid #86efac;">
+              📋 Copy 055 910 3452
+            </button>
+          </div>
+
+          <div style="font-size:0.84rem; color:#14532d; line-height:1.55; background:rgba(255,255,255,0.75); padding:10px 12px; border-radius:8px;">
+            Send <strong id="momoPayAmountLabel">GH₵0</strong> to <strong>055 910 3452</strong> (YEBS Noodles / Stephen).
+            Use your Order ID <strong id="momoPayRefLabel" style="font-family:ui-monospace,monospace;">YB----</strong> as the reference.
+            <div style="margin-top:4px; font-size:0.78rem; color:#166534;">⚡ Verification is automatic and instant — your order is not held up while paying.</div>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+            <a href="tel:*170%23" class="button" style="flex:1; min-width:130px; min-height:36px; font-size:0.78rem; background:#facc15; color:#713f12; font-weight:800; border:0; display:flex; align-items:center; justify-content:center; gap:6px;">
+              ⚡ Dial *170# (MTN)
+            </a>
+            <a href="tel:*110%23" class="button" style="flex:1; min-width:130px; min-height:36px; font-size:0.78rem; background:#ef4444; color:white; font-weight:800; border:0; display:flex; align-items:center; justify-content:center; gap:6px;">
+              ⚡ Dial *110# (Telecel)
+            </a>
+            <a href="tel:*110%23" class="button" style="flex:1; min-width:130px; min-height:36px; font-size:0.78rem; background:#0ea5e9; color:white; font-weight:800; border:0; display:flex; align-items:center; justify-content:center; gap:6px;">
+              ⚡ Dial *110# (AT)
+            </a>
+          </div>
+          <div style="font-size:0.72rem; color:#15803d; margin-top:5px;">
+            On a computer the dial button may do nothing — copy the USSD code and dial it on your phone, or use the MoMo app.
+          </div>
+
+          <!-- Instant payment verification: transaction ID and/or receipt -->
+          <div style="margin-top:12px; padding-top:12px; border-top:1px dashed #86efac;">
+            <div style="font-size:0.84rem; font-weight:800; color:#166534; margin-bottom:6px;">Already sent the money? Confirm it here — it verifies instantly</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <input type="number" step="0.01" min="0" id="momoAmountInput" placeholder="Amount paid (GH₵)" style="flex:1; min-width:130px; min-height:38px; font-size:0.82rem; padding:6px 10px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
+              <input type="text" id="momoRefInput" placeholder="Transaction ID (e.g. MP2404...)" style="flex:1.4; min-width:170px; min-height:38px; font-size:0.82rem; padding:6px 10px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px;">
+              <input type="file" id="momoReceiptFile" accept="image/*" capture="environment" style="flex:1; min-width:170px; font-size:0.75rem; padding:4px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
+              <button type="button" id="uploadMomoReceiptBtn" class="button" style="min-height:38px; padding:0 16px; font-size:0.82rem; background:#16a34a; color:white;">
+                ✅ Verify payment now
+              </button>
+            </div>
+            <div style="font-size:0.72rem; color:#15803d; margin-top:5px;">Provide the transaction ID, a receipt screenshot, or both. A screenshot alone is accepted when the amount matches.</div>
+            <div id="momoReceiptStatus" style="font-size:0.8rem; margin-top:6px; color:#15803d; font-weight:600;"></div>
+            <div id="momoReceiptPreview" style="margin-top:8px;"></div>
+          </div>
+        </div>
+        <div style="margin-top:18px; padding-top:16px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; font-size:0.85rem;">
+          <div>
+            <span style="color:var(--muted);">Delivery To:</span>
+            <strong id="trackDestAddress">Circle Odo Rice Area, Accra</strong>
+          </div>
+          <div>
+            <span style="color:var(--muted);">Meal Total:</span>
+            <strong id="trackOrderTotal">GH₵115.00</strong>
+          </div>
+        </div>
+      </div>
+  </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- EDUCATIONAL PERMISSION MODAL FOR LOCATION & NOTIFICATIONS -->
+  <!-- ======================================================== -->
+  <div id="custPermissionModal" class="edu-modal-backdrop">
+    <div class="edu-modal-box">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+        <span style="font-size:2rem;">📍</span>
+        <div>
+          <h2 style="font-family:var(--serif); font-size:1.35rem; color:var(--forest); margin:0;">
+            Enable Live GPS & Arrival Alerts
+          </h2>
+          <div style="font-size:0.78rem; color:var(--gold); font-weight:700;">BOLT FOODS-LEVEL EXPERIENCE</div>
+        </div>
+      </div>
+      <p style="font-size:0.9rem; color:var(--muted); line-height:1.5;">
+        To give you the best street food experience in Accra, YEBS Noodles utilizes your browser permissions:
+      </p>
+      <ul style="margin:14px 0 18px 20px; font-size:0.88rem; line-height:1.6; color:var(--ink);">
+        <li><strong>Automatic Pinpoint Delivery:</strong> Pinpoints your exact location so the rider brings hot Ghanaian noodles straight to your doorstep.</li>
+        <li><strong>Live GPS Rider Tracing:</strong> Watch your delivery motorbike move turn-by-turn on the map in real time.</li>
+        <li><strong>Driver Arrival Push Alert:</strong> Pops up immediately when your driver reaches your gate with the exact collection point.</li>
+      </ul>
+      <div style="background:#f4eee2; padding:12px 14px; border-radius:8px; font-size:0.82rem; margin-bottom:20px; border-left:4px solid var(--orange);">
+        💡 <em>Pressing "Allow & Continue" enables high-precision live tracking and instant arrival notifications.</em>
+      </div>
+      <div style="display:flex; gap:12px; justify-content:flex-end;">
+        <button id="custPermSkipBtn" class="button" style="background:white; border:1px solid var(--line); color:var(--forest); font-size:0.85rem; padding:8px 16px;">
+          Maybe Later
+        </button>
+        <button id="custPermAllowBtn" class="button button-orange" style="font-size:0.85rem; padding:8px 20px;">
+          ✓ Allow & Enable Now
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- DRIVER ARRIVAL PUSH POP NOTIFICATION MODAL -->
+  <!-- ======================================================== -->
+  <div id="driverArrivalPopup" class="arrival-popup-backdrop">
+    <div class="arrival-popup-box">
+      <div style="font-size:3.5rem; margin-bottom:8px; animation:bounceArrival 1s infinite alternate;">🛵</div>
+      <span style="display:inline-block; background:#dcfce7; color:#166534; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; padding:4px 12px; border-radius:999px; margin-bottom:10px;">
+        Driver At Doorstep / Gate
+      </span>
+      <h2 style="font-family:var(--serif); font-size:1.6rem; color:var(--forest); margin:0 0 10px;">
+        Your YEBS Rider Has Arrived!
+      </h2>
+      <div id="arrivedDriverPhotoWrap" style="display:none; margin:0 auto 12px; width:84px; height:84px; border-radius:50%; overflow:hidden; border:3px solid var(--gold); box-shadow:0 6px 18px rgba(0,0,0,0.18);">
+        <img id="arrivedDriverPhoto" alt="Delivery rider" style="width:100%; height:100%; object-fit:cover; display:block;">
+      </div>
+      <p style="font-size:0.95rem; color:var(--ink); line-height:1.6; margin:0 0 16px;">
+        Your delivery rider <strong id="arrivedDriverName">Kwame Mensah</strong> has arrived with your freshly tossed Ghanaian noodles for Order <strong id="arrivedOrderId">#YB-1082</strong>!
+      </p>
+      <div id="arrivedDriverPhoneLine" style="font-size:0.82rem; color:var(--muted); margin:-8px 0 16px;"></div>
+      <div style="background:#f9f6ef; border:1.5px dashed var(--orange); border-radius:10px; padding:14px; font-size:0.88rem; color:var(--forest); margin-bottom:20px; text-align:left;">
+        <strong>📍 Collection & Meeting Point:</strong>
+        <div id="arrivedMeetingPointText" style="margin-top:4px; font-size:0.85rem; color:var(--muted);">
+          Driver is at your entrance/gate. Check the live GPS map to meet your rider.
+        </div>
+        <div id="arrivedPinLine" style="margin-top:10px; padding-top:10px; border-top:1px dashed #e6dcc6; font-size:0.85rem; color:var(--forest);">
+          🔐 <strong>Your 4-digit PIN is the last 4 digits of your Order ID.</strong> Show it to the rider to collect your food.
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+        <button id="viewArrivalOnMapBtn" class="button button-orange" style="min-height:42px; font-size:0.9rem; padding:0 20px;">
+          🗺️ View Meeting Point on Map
+        </button>
+        <a id="callArrivalDriverBtn" href="#" class="button" style="min-height:42px; font-size:0.9rem; padding:0 18px; background:var(--forest); color:white;">
+          📞 Call Rider
+        </a>
+        <button id="dismissArrivalPopupBtn" class="button" style="min-height:42px; font-size:0.85rem; padding:0 14px; background:white; border:1px solid var(--line); color:var(--muted);">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- ORDER ID / TRACKING CODE POPUP is rendered at the end of <body>
+       so it always appears above the tracking overlay. -->
+  <!-- ======================================================== -->
+
+  <footer>
+    <div class="wrap footer-inner">
+      <div>
+        <div class="footer-brand">
+          <img src="logo.png" alt="YEBS Noodles" style="width:34px; height:34px; border-radius:50%; background:white; object-fit:cover;">
+          YEBS Noodles
+        </div>
+        <div style="font-size:0.8rem; color:#b9c4b9; margin-top:4px;">The standard of delicacy · Fresh from our kitchen.</div>
+      </div>
+      <div style="text-align:right; font-size:0.8rem; color:#b9c4b9;">
+        Kitchen Address: In front of Efex Hotel, Adabraka, Accra<br>
+        WhatsApp Order Line: <a href="https://wa.me/233559103452" style="color:var(--gold);">055 910 3452</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script>
+    if (!window.L) {
+      document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');
+    }
+  </script>
+  <script type="module">
+    import {
+      initStore,
+      getOrders,
+      getOrderById,
+      createOrder,
+      onSyncEvent,
+      MENU_ITEMS,
+      getSessionState,
+      RESTAURANT_COORDS,
+      calculateDistanceKm,
+      estimateEtaMinutes,
+      playChime,
+      triggerNativeNotification,
+      requestNotificationPermission,
+      requestLocationPermission,
+      getSavedPermissions,
+      getLastArrivalEvent,
+      clearArrivalEvent,
+      addReliableBasemap,
+      formatWhatsAppUrl,
+      formatTelHref,
+      resolveDriverPhone,
+      apiUploadMomoReceipt,
+      apiPayMomo,
+      apiFetchOrder,
+      apiFetchActiveDrivers,
+      syncOrdersFromServer,
+      startLiveOrderSync,
+      isKitchenOpen,
+      generateSvgQrCode,
+      MOMO_CONFIG,
+      playVoiceArrivalAnnouncement,
+      apiFetchSession,
+      setSessionPickupPoint,
+      getMenuItems,
+      apiFetchMenu
+    } from './shared.js';
+
+    initStore();
+
+    const WHATSAPP_NUMBER = "233559103452";
+    const cart = {};
+    let customerGpsPin = null;
+
+    // Map instances for tracking modal
+    let trackMap = null;
+    let trackDriverMarker = null;
+    let trackCustMarker = null;
+    let trackRouteLine = null;
+    let currentlyTrackedOrderId = "YB-1082";
+
+    // Elements
+    const menuGrid = document.getElementById("menuGrid");
+    const cartItems = document.getElementById("cartItems");
+    const totalEl = document.getElementById("total");
+    const itemCountEl = document.getElementById("itemCount");
+    const checkoutForm = document.getElementById("checkoutForm");
+    const formFeedback = document.getElementById("formFeedback");
+    const locateButton = document.getElementById("locateButton");
+    const locationStatus = document.getElementById("locationStatus");
+    const locationInput = document.getElementById("location");
+
+    // Session cycle banner elements
+    const sessionCycleBanner = document.getElementById("sessionCycleBanner");
+    const sessionPulseDot = document.getElementById("sessionPulseDot");
+    const sessionTitleText = document.getElementById("sessionTitleText");
+    const sessionDescText = document.getElementById("sessionDescText");
+    const sessionCountdownContainer = document.getElementById("sessionCountdownContainer");
+    const sessionCountdownDigits = document.getElementById("sessionCountdownDigits");
+    const orderSectionSessionNotice = document.getElementById("orderSectionSessionNotice");
+
+    // Modal elements
+    const trackingOverlay = document.getElementById("trackingOverlay");
+    const openTrackModalBtn = document.getElementById("openTrackModalBtn");
+    const closeTrackModalBtn = document.getElementById("closeTrackModalBtn");
+    const headerTrackInput = document.getElementById("headerTrackInput");
+    const headerTrackSubmit = document.getElementById("headerTrackSubmit");
+    const heroTrackDemoBtn = document.getElementById("heroTrackDemoBtn");
+
+    const trackOrderIdDisplay = document.getElementById("trackOrderIdDisplay");
+    const trackSessionAlert = document.getElementById("trackSessionAlert");
+    const trackSessionIcon = document.getElementById("trackSessionIcon");
+    const trackSessionHeading = document.getElementById("trackSessionHeading");
+    const trackSessionDetails = document.getElementById("trackSessionDetails");
+    const trackDriverName = document.getElementById("trackDriverName");
+    const trackDriverVehicle = document.getElementById("trackDriverVehicle");
+    const trackDriverSpeed = document.getElementById("trackDriverSpeed");
+    const trackDriverEta = document.getElementById("trackDriverEta");
+    const trackDriverDistance = document.getElementById("trackDriverDistance");
+    const trackDriverAvatar = document.getElementById("trackDriverAvatar");
+    const trackDriverPhoneText = document.getElementById("trackDriverPhoneText");
+    const trackDriverLiveText = document.getElementById("trackDriverLiveText");
+    const trackPackageSummary = document.getElementById("trackPackageSummary");
+    const trackCallDriverLink = document.getElementById("trackCallDriverLink");
+    const trackWaDriverLink = document.getElementById("trackWaDriverLink");
+    const trackDestAddress = document.getElementById("trackDestAddress");
+    const trackOrderTotal = document.getElementById("trackOrderTotal");
+    const stepperProgressFill = document.getElementById("stepperProgressFill");
+    const trackPaymentStatusBadge = document.getElementById("trackPaymentStatusBadge");
+    const trackPaymentDetail = document.getElementById("trackPaymentDetail");
+    const trackPayAmount = document.getElementById("trackPayAmount");
+    const momoPayAmountLabel = document.getElementById("momoPayAmountLabel");
+    const momoPayRefLabel = document.getElementById("momoPayRefLabel");
+    const momoAmountInput = document.getElementById("momoAmountInput");
+
+    // Order ID popup (shown immediately after checkout)
+    const orderIdModal = document.getElementById("orderIdModal");
+    const orderIdModalValue = document.getElementById("orderIdModalValue");
+    const orderIdModalPin = document.getElementById("orderIdModalPin");
+    const orderIdModalPayHint = document.getElementById("orderIdModalPayHint");
+    const copyOrderIdBtn = document.getElementById("copyOrderIdBtn");
+    const copyOrderIdStatus = document.getElementById("copyOrderIdStatus");
+    const orderIdModalTrackBtn = document.getElementById("orderIdModalTrackBtn");    const orderIdModalCloseBtn = document.getElementById("orderIdModalCloseBtn");
+    let pendingOrderIdForModal = null;
+    let pendingOrderWaUrl = "";
+
+    // Stepper node elements
+    const stepNode1 = document.getElementById("stepNode1");
+    const stepNode2 = document.getElementById("stepNode2");
+    const stepNode3 = document.getElementById("stepNode3");
+    const stepNode4 = document.getElementById("stepNode4");
+
+    // Permission & Arrival Modals Elements
+    const custPermissionModal = document.getElementById("custPermissionModal");
+    const custPermSkipBtn = document.getElementById("custPermSkipBtn");
+    const custPermAllowBtn = document.getElementById("custPermAllowBtn");
+    const driverArrivalPopup = document.getElementById("driverArrivalPopup");
+    const arrivedDriverName = document.getElementById("arrivedDriverName");
+    const arrivedOrderId = document.getElementById("arrivedOrderId");
+    const arrivedMeetingPointText = document.getElementById("arrivedMeetingPointText");
+    const arrivedDriverPhotoWrap = document.getElementById("arrivedDriverPhotoWrap");
+    const arrivedDriverPhoto = document.getElementById("arrivedDriverPhoto");
+    const arrivedDriverPhoneLine = document.getElementById("arrivedDriverPhoneLine");
+    const viewArrivalOnMapBtn = document.getElementById("viewArrivalOnMapBtn");
+    const callArrivalDriverBtn = document.getElementById("callArrivalDriverBtn");
+    const dismissArrivalPopupBtn = document.getElementById("dismissArrivalPopupBtn");
+    const momoRefInput = document.getElementById("momoRefInput");
+    const momoReceiptFile = document.getElementById("momoReceiptFile");
+    const uploadMomoReceiptBtn = document.getElementById("uploadMomoReceiptBtn");
+    const momoReceiptStatus = document.getElementById("momoReceiptStatus");
+    const momoReceiptPreview = document.getElementById("momoReceiptPreview");
+
+    const money = amount => "GH₵" + amount.toFixed(2).replace(/\.00$/, "");
+
+    // Permission educational check
+    function initPermissionsCheck() {
+      const perms = getSavedPermissions();
+      if (!perms.asked) {
+        custPermissionModal.classList.add("active");
+      }
+    }
+
+    custPermSkipBtn.addEventListener('click', () => {
+      custPermissionModal.classList.remove("active");
+    });
+
+    custPermAllowBtn.addEventListener('click', async () => {
+      custPermissionModal.classList.remove("active");
+      await requestNotificationPermission();
+      requestLocationPermission((res) => {
+        if (res.granted && res.position) {
+          customerGpsPin = {
+            lat: res.position.coords.latitude,
+            lng: res.position.coords.longitude
+          };
+          if (!locationInput.value) {
+            locationInput.value = `Live GPS: ${customerGpsPin.lat.toFixed(4)}, ${customerGpsPin.lng.toFixed(4)} (Adabraka/Accra)`;
+          }
+        }
+      });
+    });
+
+    // Automatic Driver Arrival Push Pop Handler
+    function handleDriverArrivalNotification(arrivalData) {
+      if (!arrivalData) return;
+
+      // Ignore another rider's arrival (or a batch with no packages): only react
+      // if this customer's package is part of the batch just delivered.
+      if (currentlyTrackedOrderId && Array.isArray(arrivalData.affectedOrderIds)) {
+        if (!arrivalData.affectedOrderIds.length) return;
+        if (!arrivalData.affectedOrderIds.includes(currentlyTrackedOrderId)) return;
+      }
+
+      const pickupInfo = arrivalData.pickupPointName || arrivalData.location || 'Designated Pickup Point';
+      playVoiceArrivalAnnouncement(pickupInfo);
+
+      triggerNativeNotification(
+        "📍 Your YEBS Noodles Rider Has Arrived!",
+        `Driver ${arrivalData.driverName} has arrived at ${pickupInfo}. Please meet driver with your 4-digit PIN!`
+      );
+
+      const trackedOrder = arrivalData.orderId ? getOrderById(arrivalData.orderId) : null;
+      const phone = arrivalData.driverPhone
+        || (trackedOrder && resolveDriverPhone(trackedOrder))
+        || (trackedOrder && trackedOrder.driver && trackedOrder.driver.phone)
+        || "";
+      const photo = arrivalData.driverPhoto
+        || (trackedOrder && trackedOrder.driver && trackedOrder.driver.photo)
+        || null;
+
+      arrivedDriverName.textContent = arrivalData.driverName || "Your delivery rider";
+      arrivedOrderId.textContent = arrivalData.orderId ? `#${arrivalData.orderId}` : `Session #${arrivalData.sessionNumber || 1} Batch`;
+      arrivedMeetingPointText.innerHTML = `Driver has arrived at <strong>Pickup Point: "${pickupInfo}"</strong>! Your food is ready for collection.`;
+
+      const pinOrder = trackedOrder
+        || getOrderById(currentlyTrackedOrderId)
+        || (Array.isArray(arrivalData.affectedOrderIds) && arrivalData.affectedOrderIds.length
+          ? getOrderById(arrivalData.affectedOrderIds[0])
+          : null);
+      const arrivedPinLine = document.getElementById('arrivedPinLine');
+      if (arrivedPinLine) {
+        const pin = pinOrder && pinOrder.pickupPin ? pinOrder.pickupPin : null;
+        const id = pinOrder && pinOrder.id ? pinOrder.id : (arrivalData.orderId || null);
+        arrivedPinLine.innerHTML = pin
+          ? `🔐 <strong>Your 4-digit PIN is <span style="font-family:ui-monospace,monospace; font-size:1.05rem; color:var(--orange);">${pin}</span></strong> — the last 4 digits of Order <strong>${id}</strong>. Show it to the rider to collect your food.`
+          : `🔐 <strong>Your 4-digit PIN is the last 4 digits of your Order ID.</strong> Show it to the rider to collect your food.`;
+      }
+
+      if (photo && arrivedDriverPhotoWrap && arrivedDriverPhoto) {
+        arrivedDriverPhoto.src = photo;
+        arrivedDriverPhotoWrap.style.display = 'block';
+      } else if (arrivedDriverPhotoWrap) {
+        arrivedDriverPhotoWrap.style.display = 'none';
+      }
+
+      if (phone) {
+        callArrivalDriverBtn.href = formatTelHref(phone);
+        callArrivalDriverBtn.style.opacity = '1';
+        callArrivalDriverBtn.innerHTML = `📞 Call Rider ${phone}`;
+        if (arrivedDriverPhoneLine) arrivedDriverPhoneLine.textContent = `Rider phone: ${phone}`;
+      } else {
+        callArrivalDriverBtn.href = "#";
+        callArrivalDriverBtn.style.opacity = '0.55';
+        callArrivalDriverBtn.innerHTML = "📞 Rider number unavailable";
+        if (arrivedDriverPhoneLine) arrivedDriverPhoneLine.textContent = "The rider has not shared a phone number yet.";
+      }
+
+      viewArrivalOnMapBtn.onclick = () => {
+        driverArrivalPopup.classList.remove("active");
+        openTrackingModal(arrivalData.orderId);
+      };
+
+      driverArrivalPopup.classList.add("active");
+    }
+
+    dismissArrivalPopupBtn.addEventListener('click', () => {
+      driverArrivalPopup.classList.remove("active");
+      clearArrivalEvent();
+    });
+
+    // ===============================================
+    // 3-MINUTE SESSION TIMER & LOOP ENGINE (REAL-TIME)
+    // ===============================================
+    function updateSessionBanner() {
+      const session = getSessionState();
+
+      if (session.status === "ACTIVE") {
+        sessionCycleBanner.className = "session-cycle-banner active-session";
+        sessionTitleText.textContent = `Order Session #${session.sessionNumber || 1} is ACTIVE`;
+        sessionDescText.textContent = "Kitchen is currently taking orders and cooking fresh noodles.";
+        sessionCountdownContainer.style.display = "none";
+        orderSectionSessionNotice.innerHTML = `Order Session #${session.sessionNumber || 1} is active. When the delivery driver enters location and presses Start, this order session stops and a 3-minute countdown begins for the next cycle!`;
+      } else if (session.status === "INTERMISSION") {
+        sessionCycleBanner.className = "session-cycle-banner intermission-session";
+        sessionCountdownContainer.style.display = "flex";
+
+        const remainingMs = Math.max(0, session.intermissionEndsAt - Date.now());
+        const totalSecs = Math.ceil(remainingMs / 1000);
+        const mins = Math.floor(totalSecs / 60);
+        const secs = totalSecs % 60;
+        const clockFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+        sessionCountdownDigits.textContent = clockFormatted;
+        sessionTitleText.textContent = `Order Session #${session.sessionNumber || 1} Concluded (Driver En Route)`;
+        sessionDescText.textContent = `New order session begins in 3 mins (${clockFormatted} remaining). Kitchen is staging the next batch!`;
+        orderSectionSessionNotice.innerHTML = `<strong style="color:var(--orange);">⏳ Order Session Intermission:</strong> Driver is en route. New order session begins in <strong>${clockFormatted}</strong>. You can queue your meal below!`;
+      }
+    }
+
+    // Tick every second to keep timer fluid and trigger automatic next session loop
+    setInterval(updateSessionBanner, 1000);
+
+    // ==========================================
+    // RENDER MENU WITH AUTHENTIC GHANAIAN PHOTOS
+    // ========================================================
+    // RENDER MENU USING FIRST IMAGE POSTER TEMPLATE (15 TO 60)
+    // ========================================================
+    function renderMenu() {
+      const items = getMenuItems();
+      menuGrid.innerHTML = items.map(item => {
+        const formulaText = item.formula || item.desc || "";
+        const cleanFormula = formulaText.replace(/^=\s*/, '');
+        return `
+        <article class="poster-card" id="card-${item.id}">
+          <!-- Poster Capsule Bar matching Image 1 -->
+          <div class="poster-capsule-bar">
+            <div class="poster-price-badge">
+              <span class="poster-price-num">${item.price}</span>
+              <span class="poster-price-unit">CEDIS</span>
+            </div>
+            <div class="poster-capsule-info">
+              <div class="poster-capsule-title">${item.name}</div>
+              <p class="poster-capsule-formula"><span class="eq">=</span> ${cleanFormula}</p>
+            </div>
+          </div>
+
+          <!-- Realistic Food Photo -->
+          <div class="poster-food-img-wrap">
+            <img src="${item.image}" alt="${item.name} - ${item.price} Cedis" class="poster-food-img" loading="lazy">
+            <span class="poster-tag-pill">${item.tag || item.badge || `${item.price} CEDIS`}</span>
+          </div>
+
+          <!-- Noodle Customization & Add CTA -->
+          <div class="poster-card-footer">
+            ${item.noodles && item.noodles.length > 1
+              ? `<div>
+                  <label class="field-label" for="noodle-${item.id}" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; color:var(--forest); margin-bottom:4px; display:block;">Select Noodles:</label>
+                  <select class="noodle-select" id="noodle-${item.id}" style="margin-bottom:0; font-weight:600;">
+                    ${item.noodles.map(t => `<option value="${t}">${t}</option>`).join('')}
+                  </select>
+                </div>`
+              : `<div style="font-size:0.8rem; color:var(--muted); font-weight:600;">🍝 Fresh Ghanaian street-style spaghetti</div>`
+            }
+            <button class="button button-orange menu-add-btn" type="button" data-id="${item.id}" style="width:100%; font-weight:800; font-size:0.95rem; border-radius:10px; box-shadow:0 4px 12px rgba(229,122,69,0.3);">
+              Add to order (${item.price} Cedis) +
+            </button>
+          </div>
+        </article>
+      `}).join('');
+    }
+
+    function addToCart(id) {
+      const items = getMenuItems();
+      const item = items.find(m => m.id === id);
+      if (!item) return;
+      const select = document.getElementById(`noodle-${id}`);
+      const noodle = select ? select.value : item.noodles[0];
+      const key = `${id}:${noodle}`;
+      cart[key] = (cart[key] || 0) + 1;
+      renderCart();
+    }
+
+    function changeQty(key, delta) {
+      if (cart[key]) {
+        cart[key] += delta;
+        if (cart[key] <= 0) delete cart[key];
+        renderCart();
+      }
+    }
+
+    function renderCart() {
+      const items = getMenuItems();
+      const entries = Object.entries(cart).map(([key, qty]) => {
+        const [id, noodle] = key.split(':');
+        const item = items.find(m => m.id === id);
+        return item ? { key, item, noodle, qty } : null;
+      }).filter(Boolean);
+
+      const count = entries.reduce((s, e) => s + e.qty, 0);
+      const subtotal = entries.reduce((s, e) => s + e.item.price * e.qty, 0);
+
+      itemCountEl.textContent = `${count} ${count === 1 ? 'item' : 'items'}`;
+      totalEl.textContent = money(subtotal);
+
+      if (entries.length === 0) {
+        cartItems.innerHTML = '<p class="empty-cart">Your cart is currently empty. Add delicious noodles from the menu above.</p>';
+        return;
+      }
+
+      cartItems.innerHTML = entries.map(({ key, item, noodle, qty }) => `
+        <div class="cart-row">
+          <img src="${item.image}" alt="${item.name}" class="cart-thumb">
+          <div>
+            <div class="cart-name">${item.name}</div>
+            <div class="cart-detail">${noodle} · ${money(item.price)} each</div>
+          </div>
+          <div class="qty-control">
+            <button type="button" class="qty-btn" data-key="${key}" data-delta="-1">−</button>
+            <span style="font-weight:700;">${qty}</span>
+            <button type="button" class="qty-btn" data-key="${key}" data-delta="1">+</button>
+          </div>
+          <span class="cart-price">${money(item.price * qty)}</span>
+        </div>
+      `).join('');
+    }
+
+    locateButton.addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        locationStatus.textContent = "Geolocation is not supported by your browser. Enter address above.";
+        return;
+      }
+      locationStatus.textContent = "Fetching your GPS pin…";
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          customerGpsPin = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          locationStatus.textContent = `GPS pin captured: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+          if (!locationInput.value) {
+            locationInput.value = `GPS Pin: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)} (Accra)`;
+          }
+        },
+        err => {
+          locationStatus.textContent = "Could not get automatic GPS pin. Please enter your street / landmark above.";
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    });
+
+    function showOrderIdModal(order) {
+      if (!order || !orderIdModal) return;
+      pendingOrderIdForModal = order.id;
+      if (orderIdModalValue) orderIdModalValue.textContent = order.id;
+      // The 4-digit PIN IS the last 4 digits of the Order ID — NOT a MoMo PIN
+      const pin = order.pickupPin || String(order.id).slice(-4);
+      if (orderIdModalPin) orderIdModalPin.textContent = pin;
+      if (copyOrderIdStatus) copyOrderIdStatus.textContent = "";
+
+      // Inject a clear PIN explanation
+      const pinHintEl = document.getElementById('orderIdPinHint');
+      if (pinHintEl) {
+        pinHintEl.innerHTML = `
+          <div style="background:#fff8ec;border:1.5px solid #fbbf24;border-radius:10px;padding:14px 16px;margin-top:10px;font-size:0.88rem;line-height:1.6;">
+            <strong>🔐 Your Collection PIN: <span style="font-family:monospace;font-size:1.2rem;color:#e57a45;letter-spacing:0.1em;">${pin}</span></strong><br>
+            <span style="color:#6b7280;">This is the <strong>last 4 digits of your Order ID</strong> — use it at the pickup point so the rider can identify your package.<br>
+            <strong style="color:#b91c1c;">This is NOT your MoMo PIN.</strong> Never share your MoMo PIN with anyone.</span>
+          </div>`;
+      }
+
+      if (orderIdModalPayHint) {
+        orderIdModalPayHint.innerHTML = order.paymentMode === "cash"
+          ? `💵 Pay <strong>GH₵${order.total}</strong> cash to the rider when your food arrives.`
+          : `📱 To pay, send <strong>GH₵${order.total}</strong> to <strong>${MOMO_CONFIG.displayNumber}</strong>. Use <strong>${order.id}</strong> as the reference. Then submit proof on the tracking screen for instant verification.`;
+      }
+
+      const waBtn = document.getElementById("orderIdWaBtn");
+      if (waBtn) {
+        if (pendingOrderWaUrl) { waBtn.href = pendingOrderWaUrl; waBtn.style.display = "inline-flex"; }
+        else waBtn.style.display = "none";
+      }
+      orderIdModal.style.display = "flex";
+      document.body.style.overflow = "hidden";
+    }
+
+    function hideOrderIdModal() {
+      if (!orderIdModal) return;
+      orderIdModal.style.display = "none";
+      document.body.style.overflow = "";
+    }
+
+    if (copyOrderIdBtn) {
+      copyOrderIdBtn.addEventListener("click", async () => {
+        const id = pendingOrderIdForModal || (orderIdModalValue && orderIdModalValue.textContent) || "";
+        try {
+          await navigator.clipboard.writeText(id);
+          if (copyOrderIdStatus) copyOrderIdStatus.textContent = `Copied ${id} ✅`;
+        } catch (e) {
+          // Fallback for browsers without clipboard permissions
+          const tmp = document.createElement("textarea");
+          tmp.value = id;
+          document.body.appendChild(tmp);
+          tmp.select();
+          try { document.execCommand("copy"); } catch (err) {}
+          document.body.removeChild(tmp);
+          if (copyOrderIdStatus) copyOrderIdStatus.textContent = `Copied ${id} ✅`;
+        }
+      });
+    }
+
+    // Copy the 4-digit collection PIN
+    const copyPinBtn = document.getElementById("copyPinBtn");
+    if (copyPinBtn) {
+      copyPinBtn.addEventListener("click", async () => {
+        const pin = (orderIdModalPin && orderIdModalPin.textContent) || "";
+        try {
+          await navigator.clipboard.writeText(pin);
+          copyPinBtn.textContent = "✅ Copied!";
+          setTimeout(() => { copyPinBtn.textContent = "📋 Copy PIN"; }, 1800);
+        } catch (e) {
+          const tmp = document.createElement("textarea");
+          tmp.value = pin;
+          document.body.appendChild(tmp);
+          tmp.select();
+          try { document.execCommand("copy"); } catch (err) {}
+          document.body.removeChild(tmp);
+          copyPinBtn.textContent = "✅ Copied!";
+          setTimeout(() => { copyPinBtn.textContent = "📋 Copy PIN"; }, 1800);
+        }
+      });
+    }
+
+    // Edit order before kitchen starts preparing
+    const orderIdModalEditBtn = document.getElementById("orderIdModalEditBtn");
+    if (orderIdModalEditBtn) {
+      orderIdModalEditBtn.addEventListener("click", () => {
+        const orderId = pendingOrderIdForModal;
+        const order = orderId ? getOrderById(orderId) : null;
+        if (!order) {
+          alert("Order not found. It may have been delivered or cancelled already.");
+          return;
+        }
+        if (order.status !== 'pending' && order.status !== 'kitchen') {
+          alert("This order has already been assigned to a driver and cannot be edited now. Contact us on WhatsApp if you need help: 055 910 3452");
+          return;
+        }
+        const proceed = confirm(`Edit Order ${order.id}?\n\nYou can change items, delivery address, or payment method before the kitchen finalizes preparation.\n\nPress OK to return to the menu and edit your cart.`);
+        if (!proceed) return;
+
+        // Reload cart from order items
+        Object.keys(cart).forEach(k => delete cart[k]);
+        if (Array.isArray(order.items)) {
+          order.items.forEach(item => {
+            const key = `${item.menuId || item.id}:${item.noodle || 'Regular'}`;
+            cart[key] = (cart[key] || 0) + (item.quantity || 1);
+          });
+        }
+        // Pre-fill form
+        const custInput = document.getElementById("customer");
+        const phoneInput = document.getElementById("phone");
+        const locInput = document.getElementById("location");
+        const notesInput = document.getElementById("notes");
+        if (custInput) custInput.value = order.customer || "";
+        if (phoneInput) phoneInput.value = order.phone || "";
+        if (locInput) locInput.value = order.location || "";
+        if (notesInput) notesInput.value = order.notes || "";
+        customerGpsPin = order.mapPin || null;
+
+        renderCart();
+        hideOrderIdModal();
+        document.getElementById("checkout").scrollIntoView({ behavior: 'smooth' });
+        alert(`Order ${order.id} items loaded into your cart. Make changes and place the order again. The old order will be automatically cancelled once you submit.`);
+      });
+    }
+
+    if (orderIdModalTrackBtn) {
+      orderIdModalTrackBtn.addEventListener("click", () => {
+        const id = pendingOrderIdForModal;
+        hideOrderIdModal();
+        if (id) openTrackingModal(id);
+      });
+    }
+
+    if (orderIdModalCloseBtn) {
+      orderIdModalCloseBtn.addEventListener("click", hideOrderIdModal);
+    }
+
+    if (orderIdModal) {
+      orderIdModal.addEventListener("click", (e) => {
+        if (e.target === orderIdModal) hideOrderIdModal();
+      });
+    }
+
+    checkoutForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      formFeedback.textContent = "";
+      formFeedback.style.color = "#dc2626";
+
+      const kitchenStatus = isKitchenOpen();
+      if (!kitchenStatus.isOpen) {
+        // Outside 18:00–21:00 the kitchen is closed, but customers can still
+        // schedule a pre-order for the next session instead of being blocked.
+        const proceed = confirm("YEBS Kitchen is currently closed (daily hours 6:00 PM – 9:00 PM).\n\nPlace this as a PRE-ORDER for the next session?");
+        if (!proceed) {
+          formFeedback.textContent = "🔴 YEBS Kitchen is closed right now (daily hours: 6:00 PM – 9:00 PM). Your items are still in the cart.";
+          return;
+        }
+      }
+
+      const entries = Object.entries(cart).map(([key, qty]) => {
+        const [id, noodle] = key.split(':');
+        const item = getMenuItems().find(m => m.id === id);
+        return item ? { menuId: item.id, name: item.name, noodle, price: item.price, quantity: qty, image: item.image } : null;
+      }).filter(Boolean);
+
+      if (entries.length === 0) {
+        formFeedback.textContent = "Please add at least one meal to your order from the menu.";
+        document.getElementById("menu").scrollIntoView({ behavior: 'smooth' });
+        return;
+      }
+
+      const formData = new FormData(checkoutForm);
+      const fulfilment = formData.get("fulfilment") || "Delivery";
+      const subtotal = entries.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const deliveryFee = fulfilment === "Delivery" ? 15 : 0;
+      const total = subtotal + deliveryFee;
+
+      const orderPayload = {
+        customer: formData.get("customer"),
+        phone: formData.get("phone"),
+        fulfilment,
+        location: formData.get("location"),
+        mapPin: customerGpsPin || { lat: 5.5650, lng: -0.2100 },
+        timing: formData.get("timing"),
+        payment: formData.get("payment"),
+        notes: formData.get("notes"),
+        items: entries,
+        subtotal,
+        deliveryFee,
+        total
+      };
+
+      const submitBtn = document.getElementById("submitOrderBtn");
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Placing your order…";
+      }
+
+      let newOrder = null;
+      try {
+        newOrder = await createOrder(orderPayload);
+      } catch (err) {
+        console.error("Order creation failed", err);
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Place Order & Start Live Session 🚀";
+        }
+      }
+
+      if (!newOrder) {
+        formFeedback.textContent = "Could not place the order. Please check your connection and try again.";
+        return;
+      }
+
+      const orderSummaryLines = entries.map(i => `• ${i.noodle} - ${i.name} x${i.quantity}: GH₵${i.price * i.quantity}`).join('\n');
+      const waMsg = [
+        `*NEW YEBS NOODLES ORDER #${newOrder.id}*`,
+        `Customer: ${newOrder.customer}`,
+        `Phone: ${newOrder.phone || orderPayload.phone}`,
+        `Delivery Address: ${newOrder.location}`,
+        `Fulfilment: ${newOrder.fulfilment}`,
+        "",
+        `*ITEMS:*`,
+        orderSummaryLines,
+        "",
+        `Subtotal: GH₵${newOrder.subtotal}`,
+        `Delivery Fee: GH₵${newOrder.deliveryFee}`,
+        `Total: GH₵${newOrder.total}`,
+        `Payment: ${newOrder.payment}`,
+        `Order ID / PIN: ${newOrder.id} / ${newOrder.pickupPin}`,
+        `Notes: ${newOrder.notes || 'None'}`
+      ].join('\n');
+
+      // The order is already saved on the server; WhatsApp is an optional
+      // notification the customer can send from the Order ID popup. We do not
+      // open it automatically, so the Order ID is never hidden behind a new tab.
+      const waUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(waMsg)}`;
+      pendingOrderWaUrl = waUrl;
+
+      // Clear the cart so the order is not accidentally submitted twice.
+      Object.keys(cart).forEach(k => delete cart[k]);
+      renderCart();
+
+      formFeedback.style.color = "#166534";
+      formFeedback.textContent = `✅ Order ${newOrder.id} placed! Your Order ID is also your 4-digit collection PIN: ${newOrder.pickupPin}.`;
+      showOrderIdModal(newOrder);
+    });
+
+    // ===================================
+    // LIVE TRACKING MODAL ENGINE (BOLT/YANGO)
+    // ===================================
+    function initTrackMap() {
+      if (trackMap) return;
+      const mapEl = document.getElementById('liveTrackingMap');
+      if (!mapEl || typeof L === 'undefined') return;
+      trackMap = L.map('liveTrackingMap', { zoomControl: true }).setView([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], 15);
+      addReliableBasemap(trackMap);
+
+      const driverIcon = L.divIcon({
+        className: 'bolt-driver-marker',
+        html: `<div style="background:#e57a45; color:white; width:40px; height:40px; border-radius:50%; display:grid; place-items:center; border:3px solid white; box-shadow:0 4px 15px rgba(229,122,69,0.5); font-size:20px;">🛵</div>`,
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+      });
+
+      const custIcon = L.divIcon({
+        className: 'bolt-dest-marker',
+        html: `<div style="background:#173d30; color:white; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; border:3px solid white; box-shadow:0 4px 12px rgba(0,0,0,0.3); font-size:18px;">📍</div>`,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18]
+      });
+
+      trackDriverMarker = L.marker([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], { icon: driverIcon }).addTo(trackMap);
+      trackCustMarker = L.marker([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], { icon: custIcon }).addTo(trackMap);
+      trackRouteLine = L.polyline([], { color: '#e57a45', weight: 5, dashArray: '8, 8', opacity: 0.85 }).addTo(trackMap);
+    }
+
+    async function openTrackingModal(orderId) {
+      if (!orderId) {
+        const orders = getOrders();
+        orderId = orders.length > 0 ? orders[0].id : null;
+      }
+      if (!orderId) {
+        alert("No orders placed yet. Add noodles to cart and place an order to track live GPS in real-time!");
+        return;
+      }
+
+      // Accept the 4-digit PIN on its own as well as the full Order ID.
+      orderId = String(orderId).trim().toUpperCase().replace(/\s+/g, "");
+      if (/^\d{4}$/.test(orderId)) orderId = `YB-${orderId}`;
+
+      // Order may have been created on another device - pull just this order
+      // from the server (customer sessions never download the whole database).
+      if (!getOrderById(orderId)) {
+        await apiFetchOrder(orderId).catch(() => {});
+      }
+      if (!getOrderById(orderId)) {
+        alert(`Order ${orderId} was not found. Please check the order ID (e.g. YB-1082).`);
+        return;
+      }
+
+      currentlyTrackedOrderId = orderId;
+      trackingOverlay.classList.add("active");
+      document.body.style.overflow = "hidden";
+      renderTrackingModal();
+
+      setTimeout(() => {
+        initTrackMap();
+        if (trackMap) {
+          trackMap.invalidateSize();
+        } else {
+          const mapEl = document.getElementById('liveTrackingMap');
+          if (mapEl) mapEl.innerHTML = `<div style="height:100%; display:grid; place-items:center; text-align:center; padding:20px; color:var(--muted); font-size:0.9rem;">Map library could not load.<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Adabraka, Accra')}" target="_blank" style="color:var(--orange); font-weight:700;">Open location in Google Maps ↗</a></div>`;
+        }
+      }, 200);
+    }
+
+    function closeTrackingModal() {
+      trackingOverlay.classList.remove("active");
+      document.body.style.overflow = "";
+    }
+
+    function renderTrackingModal() {
+      const order = getOrderById(currentlyTrackedOrderId);
+      if (!order) {
+        alert("Order not found. Please verify order ID.");
+        closeTrackingModal();
+        return;
+      }
+
+      trackOrderIdDisplay.textContent = order.id;
+      trackDestAddress.textContent = order.location || "Adabraka, Accra";
+      trackOrderTotal.textContent = `GH₵${order.total}`;
+
+      // Package summary (what the rider is carrying)
+      if (trackPackageSummary) {
+        const itemLines = Array.isArray(order.items) && order.items.length
+          ? order.items.map(i => `<li style="margin-bottom:2px;"><strong>${i.quantity}×</strong> ${i.name}${i.noodle ? ` (${i.noodle})` : ''} — GH₵${(i.price || 0) * (i.quantity || 1)}</li>`).join('')
+          : '<li>Fresh YEBS noodles</li>';
+        trackPackageSummary.innerHTML = `
+          <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:6px;">
+            <strong style="color:var(--forest);">📦 Package contents</strong>
+            <span style="color:var(--muted); font-size:0.78rem;">${order.fulfilment || 'Delivery'} · ${order.timing || 'ASAP'}</span>
+          </div>
+          <ul style="margin:0 0 8px 18px; padding:0; color:var(--ink);">${itemLines}</ul>
+          <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:6px;">
+            <span style="color:var(--muted);">Payment: <strong>${order.payment || 'MoMo / Cash'}</strong></span>
+            <span style="font-weight:800; color:var(--forest);">Total GH₵${order.total}</span>
+          </div>
+        `;
+      }
+
+      const trackPickupPinDisplay = document.getElementById("trackPickupPinDisplay");
+      const trackQrCodeContainer = document.getElementById("trackQrCodeContainer");
+      if (trackPickupPinDisplay) {
+        trackPickupPinDisplay.textContent = order.pickupPin || "8492";
+      }
+      if (trackQrCodeContainer) {
+        trackQrCodeContainer.innerHTML = generateSvgQrCode(`YEBS-${order.id}-PIN-${order.pickupPin || '8492'}`, 110);
+      }
+
+      const copyMomoBtn = document.getElementById("copyMomoNumberBtn");
+      if (copyMomoBtn) {
+        copyMomoBtn.onclick = () => {
+          navigator.clipboard.writeText(MOMO_CONFIG.number);
+          alert(`Copied MoMo Number: ${MOMO_CONFIG.displayNumber} (${MOMO_CONFIG.merchantName})`);
+        };
+      }
+
+      const paid = order.paymentStatus === 'paid';
+      const review = order.paymentStatus === 'review';
+      const isCash = (order.paymentMode || '') === 'cash' || /cash|pay on delivery/i.test(order.payment || '');
+
+      if (trackPayAmount) trackPayAmount.textContent = `GH₵${Number(order.total || 0).toFixed(2)}`;
+      if (momoPayAmountLabel) momoPayAmountLabel.textContent = `GH₵${Number(order.total || 0).toFixed(2)}`;
+      if (momoPayRefLabel) momoPayRefLabel.textContent = order.paymentRef || order.id;
+
+      if (trackPaymentStatusBadge) {
+        if (paid) {
+          const how = order.verificationMethod === 'cash-driver'
+            ? 'cash collected'
+            : (order.verificationMethod === 'auto-sms' ? 'verified from MoMo SMS' : 'MoMo auto-verified');
+          trackPaymentStatusBadge.textContent = `✅ Paid — ${how}`;
+          trackPaymentStatusBadge.style.color = '#166534';
+        } else if (review) {
+          trackPaymentStatusBadge.textContent = '⚠️ Payment needs a quick check';
+          trackPaymentStatusBadge.style.color = '#b45309';
+        } else if (isCash) {
+          trackPaymentStatusBadge.textContent = '💵 Cash due on delivery';
+          trackPaymentStatusBadge.style.color = '#92400e';
+        } else {
+          trackPaymentStatusBadge.textContent = '💳 Payment pending';
+          trackPaymentStatusBadge.style.color = '#92400e';
+        }
+      }
+
+      if (trackPaymentDetail) {
+        if (paid) {
+          const when = order.paidAt ? new Date(order.paidAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
+          trackPaymentDetail.textContent = `${order.momoTransactionRef ? `Ref: ${order.momoTransactionRef} · ` : ''}${order.momoAmount ? `GH₵${Number(order.momoAmount).toFixed(2)} · ` : ''}${when}`;
+        } else if (review) {
+          trackPaymentDetail.textContent = order.paymentStatus === 'review'
+            ? 'We received your proof but the amount did not match. The kitchen will confirm shortly — your order is still being prepared.'
+            : '';
+        } else if (isCash) {
+          trackPaymentDetail.textContent = 'Pay the rider when your food is handed over. The rider records the amount and your order is marked paid instantly.';
+        } else {
+          trackPaymentDetail.textContent = `Pay GH₵${Number(order.total || 0).toFixed(2)} to ${MOMO_CONFIG.displayNumber} using ${order.id} as reference, then verify below — no waiting.`;
+        }
+      }
+
+      const momoBox = document.getElementById('trackMomoBox');
+      if (momoBox) {
+        // Hide the MoMo form once the order is paid, or when cash is due instead.
+        const hideForm = paid || isCash;
+        momoBox.style.display = hideForm ? 'none' : 'block';
+        momoBox.style.opacity = '1';
+        const form = document.getElementById('uploadMomoReceiptBtn');
+        if (form) form.disabled = paid;
+        const inputs = momoBox.querySelectorAll('input');
+        inputs.forEach(inp => { inp.disabled = paid; });
+      }
+
+      if (momoReceiptStatus) {
+        const receipt = order.momoReceipt;
+        if (paid) {
+          momoReceiptStatus.innerHTML = '✅ Payment verified. This order is fully paid — nothing else to do.';
+          momoReceiptStatus.style.color = '#166534';
+        } else if (review) {
+          momoReceiptStatus.innerHTML = '⚠️ Your proof was received and flagged for a quick check. Your order is not delayed.';
+          momoReceiptStatus.style.color = '#b45309';
+        } else if (receipt) {
+          momoReceiptStatus.innerHTML = '⏳ Payment proof recorded. Confirm the transaction ID or receipt to auto-verify.';
+          momoReceiptStatus.style.color = '#92400e';
+        } else if (isCash) {
+          momoReceiptStatus.textContent = 'Cash on delivery selected — no MoMo payment needed now.';
+          momoReceiptStatus.style.color = '#15803d';
+        } else {
+          momoReceiptStatus.textContent = 'No payment submitted yet. Pay to 055 910 3452, then verify instantly below.';
+          momoReceiptStatus.style.color = '#15803d';
+        }
+        momoReceiptPreview.innerHTML = receipt && receipt.image
+          ? `<div style="font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Uploaded receipt${receipt.transactionRef ? ` · Ref: ${receipt.transactionRef}` : ''}</div><img src="${receipt.image}" alt="MoMo receipt" style="max-height:140px; max-width:100%; border-radius:8px; border:1px solid #bbf7d0;">`
+          : '';
+      }
+
+      // Resolve target destination: prioritize Driver-Designated Session Pickup Point
+      const session = getSessionState();
+      let targetLat = order.mapPin ? order.mapPin.lat : RESTAURANT_COORDS.lat + 0.006;
+      let targetLng = order.mapPin ? order.mapPin.lng : RESTAURANT_COORDS.lng + 0.005;
+      let isDesignatedPickup = false;
+      let targetName = order.location || "Adabraka, Accra";
+
+      if (session && session.pickupPoint && session.pickupPoint.lat && session.pickupPoint.lng) {
+        targetLat = session.pickupPoint.lat;
+        targetLng = session.pickupPoint.lng;
+        targetName = session.pickupPoint.name;
+        isDesignatedPickup = true;
+        trackDestAddress.innerHTML = `<strong>📍 Session Pickup Point:</strong> ${targetName}`;
+      } else {
+        trackDestAddress.textContent = targetName;
+      }
+
+      let driverLat = RESTAURANT_COORDS.lat;
+      let driverLng = RESTAURANT_COORDS.lng;
+      let driverSpeed = 0;
+      let driverPhone = "";
+
+      if (order.driver) {
+        trackDriverName.textContent = order.driver.name || "Assigned Driver";
+        trackDriverVehicle.textContent = order.driver.vehicle || "Delivery Motorbike";
+        driverPhone = resolveDriverPhone(order) || order.driver.phone || "";
+        if (order.driver.currentLocation) {
+          driverLat = order.driver.currentLocation.lat;
+          driverLng = order.driver.currentLocation.lng;
+        }
+        if (order.driver.speedKmh) driverSpeed = order.driver.speedKmh;
+      }
+
+      if (driverPhone) {
+        trackCallDriverLink.href = formatTelHref(driverPhone);
+        trackCallDriverLink.style.opacity = "1";
+        trackCallDriverLink.innerHTML = `📞 Call ${driverPhone}`;
+        trackWaDriverLink.href = formatWhatsAppUrl(driverPhone, `Hello, I am tracking my YEBS Noodles order ${order.id}.`);
+        trackWaDriverLink.style.display = "inline-flex";
+        if (trackDriverPhoneText) {
+          trackDriverPhoneText.href = formatTelHref(driverPhone);
+          trackDriverPhoneText.textContent = `📞 ${driverPhone}`;
+        }
+      } else {
+        trackCallDriverLink.href = "#";
+        trackCallDriverLink.style.opacity = "0.55";
+        trackCallDriverLink.innerHTML = "📞 Number pending";
+        trackWaDriverLink.style.display = "none";
+        if (trackDriverPhoneText) trackDriverPhoneText.textContent = "";
+      }
+
+      // Show the rider's live-captured face photo to the customer
+      const driverPhoto = (order.driver && order.driver.photo) || order.driverPhoto || null;
+      if (trackDriverAvatar) {
+        trackDriverAvatar.innerHTML = driverPhoto
+          ? `<img src="${driverPhoto}" alt="Delivery rider">`
+          : "🛵";
+      }
+
+      trackDriverSpeed.textContent = `${driverSpeed} km/h`;
+      if (trackDriverLiveText) {
+        trackDriverLiveText.textContent = order.driver && order.driver.lastUpdated
+          ? `Live GPS · updated ${new Date(order.driver.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+          : (order.driver ? "Awaiting GPS signal" : "Rider not assigned yet");
+      }
+
+      // Live Driver ETA to target pickup point
+      const dist = calculateDistanceKm(driverLat, driverLng, targetLat, targetLng);
+      const etaMins = estimateEtaMinutes(driverLat, driverLng, targetLat, targetLng);
+      trackDriverEta.textContent = order.status === 'arrived' ? 'Arrived!' : (order.status === 'delivered' ? 'Delivered' : `~${etaMins} mins`);
+      if (trackDriverDistance) trackDriverDistance.textContent = `${dist.toFixed(2)} km away`;
+
+      if (order.status === 'pending' || order.status === 'kitchen' || order.status === 'driver_assigned') {
+        stepperProgressFill.style.width = order.status === 'kitchen' ? '33%' : '15%';
+        stepNode1.className = 'step-node completed';
+        stepNode2.className = 'step-node active';
+        stepNode3.className = 'step-node';
+        stepNode4.className = 'step-node';
+
+        trackSessionAlert.className = "session-callout session-callout-kitchen";
+        trackSessionIcon.textContent = "⏳";
+        trackSessionHeading.textContent = "Order Preparation Session Active";
+        trackSessionDetails.textContent = `Your noodles are being freshly prepared in our kitchen. This order session will automatically close once your delivery driver enters their real-time location data and presses Start Delivery!`;
+      } else if (order.status === 'enroute') {
+        stepperProgressFill.style.width = '66%';
+        stepNode1.className = 'step-node completed';
+        stepNode2.className = 'step-node completed';
+        stepNode3.className = 'step-node active';
+        stepNode4.className = 'step-node';
+
+        trackSessionAlert.className = "session-callout session-callout-enroute";
+        trackSessionIcon.textContent = "🛵";
+        trackSessionHeading.textContent = "Order Session Ended — Delivery Driver En Route!";
+        trackSessionDetails.textContent = `Your driver is on the road streaming real-time GPS coordinates directly to your map just like Bolt or Yango! Real-time ETA: ${etaMins} mins to ${targetName}.`;
+      } else if (order.status === 'arrived') {
+        stepperProgressFill.style.width = '85%';
+        stepNode1.className = 'step-node completed';
+        stepNode2.className = 'step-node completed';
+        stepNode3.className = 'step-node active';
+        stepNode4.className = 'step-node';
+
+        trackSessionAlert.className = "session-callout session-callout-enroute";
+        trackSessionIcon.textContent = "📍";
+        trackSessionHeading.textContent = "Your Driver Has Arrived at Pickup Point!";
+        trackSessionDetails.textContent = `Your delivery rider has reached ${targetName}. Show your 4-digit PIN ${order.pickupPin || '----'} (the last 4 digits of Order ${order.id}) to collect your fresh noodles.`;
+      } else if (order.status === 'delivered') {
+        stepperProgressFill.style.width = '100%';
+        stepNode1.className = 'step-node completed';
+        stepNode2.className = 'step-node completed';
+        stepNode3.className = 'step-node completed';
+        stepNode4.className = 'step-node completed';
+
+        trackSessionAlert.className = "session-callout session-callout-enroute";
+        trackSessionIcon.textContent = "🎉";
+        trackSessionHeading.textContent = "Delivered Successfully!";
+        trackSessionDetails.textContent = `Enjoy every bite of your YEBS Noodles! Thank you for dining with The Standard of Delicacy.`;
+      }
+
+      if (trackMap && trackDriverMarker && trackCustMarker) {
+        trackCustMarker.setLatLng([targetLat, targetLng]);
+        if (isDesignatedPickup) {
+          trackCustMarker.bindPopup(`<b>📍 Designated Session Pickup Point</b><br>${targetName}`);
+        }
+        trackDriverMarker.setLatLng([driverLat, driverLng]);
+
+        // Draw road-following route (falls back to dashed line offline)
+        import('./shared.js').then(({ drawRoadRoute, computeRoadEta }) => {
+          if (drawRoadRoute) {
+            drawRoadRoute(trackMap,
+              { lat: driverLat, lng: driverLng },
+              { lat: targetLat, lng: targetLng },
+              { color: '#e57a45', weight: 5, previousLayer: trackRouteLine }
+            ).then(layer => {
+              if (layer) trackRouteLine = layer;
+            }).catch(() => {
+              // Offline fallback already handled inside drawRoadRoute
+            });
+          }
+          if (computeRoadEta && order.status === 'enroute') {
+            const eta = computeRoadEta(
+              { lat: driverLat, lng: driverLng },
+              { lat: targetLat, lng: targetLng },
+              { speedKmh: driverSpeed || 25 }
+            );
+            trackDriverEta.textContent = `~${eta.etaMinutes} min`;
+            if (trackDriverDistance) trackDriverDistance.textContent = `${eta.distanceKm} km`;
+          }
+        }).catch(() => {
+          // shared.js not available as module — use the straight line
+          trackRouteLine.setLatLngs([[driverLat, driverLng], [targetLat, targetLng]]);
+        });
+
+        const bounds = L.latLngBounds([[driverLat, driverLng], [targetLat, targetLng]]);
+        trackMap.fitBounds(bounds, { padding: [40, 40] });
+      }
+    }
+
+    // ----------------------------------------------------
+    // MoMo receipt upload (customer side)
+    // ----------------------------------------------------
+    function fileToCompressedDataUrl(file, maxSize = 900, quality = 0.78) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Could not read the file."));
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = () => resolve(reader.result);
+          img.onload = () => {
+            let { width, height } = img;
+            const scale = Math.min(1, maxSize / Math.max(width, height));
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL("image/jpeg", quality));
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    if (uploadMomoReceiptBtn) {
+      uploadMomoReceiptBtn.addEventListener("click", async () => {
+        const file = momoReceiptFile && momoReceiptFile.files ? momoReceiptFile.files[0] : null;
+        const ref = momoRefInput ? momoRefInput.value.trim() : "";
+        const orderNow = getOrderById(currentlyTrackedOrderId);
+
+        if (!file && !ref) {
+          alert("Enter the MoMo transaction ID or choose a receipt screenshot so the payment can be verified.");
+          return;
+        }
+
+        uploadMomoReceiptBtn.disabled = true;
+        const originalText = uploadMomoReceiptBtn.textContent;
+        uploadMomoReceiptBtn.textContent = "Verifying…";
+
+        try {
+          let dataUrl = null;
+          if (file) dataUrl = await fileToCompressedDataUrl(file);
+
+          const amountValue = momoAmountInput && momoAmountInput.value !== ""
+            ? Number(momoAmountInput.value)
+            : Number(orderNow ? orderNow.total : 0);
+
+          const res = await apiPayMomo(currentlyTrackedOrderId, {
+            transactionRef: ref || null,
+            amount: Number.isFinite(amountValue) ? amountValue : (orderNow ? orderNow.total : 0),
+            receiptImage: dataUrl,
+            method: dataUrl && !ref ? "auto-receipt" : "auto-momo"
+          });
+
+          if (res && res.success) {
+            momoReceiptStatus.innerHTML = res.alreadyPaid
+              ? '✅ This order is already paid. Nothing else to do.'
+              : `✅ <strong>Payment verified instantly.</strong> ${res.message || ''}`;
+            momoReceiptStatus.style.color = "#166534";
+            if (momoAmountInput) momoAmountInput.value = "";
+            if (momoRefInput) momoRefInput.value = "";
+            if (momoReceiptFile) momoReceiptFile.value = "";
+            playChime('arrival');
+          } else if (res && res.needsReview) {
+            momoReceiptStatus.innerHTML = `⚠️ ${res.message}`;
+            momoReceiptStatus.style.color = "#b45309";
+          } else {
+            momoReceiptStatus.innerHTML = `❌ ${(res && res.message) || "Could not verify this payment."}`;
+            momoReceiptStatus.style.color = "#b91c1c";
+          }
+          await apiFetchOrder(currentlyTrackedOrderId).catch(() => {});
+          renderTrackingModal();
+        } catch (err) {
+          momoReceiptStatus.innerHTML = `❌ ${err.message || "Could not verify the payment. Please try again."}`;
+          momoReceiptStatus.style.color = "#b91c1c";
+        } finally {
+          uploadMomoReceiptBtn.disabled = false;
+          uploadMomoReceiptBtn.textContent = originalText;
+        }
+      });
+    }
+
+    menuGrid.addEventListener('click', (e) => {
+      const btn = e.target.closest('.menu-add-btn');
+      if (btn) {
+        addToCart(btn.dataset.id);
+        document.getElementById('order').scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+
+    cartItems.addEventListener('click', (e) => {
+      const btn = e.target.closest('.qty-btn');
+      if (btn) {
+        changeQty(btn.dataset.key, parseInt(btn.dataset.delta, 10));
+      }
+    });
+
+    openTrackModalBtn.addEventListener('click', () => {
+      openTrackingModal(currentlyTrackedOrderId);
+    });
+
+    closeTrackModalBtn.addEventListener('click', closeTrackingModal);
+
+    trackingOverlay.addEventListener('click', (e) => {
+      if (e.target === trackingOverlay) closeTrackingModal();
+    });
+
+    headerTrackSubmit.addEventListener('click', () => {
+      const val = headerTrackInput.value.trim();
+      if (!val) {
+        alert("Please enter an order ID to track (e.g. YB-1082).");
+        return;
+      }
+      openTrackingModal(val);
+    });
+
+    heroTrackDemoBtn.addEventListener('click', () => {
+      openTrackingModal();
+    });
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const trackParam = urlParams.get('track');
+    if (trackParam) {
+      setTimeout(() => openTrackingModal(trackParam), 300);
+    }
+
+    let lastArrivalHandledAt = 0;
+    onSyncEvent((evt) => {
+      updateSessionBanner();
+
+      if (evt && (evt.type === "DRIVER_ARRIVED" || evt.type === "DRIVER_ARRIVED_AT_PICKUP")) {
+        handleDriverArrivalNotification(evt.payload);
+      } else {
+        const lastArrival = getLastArrivalEvent();
+        if (lastArrival && (Date.now() - lastArrival.timestamp < 30000) && lastArrival.timestamp !== lastArrivalHandledAt) {
+          lastArrivalHandledAt = lastArrival.timestamp;
+          handleDriverArrivalNotification(lastArrival);
+        }
+      }
+
+      if (trackingOverlay.classList.contains("active")) {
+        renderTrackingModal();
+      }
+    });
+
+    // Cross-device live sync: customer sees driver assignment + GPS that the
+    // driver/admin portals publish from their own phones.
+    startLiveOrderSync(() => {
+      updateSessionBanner();
+      if (trackingOverlay.classList.contains("active")) renderTrackingModal();
+    }, 4000);
+
+    // Auto-poll session updates, the customer's own order and rider GPS while tracking
+    setInterval(async () => {
+      if (trackingOverlay && trackingOverlay.classList.contains("active")) {
+        try {
+          // Pull this customer's order (status, payment, rider) from the server.
+          if (currentlyTrackedOrderId) {
+            await apiFetchOrder(currentlyTrackedOrderId).catch(() => {});
+          }
+          const s = await apiFetchSession();
+          if (s && s.pickupPoint) {
+            setSessionPickupPoint(s.pickupPoint.name, { lat: s.pickupPoint.lat, lng: s.pickupPoint.lng });
+          }
+          // Pull fresh rider GPS even when only the driver record changed.
+          const drivers = await apiFetchActiveDrivers();
+          const order = getOrderById(currentlyTrackedOrderId);
+          if (order && order.driver && Array.isArray(drivers)) {
+            const match = drivers.find(d => (d.name || '').toLowerCase() === (order.driver.name || '').toLowerCase());
+            if (match && match.lat && match.lng) {
+              order.driver.currentLocation = { lat: match.lat, lng: match.lng };
+              order.driver.speedKmh = match.speedKmh || order.driver.speedKmh;
+              order.driver.phone = order.driver.phone || match.phone;
+              order.driver.photo = order.driver.photo || match.photo;
+              order.driver.lastUpdated = match.lastLocationUpdate;
+              const list = getOrders();
+              const idx = list.findIndex(o => o.id === order.id);
+              if (idx !== -1) { list[idx] = order; saveOrders(list); }
+            }
+          }
+        } catch(e) {}
+        renderTrackingModal();
+      }
+    }, 2500);
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW error', err));
+    }
+
+    // Lightbox for Official Menu Poster
+    const menuPosterModal = document.getElementById("menuPosterModal");
+    const openMenuPosterModalBtn = document.getElementById("openMenuPosterModalBtn");
+    const closeMenuPosterModalBtn = document.getElementById("closeMenuPosterModalBtn");
+
+    if (openMenuPosterModalBtn && menuPosterModal) {
+      openMenuPosterModalBtn.addEventListener('click', () => {
+        menuPosterModal.style.display = 'flex';
+      });
+      closeMenuPosterModalBtn.addEventListener('click', () => {
+        menuPosterModal.style.display = 'none';
+      });
+      menuPosterModal.addEventListener('click', (e) => {
+        if (e.target === menuPosterModal) menuPosterModal.style.display = 'none';
+      });
+    }
+
+    // Dynamic Menu fetch on load & sync
+    apiFetchMenu().then(() => {
+      renderMenu();
+      renderCart();
+    });
+
+    onSyncEvent((evt) => {
+      if (evt && evt.type === "MENU_UPDATED") {
+        renderMenu();
+        renderCart();
+      }
+    });
+
+    renderMenu();
+    renderCart();
+    updateSessionBanner();
+    initPermissionsCheck();
+
+    // ── DevTools Protection (Prevent Source Inspection) ──────────────────────
+    (function() {
+      // Disable right-click context menu
+      document.addEventListener('contextmenu', e => { e.preventDefault(); return false; });
+      
+      // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
+      document.addEventListener('keydown', e => {
+        if (e.key === 'F12' || 
+            (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+            (e.ctrlKey && e.key === 'U')) {
+          e.preventDefault();
+          return false;
+        }
+      });
+
+      // Detect DevTools opening via console
+      const threshold = 160;
+      let devtoolsOpen = false;
+      const check = () => {
+        const widthThreshold = window.outerWidth - window.innerWidth > threshold;
+        const heightThreshold = window.outerHeight - window.innerHeight > threshold;
+        if (widthThreshold || heightThreshold) {
+          if (!devtoolsOpen) {
+            devtoolsOpen = true;
+            document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;text-align:center;font-family:system-ui;"><div><h1 style="color:#b91c1c;font-size:3rem;">⚠️</h1><p style="font-size:1.2rem;color:#374151;">Developer tools detected.<br>This page has been disabled for security.</p></div></div>';
+          }
+        }
+      };
+      setInterval(check, 1000);
+
+      // Detect console activity
+      const consoleCheck = () => {
+        const before = new Date();
+        debugger;
+        const after = new Date();
+        if (after - before > 100) {
+          document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;text-align:center;font-family:system-ui;"><div><h1 style="color:#b91c1c;font-size:3rem;">⚠️</h1><p style="font-size:1.2rem;color:#374151;">Debugging detected.<br>Page access disabled.</p></div></div>';
+        }
+      };
+      setInterval(consoleCheck, 2000);
+    })();
+
+    // ── Fix Customer Location Pin Saving ───────────────────────────────────
+    if (locateButton) {
+      locateButton.addEventListener("click", () => {
+        if (!navigator.geolocation) {
+          if (locationStatus) locationStatus.textContent = "❌ Geolocation not supported by your browser.";
+          return;
+        }
+        if (locationStatus) locationStatus.textContent = "📍 Getting your location…";
+        locateButton.disabled = true;
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            customerGpsPin = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            if (locationInput) {
+              locationInput.value = `Lat: ${pos.coords.latitude.toFixed(5)}, Lng: ${pos.coords.longitude.toFixed(5)}`;
+            }
+            if (locationStatus) {
+              locationStatus.textContent = "✅ Location pinned! This exact GPS coordinate will be sent to your rider.";
+              locationStatus.style.color = "#166534";
+            }
+            locateButton.disabled = false;
+            locateButton.textContent = "✅ Location Pinned";
+            setTimeout(() => { locateButton.textContent = "📍 Use my current location"; }, 3000);
+          },
+          (err) => {
+            if (locationStatus) {
+              locationStatus.textContent = `❌ ${err.message || "Could not access your location. Please enable location permissions."}`;
+              locationStatus.style.color = "#b91c1c";
+            }
+            locateButton.disabled = false;
+          },
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      });
+    }
+  </script>
+
+  <!-- Official Menu Poster Modal Lightbox -->
+  <div id="menuPosterModal" class="auth-overlay" style="display:none;" role="dialog" aria-modal="true">
+    <div style="background:white; border-radius:16px; max-width:680px; width:100%; max-height:90vh; overflow:auto; position:relative; box-shadow:0 24px 60px rgba(0,0,0,0.4); border:2px solid var(--gold); animation:modalSlideUp 0.3s ease-out;">
+      <div style="position:sticky; top:0; background:#173d30; color:white; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; z-index:10;">
+        <strong style="color:var(--gold); font-family:var(--serif); font-size:1.1rem;">YEBS Noodles · Official Menu Poster</strong>
+        <button type="button" id="closeMenuPosterModalBtn" style="background:transparent; border:none; color:white; font-size:1.6rem; cursor:pointer; line-height:1;">&times;</button>
+      </div>
+      <div style="padding:16px; text-align:center; background:#faf7ee;">
+        <img src="img_menu_poster.jpg" alt="Official YEBS Noodles Menu Poster" style="width:100%; height:auto; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.15);">
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- ORDER ID POPUP (top-level, always above everything else) -->
+  <!-- ======================================================== -->
+  <div id="orderIdModal" class="arrival-popup-backdrop" style="display:none;">
+    <div class="arrival-popup-box" style="max-width:520px; text-align:center;">
+      <div style="font-size:3rem; margin-bottom:4px;">🎫</div>
+      <span style="display:inline-block; background:#dcfce7; color:#166534; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; padding:4px 12px; border-radius:999px; margin-bottom:10px;">
+        Order placed successfully
+      </span>
+      <h2 style="font-family:var(--serif); font-size:1.5rem; color:var(--forest); margin:0 0 6px;">Your Order ID &amp; Collection PIN</h2>
+      <p style="font-size:0.86rem; color:var(--muted); margin:0 0 14px;">Save both — your Order ID tracks your order, and the 4-digit PIN is for collection at the pickup point.</p>
+
+      <div style="background:#fffdf8; border:2px dashed var(--orange); border-radius:14px; padding:18px; margin-bottom:12px;">
+        <div style="font-size:0.75rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Order ID</div>
+        <div id="orderIdModalValue" style="font-family:ui-monospace, monospace; font-size:2.6rem; font-weight:900; letter-spacing:0.12em; color:var(--orange); line-height:1.1;">YB-0000</div>
+        <button type="button" id="copyOrderIdBtn" class="button" style="margin-top:10px; min-height:38px; padding:0 18px; font-size:0.85rem; background:var(--forest); color:white;">
+          📋 Copy Order ID
+        </button>
+        <div id="copyOrderIdStatus" style="font-size:0.78rem; color:#166534; font-weight:700; margin-top:6px; min-height:18px;"></div>
+      </div>
+
+      <!-- Collection PIN — CLEARLY labelled as package pickup PIN, not MoMo PIN -->
+      <div style="background:#fffbeb; border:2px solid #f59e0b; border-radius:12px; padding:14px 16px; margin-bottom:14px; text-align:left;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+          <div>
+            <div style="font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; color:#92400e; margin-bottom:3px;">📦 Package Collection PIN</div>
+            <div style="font-family:ui-monospace,monospace; font-size:2rem; font-weight:900; color:#d97706; letter-spacing:0.18em;" id="orderIdModalPin">0000</div>
+          </div>
+          <button type="button" id="copyPinBtn" class="button" style="min-height:36px; padding:0 14px; font-size:0.82rem; background:#f59e0b; color:white;">📋 Copy PIN</button>
+        </div>
+        <div style="font-size:0.78rem; color:#92400e; margin-top:8px; line-height:1.5;">
+          ⚠️ <strong>This PIN is NOT your MoMo PIN.</strong> It is the last 4 digits of your Order ID.<br>
+          Show it to the rider at the pickup point to receive your food.
+        </div>
+        <div id="orderIdPinHint"></div>
+      </div>
+
+      <div id="orderIdModalPayHint" style="font-size:0.82rem; color:var(--muted); margin-bottom:14px;"></div>
+
+      <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+        <button type="button" id="orderIdModalTrackBtn" class="button button-orange" style="min-height:42px; font-size:0.9rem; padding:0 20px;">
+          🗺️ Track my order
+        </button>
+        <button type="button" id="orderIdModalEditBtn" class="button" style="min-height:42px; font-size:0.85rem; padding:0 16px; background:#e8f0ec; color:var(--forest); border:1px solid #c9decb;">
+          ✏️ Edit order
+        </button>
+        <a id="orderIdWaBtn" href="#" target="_blank" rel="noopener" class="button" style="display:none; min-height:42px; font-size:0.85rem; padding:0 16px; background:#25D366; color:#fff; text-decoration:none; align-items:center;">
+          💬 WhatsApp
+        </a>
+        <button type="button" id="orderIdModalCloseBtn" class="button" style="min-height:42px; font-size:0.85rem; padding:0 16px; background:white; border:1px solid var(--line); color:var(--muted);">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
