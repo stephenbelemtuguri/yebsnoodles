@@ -221,13 +221,27 @@ function rateSuccess(req, role, identity) {
 // Guarantee the data file always has every collection and at least one
 // superadmin. Without this, a database.json that predates the accounts (or was
 // committed empty) leaves the platform with no way to sign in or approve drivers.
+const DEFAULT_MOMO_SETTINGS = { payTo: '0559103452', accountName: 'MATHEW TIA' };
+
 function ensureSystemAccounts(db) {
-  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems'];
+  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems', 'payouts', 'reviews'];
   let changed = false;
 
   collections.forEach(key => {
     if (!Array.isArray(db[key])) { db[key] = []; changed = true; }
   });
+
+  if (!db.settings || typeof db.settings !== 'object' || Array.isArray(db.settings)) {
+    db.settings = {};
+    changed = true;
+  }
+  if (!db.settings.momo || typeof db.settings.momo !== 'object') {
+    db.settings.momo = { ...DEFAULT_MOMO_SETTINGS };
+    changed = true;
+  } else {
+    if (!db.settings.momo.payTo) { db.settings.momo.payTo = DEFAULT_MOMO_SETTINGS.payTo; changed = true; }
+    if (!db.settings.momo.accountName) { db.settings.momo.accountName = DEFAULT_MOMO_SETTINGS.accountName; changed = true; }
+  }
 
   if (db.admins.length === 0) {
     db.admins.push({
@@ -261,46 +275,7 @@ function loadDatabase() {
           createdAt: new Date().toISOString()
         }
       ],
-      drivers: [
-        {
-          id: "drv-1",
-          username: "kwamemensah",
-          password: hashPassword("driver@123"),
-          fname: "Kwame",
-          lname: "Mensah",
-          name: "Kwame Mensah",
-          phone: "024 456 7890",
-          vehicle: "Royal 125 Motorcycle (GN-4819-24)",
-          isActive: true,
-          approvalStatus: "approved",
-          approvedAt: new Date().toISOString(),
-          approvedBy: "SYSTEM",
-          approvalNotified: true,
-          lat: 5.56246,
-          lng: -0.21289,
-          speedKmh: 0,
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: "drv-2",
-          username: "kofiowusu",
-          password: hashPassword("driver@123"),
-          fname: "Kofi",
-          lname: "Owusu",
-          name: "Kofi Owusu",
-          phone: "055 789 1234",
-          vehicle: "Boxer 150 Bike (GE-9021-23)",
-          isActive: true,
-          approvalStatus: "approved",
-          approvedAt: new Date().toISOString(),
-          approvedBy: "SYSTEM",
-          approvalNotified: true,
-          lat: 5.56246,
-          lng: -0.21289,
-          speedKmh: 0,
-          createdAt: new Date().toISOString()
-        }
-      ],
+      drivers: [],
       orders: [],
       sessions: [
         {
@@ -317,6 +292,9 @@ function loadDatabase() {
           }
         }
       ],
+      settings: {
+        momo: { ...DEFAULT_MOMO_SETTINGS }
+      },
       auditLogs: [
         {
           id: "log-init",
@@ -340,7 +318,10 @@ function loadDatabase() {
     return parsed;
   } catch (e) {
     console.error("Database read error, restoring default", e);
-    const fallback = { admins: [], drivers: [], orders: [], sessions: [], auditLogs: [], menuItems: [] };
+    const fallback = {
+      admins: [], drivers: [], orders: [], sessions: [], auditLogs: [], menuItems: [], payouts: [], reviews: [],
+      settings: { momo: { ...DEFAULT_MOMO_SETTINGS } }
+    };
     ensureSystemAccounts(fallback);
     return fallback;
   }
@@ -885,8 +866,16 @@ function findDuplicateReceipt(db, hash, orderId) {
 // confirms with the transaction ID / receipt.
 // ==========================================================
 
-const MOMO_PAY_TO = process.env.MOMO_PAY_TO || '0559103452';
-const MOMO_MERCHANT_NAME = process.env.MOMO_MERCHANT_NAME || 'YEBS Noodles / Stephen';
+function getMomoSettings(db) {
+  const stored = (db && db.settings && db.settings.momo) || {};
+  const payTo = walletPhone(stored.payTo) || walletPhone(process.env.MOMO_PAY_TO) || DEFAULT_MOMO_SETTINGS.payTo;
+  const accountName = String(stored.accountName || process.env.MOMO_MERCHANT_NAME || DEFAULT_MOMO_SETTINGS.accountName).trim();
+  return {
+    payTo,
+    payToLabel: payTo.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3'),
+    accountName
+  };
+}
 
 const MOMO_NETWORKS = {
   mtn: {
@@ -1256,11 +1245,13 @@ app.post('/api/orders/:id/pay/momo', (req, res) => {
 
 // Public: which MoMo networks/USSD codes this deployment supports.
 app.get('/api/payments/networks', (req, res) => {
+  const wallet = getMomoSettings(loadDatabase());
   res.json({
     success: true,
-    payTo: MOMO_PAY_TO,
-    payToLabel: MOMO_PAY_TO.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3'),
-    merchant: MOMO_MERCHANT_NAME,
+    payTo: wallet.payTo,
+    payToLabel: wallet.payToLabel,
+    merchant: wallet.accountName,
+    accountName: wallet.accountName,
     apiConfigured: momoApiConfig().configured,
     networks: listMomoNetworks()
   });
@@ -1350,9 +1341,9 @@ app.post('/api/orders/:id/pay/request', async (req, res) => {
     networkLabel: net.label,
     ussd: net.ussd,
     dial: net.dial,
-    payTo: MOMO_PAY_TO,
-    payToLabel: MOMO_PAY_TO.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3'),
-    merchant: MOMO_MERCHANT_NAME,
+    payTo: getMomoSettings(db).payTo,
+    payToLabel: getMomoSettings(db).payToLabel,
+    merchant: getMomoSettings(db).accountName,
     amount,
     phone,
     message: result.message,
@@ -1664,30 +1655,10 @@ app.get('/api/orders/:id', (req, res) => {
 // ========================================
 
 // Import feature route handlers
-const customersRouter = require('./src/routes/customers');
-const driversRouter = require('./src/routes/drivers');
-const analyticsRouter = require('./src/routes/analytics');
-const reviewsRouter = require('./src/routes/reviews');
-const chatRouter = require('./src/routes/chat');
-const inventoryRouter = require('./src/routes/inventory');
-const loyaltyRouter = require('./src/routes/loyalty');
-const referralsRouter = require('./src/routes/referrals');
-const notificationsRouter = require('./src/routes/notifications');
-const dynamicPricingRouter = require('./src/routes/dynamicPricing');
-const receiptsRouter = require('./src/routes/receipts');
-
-// Mount feature routes
-app.use('/api/customers', customersRouter);
-app.use('/api/drivers', driversRouter);
-app.use('/api/analytics', analyticsRouter);
-app.use('/api/reviews', reviewsRouter);
-app.use('/api/chat', chatRouter);
-app.use('/api/inventory', inventoryRouter);
-app.use('/api/loyalty', loyaltyRouter);
-app.use('/api/referrals', referralsRouter);
-app.use('/api/notifications', notificationsRouter);
-app.use('/api/pricing', dynamicPricingRouter);
-app.use('/api/receipts', receiptsRouter);
+// Legacy demo routers (customers, drivers, analytics, reviews, loyalty, receipts,
+// chat, inventory, referrals, notifications, pricing) were removed on purpose.
+// They returned hard-coded demo numbers that shadowed the real database endpoints
+// defined in this file. No page in this build calls those demo routes.
 
 // ========================================
 // ORDER SUBMISSION & MANAGEMENT
@@ -2140,6 +2111,175 @@ app.patch('/api/drivers/:id/toggle', requireRole('admin'), (req, res) => {
   res.json({ success: true, isActive: driver.isActive, driver: publicDriver(driver) });
 });
 
+// Driver earnings + payout requests, calculated from real delivered orders.
+// A rider earns the delivery fee recorded on each order; nothing is invented.
+function driverEarningsSnapshot(driver, period) {
+  const db = loadDatabase();
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const label = ['week', 'month', 'year'].includes(period) ? period : 'week';
+  const buckets = [];
+  if (label === 'week') {
+    start.setDate(start.getDate() - 6);
+    for (let i = 0; i < 7; i++) {
+      const from = new Date(start); from.setDate(start.getDate() + i);
+      const to = new Date(from); to.setDate(from.getDate() + 1);
+      buckets.push({ label: from.toLocaleDateString('en-GB', { weekday: 'short' }), from, to });
+    }
+  } else if (label === 'month') {
+    start.setDate(1);
+    const days = Math.max(1, Math.ceil((now - start) / 86400000) + 1);
+    for (let i = 0; i < days; i++) {
+      const from = new Date(start); from.setDate(start.getDate() + i);
+      const to = new Date(from); to.setDate(from.getDate() + 1);
+      buckets.push({ label: String(from.getDate()), from, to });
+    }
+  } else {
+    start.setMonth(0, 1);
+    for (let m = 0; m < 12; m++) {
+      const from = new Date(start.getFullYear(), m, 1);
+      const to = new Date(start.getFullYear(), m + 1, 1);
+      buckets.push({ label: from.toLocaleDateString('en-GB', { month: 'short' }), from, to });
+    }
+  }
+
+  function belongs(o) {
+    if (!o.driver) return false;
+    if (o.driver.id && driver.id && String(o.driver.id) === String(driver.id)) return true;
+    if (o.driver.username && driver.username && String(o.driver.username).toLowerCase() === String(driver.username).toLowerCase()) return true;
+    return !!(o.driver.name && driver.name && String(o.driver.name).toLowerCase() === String(driver.name).toLowerCase());
+  }
+  function fee(o) { return Number(o.deliveryFee) || 0; }
+
+  const mine = db.orders.filter(belongs);
+  const delivered = mine.filter(o => o.status === 'delivered');
+  const weekStart = new Date(); weekStart.setHours(0, 0, 0, 0); weekStart.setDate(weekStart.getDate() - 6);
+
+  const totalEarnings = Math.round(delivered.reduce((sum, o) => sum + fee(o), 0) * 100) / 100;
+  const thisWeek = Math.round(delivered.filter(o => new Date(o.deliveredAt || o.createdAt || 0) >= weekStart).reduce((sum, o) => sum + fee(o), 0) * 100) / 100;
+
+  // A rider can only cash out delivery fees from orders that were actually
+  // delivered and have not already been requested or paid out.
+  const claimed = (db.payouts || [])
+    .filter(p => String(p.driverId) === String(driver.id) && ['requested', 'paid'].includes(p.status))
+    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const pendingPayout = Math.max(0, Math.round((totalEarnings - claimed) * 100) / 100);
+
+  const timed = delivered.filter(o => o.createdAt && o.deliveredAt);
+  const avgMinutes = timed.length
+    ? Math.round(timed.reduce((sum, o) => sum + Math.max(0, (new Date(o.deliveredAt) - new Date(o.createdAt)) / 60000), 0) / timed.length)
+    : null;
+
+  const chart = buckets.map(b => {
+    const from = b.from.getTime();
+    const to = b.to.getTime();
+    const inBucket = delivered.filter(o => {
+      const t = new Date(o.deliveredAt || o.createdAt || 0).getTime();
+      return t >= from && t < to;
+    });
+    return {
+      label: b.label,
+      earnings: Math.round(inBucket.reduce((sum, o) => sum + fee(o), 0) * 100) / 100,
+      deliveries: inBucket.length
+    };
+  });
+
+  const payouts = (db.payouts || [])
+    .filter(p => String(p.driverId) === String(driver.id))
+    .sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0))
+    .slice(0, 20)
+    .map(p => ({
+      id: p.id,
+      amount: Number(p.amount) || 0,
+      deliveries: p.deliveries || 0,
+      status: p.status || 'requested',
+      method: p.method || 'Mobile Money',
+      requestedAt: p.requestedAt,
+      paidAt: p.paidAt || null
+    }));
+
+  const recentDeliveries = delivered
+    .slice()
+    .sort((a, b) => new Date(b.deliveredAt || b.createdAt || 0) - new Date(a.deliveredAt || a.createdAt || 0))
+    .slice(0, 10)
+    .map(o => ({
+      orderId: o.id,
+      customer: o.customer || '',
+      createdAt: o.createdAt,
+      deliveredAt: o.deliveredAt || null,
+      fee: fee(o),
+      total: Number(o.total) || 0,
+      status: o.status
+    }));
+
+  return {
+    driver: { id: driver.id, name: driver.name || driver.username, phone: driver.phone || '' },
+    period: label,
+    totalEarnings,
+    thisWeek,
+    totalDeliveries: delivered.length,
+    avgPerDelivery: delivered.length ? Math.round((totalEarnings / delivered.length) * 100) / 100 : 0,
+    pendingPayout,
+    chart,
+    payouts,
+    recentDeliveries,
+    metrics: {
+      delivered: delivered.length,
+      cancelled: mine.filter(o => o.status === 'cancelled').length,
+      inProgress: mine.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
+      completionRate: (delivered.length + mine.filter(o => o.status === 'cancelled').length)
+        ? Math.round((delivered.length / (delivered.length + mine.filter(o => o.status === 'cancelled').length)) * 1000) / 10
+        : 0,
+      avgDeliveryTime: avgMinutes
+    }
+  };
+}
+
+app.get('/api/drivers/:id/earnings', requireRole('driver', 'admin'), (req, res) => {
+  const db = loadDatabase();
+  const driver = db.drivers.find(d => String(d.id) === String(req.params.id))
+    || (req.auth.payload.role === 'driver' ? req.auth.driver : null);
+  if (!driver) return res.status(404).json({ success: false, message: 'Driver not found.' });
+  if (req.auth.payload.role === 'driver' && String(driver.id) !== String(req.auth.driver.id)) {
+    return res.status(403).json({ success: false, message: 'You can only view your own earnings.' });
+  }
+  res.json({ success: true, ...driverEarningsSnapshot(driver, req.query.period) });
+});
+
+app.post('/api/drivers/:id/payouts', requireRole('driver', 'admin'), (req, res) => {
+  const db = loadDatabase();
+  const driver = db.drivers.find(d => String(d.id) === String(req.params.id));
+  if (!driver) return res.status(404).json({ success: false, message: 'Driver not found.' });
+  if (req.auth.payload.role === 'driver' && String(driver.id) !== String(req.auth.driver.id)) {
+    return res.status(403).json({ success: false, message: 'You can only request your own payout.' });
+  }
+  const snapshot = driverEarningsSnapshot(driver, 'week');
+  const amount = toAmount((req.body || {}).amount) || snapshot.pendingPayout;
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ success: false, message: 'There is no pending delivery fee to request yet.' });
+  }
+  const existing = (db.payouts || []).find(p => String(p.driverId) === String(driver.id) && p.status === 'requested');
+  if (existing) {
+    return res.status(200).json({ success: true, pending: true, message: 'Your payout request is already waiting for the admin.', payout: existing });
+  }
+  const payout = {
+    id: 'payout-' + Date.now(),
+    driverId: driver.id,
+    driverName: driver.name || driver.username,
+    amount: Math.round(amount * 100) / 100,
+    deliveries: snapshot.recentDeliveries.length,
+    status: 'requested',
+    method: 'Mobile Money',
+    requestedAt: new Date().toISOString()
+  };
+  db.payouts = db.payouts || [];
+  db.payouts.unshift(payout);
+  saveDatabase(db);
+  logAction('DRIVER_PAYOUT_REQUESTED', driver.name || driver.username, driver.id, { amount: payout.amount }, req);
+  res.status(201).json({ success: true, message: 'Payout request sent to the admin.', payout });
+});
+
 // Check approval status (used by driver portal to show pending screen)
 app.get('/api/drivers/:id/approval', (req, res) => {
   const db = loadDatabase();
@@ -2335,6 +2475,421 @@ app.get('/api/reports/daily', requireRole('admin'), (req, res) => {
   res.json({ success: true, report });
 });
 
+// ==========================================================
+// 10b. CUSTOMER REVIEWS & LOYALTY (real orders only)
+// ==========================================================
+
+function phoneKey(value) {
+  return String(value || '').replace(/\D/g, '').slice(-9);
+}
+
+function ordersForPhone(db, phone) {
+  const key = phoneKey(phone);
+  if (!key) return [];
+  return (db.orders || []).filter(o => phoneKey(o.phone) === key);
+}
+
+function publicReview(review) {
+  return {
+    id: review.id,
+    orderId: review.orderId,
+    customer: review.customer || 'Customer',
+    rating: Number(review.rating) || 0,
+    comment: review.comment || '',
+    createdAt: review.createdAt,
+    reply: review.reply || null,
+    repliedAt: review.repliedAt || null
+  };
+}
+
+app.get('/api/reviews', (req, res) => {
+  const db = loadDatabase();
+  const orderId = normalizeOrderId(req.query.orderId || '');
+  const phone = phoneKey(req.query.phone);
+  let reviews = (db.reviews || []).filter(r => r.hidden !== true);
+  if (orderId) reviews = reviews.filter(r => String(r.orderId).toUpperCase() === orderId);
+  if (phone) reviews = reviews.filter(r => phoneKey(r.phone) === phone);
+  reviews = reviews
+    .slice()
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 50);
+  const average = reviews.length ? Math.round((reviews.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / reviews.length) * 10) / 10 : 0;
+  res.json({ success: true, average, count: reviews.length, reviews: reviews.map(publicReview) });
+});
+
+app.post('/api/reviews', (req, res) => {
+  const body = req.body || {};
+  const db = loadDatabase();
+  const orderId = normalizeOrderId(body.orderId || '');
+  const rating = Math.max(1, Math.min(5, Math.round(Number(body.rating) || 0)));
+  const comment = cleanString(body.comment, 500);
+  const phone = phoneKey(body.phone);
+
+  if (!orderId) return res.status(400).json({ success: false, message: 'Choose the order you want to review.' });
+  if (!rating) return res.status(400).json({ success: false, message: 'Choose a rating from 1 to 5 stars.' });
+  const order = db.orders.find(o => String(o.id).toUpperCase() === orderId);
+  if (!order) return res.status(404).json({ success: false, message: 'Order not found.' });
+  if (phone && phoneKey(order.phone) !== phone) {
+    return res.status(403).json({ success: false, message: 'That order belongs to a different phone number.' });
+  }
+  if (order.status !== 'delivered') {
+    return res.status(400).json({ success: false, message: 'You can review an order once it has been delivered.' });
+  }
+
+  db.reviews = db.reviews || [];
+  let review = db.reviews.find(r => String(r.orderId).toUpperCase() === orderId && (!phone || phoneKey(r.phone) === phone));
+  if (review) {
+    review.rating = rating;
+    review.comment = comment;
+    review.createdAt = new Date().toISOString();
+  } else {
+    review = {
+      id: 'rev-' + Date.now(),
+      orderId,
+      phone: order.phone || '',
+      customer: order.customer || 'Customer',
+      rating,
+      comment,
+      createdAt: new Date().toISOString(),
+      reply: null,
+      repliedAt: null
+    };
+    db.reviews.unshift(review);
+  }
+  saveDatabase(db);
+  logAction('CUSTOMER_REVIEW_SAVED', order.customer || 'CUSTOMER', orderId, { rating }, req);
+  res.status(201).json({ success: true, message: 'Thank you - your review is saved.', review: publicReview(review) });
+});
+
+app.post('/api/reviews/:id/reply', requireRole('admin'), (req, res) => {
+  const db = loadDatabase();
+  const review = (db.reviews || []).find(r => String(r.id) === String(req.params.id));
+  if (!review) return res.status(404).json({ success: false, message: 'Review not found.' });
+  const reply = cleanString((req.body || {}).reply, 500);
+  if (!reply) return res.status(400).json({ success: false, message: 'Write a reply first.' });
+  review.reply = reply;
+  review.repliedAt = new Date().toISOString();
+  review.repliedBy = req.auth.admin.username;
+  saveDatabase(db);
+  logAction('REVIEW_REPLIED', req.auth.admin.username, review.orderId, { reviewId: review.id }, req);
+  res.json({ success: true, review: publicReview(review) });
+});
+
+app.get('/api/loyalty/summary', (req, res) => {
+  const db = loadDatabase();
+  const phone = phoneKey(req.query.phone);
+  if (!phone) return res.status(400).json({ success: false, message: 'Enter the phone number used for your orders.' });
+  const orders = ordersForPhone(db, phone);
+  const paid = orders.filter(o => o.paymentStatus === 'paid');
+  const spent = paid.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  const points = Math.floor(spent);
+  const tiers = [
+    { name: 'Bronze', min: 0 },
+    { name: 'Silver', min: 100 },
+    { name: 'Gold', min: 300 },
+    { name: 'Platinum', min: 700 }
+  ];
+  const tier = tiers.slice().reverse().find(t => points >= t.min) || tiers[0];
+  const next = tiers.find(t => t.min > points) || null;
+  const myReviews = (db.reviews || []).filter(r => phoneKey(r.phone) === phone);
+  res.json({
+    success: true,
+    phone,
+    points,
+    tier: tier.name,
+    nextTier: next ? next.name : null,
+    pointsToNext: next ? Math.max(0, next.min - points) : 0,
+    orders: orders.length,
+    paidOrders: paid.length,
+    spent: Math.round(spent * 100) / 100,
+    reviews: myReviews.length,
+    tiers
+  });
+});
+
+app.get('/api/customers/orders', (req, res) => {
+  const db = loadDatabase();
+  const orders = ordersForPhone(db, req.query.phone)
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  res.json({ success: true, orders: orders.map(o => projectOrder(o, 'public')) });
+});
+
+// ==========================================================
+// 11b. BUSINESS ANALYTICS (computed from the real database)
+// ==========================================================
+
+function analyticsRangeBounds(rangeValue) {
+  const range = ['today', 'week', 'month', 'year'].includes(rangeValue) ? rangeValue : 'week';
+  const end = new Date();
+  const start = new Date(end);
+  start.setHours(0, 0, 0, 0);
+  if (range === 'week') start.setDate(start.getDate() - 6);
+  if (range === 'month') start.setDate(1);
+  if (range === 'year') start.setMonth(0, 1);
+  const span = Math.max(1, end.getTime() - start.getTime());
+  const prevEnd = new Date(start.getTime() - 1);
+  const prevStart = new Date(start.getTime() - span);
+  return { range, start, end, prevStart, prevEnd };
+}
+
+function analyticsInRange(orders, start, end) {
+  const from = start.getTime();
+  const to = end.getTime();
+  return (orders || []).filter(o => {
+    const t = new Date(o.createdAt || 0).getTime();
+    return Number.isFinite(t) && t >= from && t <= to;
+  });
+}
+
+function analyticsSummary(orders) {
+  const real = orders.filter(o => o.status !== 'cancelled');
+  const paid = real.filter(o => o.paymentStatus === 'paid');
+  const collected = paid.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  const orderValue = real.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  // Total revenue is the value of every non-cancelled order, so it always
+  // reconciles with orders x AOV. Money actually received is collected.
+  const revenue = orderValue;
+  const delivered = orders.filter(o => o.status === 'delivered').length;
+  const cancelled = orders.filter(o => o.status === 'cancelled').length;
+  const pending = orders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length;
+  const customers = new Set(real.map(o => String(o.phone || o.customer || '').replace(/\s+/g, '')).filter(Boolean)).size;
+  return {
+    revenue: Math.round(revenue * 100) / 100,
+    collected: Math.round(collected * 100) / 100,
+    orders: orders.length,
+    customers,
+    aov: real.length ? Math.round((orderValue / real.length) * 100) / 100 : 0,
+    delivered,
+    cancelled,
+    pending,
+    paidOrders: paid.length,
+    unpaidOrders: real.length - paid.length,
+    completionRate: (delivered + cancelled) ? Math.round((delivered / (delivered + cancelled)) * 1000) / 10 : 0
+  };
+}
+
+function pctChange(current, previous) {
+  if (!previous) return current > 0 ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
+function analyticsBuckets(bounds) {
+  const { range, start, end } = bounds;
+  const buckets = [];
+  if (range === 'today') {
+    for (let h = 0; h < 24; h++) {
+      const from = new Date(start); from.setHours(h, 0, 0, 0);
+      const to = new Date(from); to.setHours(h + 1, 0, 0, 0);
+      buckets.push({ label: String(h).padStart(2, '0') + ':00', from, to });
+    }
+  } else if (range === 'week') {
+    for (let i = 0; i < 7; i++) {
+      const from = new Date(start); from.setDate(start.getDate() + i);
+      const to = new Date(from); to.setDate(from.getDate() + 1);
+      buckets.push({ label: from.toLocaleDateString('en-GB', { weekday: 'short' }), from, to });
+    }
+  } else if (range === 'month') {
+    const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000));
+    for (let i = 0; i < days; i++) {
+      const from = new Date(start); from.setDate(start.getDate() + i);
+      const to = new Date(from); to.setDate(from.getDate() + 1);
+      buckets.push({ label: String(from.getDate()), from, to });
+    }
+  } else {
+    for (let m = 0; m < 12; m++) {
+      const from = new Date(start.getFullYear(), m, 1);
+      const to = new Date(start.getFullYear(), m + 1, 1);
+      buckets.push({ label: from.toLocaleDateString('en-GB', { month: 'short' }), from, to });
+    }
+  }
+  return buckets;
+}
+
+app.get('/api/analytics/dashboard', requireRole('admin'), (req, res) => {
+  const db = loadDatabase();
+  const bounds = analyticsRangeBounds(req.query.range);
+  const orders = analyticsInRange(db.orders, bounds.start, bounds.end);
+  const prevOrders = analyticsInRange(db.orders, bounds.prevStart, bounds.prevEnd);
+
+  const kpis = analyticsSummary(orders);
+  const prev = analyticsSummary(prevOrders);
+
+  // Revenue + order series in the selected range.
+  const series = analyticsBuckets(bounds).map(b => {
+    const from = b.from.getTime();
+    const to = b.to.getTime();
+    const inBucket = orders.filter(o => {
+      const t = new Date(o.createdAt || 0).getTime();
+      return t >= from && t < to;
+    });
+    return {
+      label: b.label,
+      revenue: Math.round(inBucket.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + (Number(o.total) || 0), 0) * 100) / 100,
+      orders: inBucket.length
+    };
+  });
+
+  // Order status breakdown.
+  const statusOrder = ['pending', 'kitchen', 'enroute', 'arrived', 'delivered', 'cancelled'];
+  const statusBreakdown = statusOrder.map(status => ({
+    status,
+    label: status === 'enroute' ? 'En route' : status.charAt(0).toUpperCase() + status.slice(1),
+    count: orders.filter(o => (o.status || 'pending') === status).length
+  }));
+
+  // Best selling menu items by quantity and revenue.
+  const itemMap = new Map();
+  orders.filter(o => o.status !== 'cancelled').forEach(o => {
+    (o.items || []).forEach(item => {
+      const name = item.name || 'Menu item';
+      const entry = itemMap.get(name) || { name, quantity: 0, revenue: 0 };
+      entry.quantity += Number(item.quantity) || 0;
+      entry.revenue += (Number(item.price) || 0) * (Number(item.quantity) || 0);
+      itemMap.set(name, entry);
+    });
+  });
+  const topItems = Array.from(itemMap.values())
+    .sort((a, b) => b.quantity - a.quantity)
+    .slice(0, 5)
+    .map(i => ({ name: i.name, quantity: i.quantity, revenue: Math.round(i.revenue * 100) / 100 }));
+
+  // Peak ordering hours (Ghana is UTC+0, matching the default server clock).
+  const peakBuckets = [
+    { label: '6-8 AM', from: 6, to: 9 },
+    { label: '9-11 AM', from: 9, to: 12 },
+    { label: '12-2 PM', from: 12, to: 15 },
+    { label: '3-5 PM', from: 15, to: 18 },
+    { label: '6-8 PM', from: 18, to: 21 },
+    { label: '9-11 PM', from: 21, to: 24 }
+  ];
+  const peakHours = peakBuckets.map(b => ({
+    label: b.label,
+    orders: orders.filter(o => {
+      const h = new Date(o.createdAt || 0).getHours();
+      return h >= b.from && h < b.to;
+    }).length
+  }));
+
+  // Driver performance from real delivered orders only.
+  const driverMap = new Map();
+  orders.forEach(o => {
+    if (!o.driver || !o.driver.name) return;
+    const name = o.driver.name;
+    const entry = driverMap.get(name) || {
+      name,
+      deliveries: 0,
+      active: 0,
+      deliveryValue: 0,
+      totalMinutes: 0,
+      timedDeliveries: 0
+    };
+    if (o.status === 'delivered') {
+      entry.deliveries += 1;
+      entry.deliveryValue += Number(o.total) || 0;
+      if (o.createdAt && o.deliveredAt) {
+        const mins = (new Date(o.deliveredAt).getTime() - new Date(o.createdAt).getTime()) / 60000;
+        if (Number.isFinite(mins) && mins >= 0) {
+          entry.totalMinutes += mins;
+          entry.timedDeliveries += 1;
+        }
+      }
+    } else if (!['cancelled'].includes(o.status)) {
+      entry.active += 1;
+    }
+    driverMap.set(name, entry);
+  });
+  const driverPerformance = Array.from(driverMap.values())
+    .map(d => ({
+      name: d.name,
+      deliveries: d.deliveries,
+      active: d.active,
+      deliveryValue: Math.round(d.deliveryValue * 100) / 100,
+      avgMinutes: d.timedDeliveries ? Math.round(d.totalMinutes / d.timedDeliveries) : null
+    }))
+    .sort((a, b) => b.deliveries - a.deliveries);
+
+  // Insights are derived from the same numbers - never invented.
+  const insights = [];
+  if (topItems.length) {
+    const best = topItems[0];
+    const totalQty = topItems.reduce((sum, i) => sum + i.quantity, 0);
+    insights.push({
+      title: 'Best seller',
+      text: best.name + ' leads with ' + best.quantity + ' portions' +
+        (totalQty ? ' (' + Math.round((best.quantity / totalQty) * 100) + '% of top-item sales)' : '') +
+        ' and GH₵' + best.revenue.toFixed(2) + ' in item revenue this period.'
+    });
+  }
+  const peak = peakHours.reduce((best, b) => b.orders > best.orders ? b : best, peakHours[0]);
+  if (peak && peak.orders > 0) {
+    insights.push({
+      title: 'Busiest window',
+      text: peak.label + ' is your busiest window with ' + peak.orders + ' order' + (peak.orders === 1 ? '' : 's') + '. Staff and prep for that window first.'
+    });
+  }
+  const repeatRows = new Map();
+  orders.filter(o => o.status !== 'cancelled').forEach(o => {
+    const key = String(o.phone || o.customer || '').replace(/\s+/g, '');
+    if (!key) return;
+    repeatRows.set(key, (repeatRows.get(key) || 0) + 1);
+  });
+  const repeatCustomers = Array.from(repeatRows.values()).filter(n => n > 1).length;
+  const uniqueCustomers = repeatRows.size;
+  if (uniqueCustomers) {
+    insights.push({
+      title: 'Customer retention',
+      text: repeatCustomers + ' of ' + uniqueCustomers + ' customers ordered more than once this period (' +
+        Math.round((repeatCustomers / uniqueCustomers) * 100) + '%). ' +
+        (repeatCustomers ? 'Keep the repeat buyers close with a thank-you message.' : 'A small follow-up offer can turn first orders into repeat orders.')
+    });
+  }
+  if (!orders.length) {
+    insights.push({
+      title: 'No orders yet',
+      text: 'There are no orders in this period. Analytics update automatically as soon as customers order.'
+    });
+  }
+
+  const recentOrders = orders
+    .slice()
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 10)
+    .map(o => ({
+      orderId: o.id,
+      customer: o.customer || '',
+      items: (o.items || []).reduce((n, i) => n + (Number(i.quantity) || 0), 0),
+      itemsLabel: (o.items || []).map(i => i.quantity + 'x ' + i.name).join(', '),
+      amount: Number(o.total) || 0,
+      status: o.status || 'pending',
+      paymentStatus: o.paymentStatus || 'unpaid',
+      driver: o.driver && o.driver.name ? o.driver.name : 'Not assigned',
+      time: o.createdAt || ''
+    }));
+
+  res.json({
+    success: true,
+    range: bounds.range,
+    generatedAt: new Date().toISOString(),
+    rangeStart: bounds.start.toISOString(),
+    rangeEnd: bounds.end.toISOString(),
+    kpis,
+    changes: {
+      revenue: pctChange(kpis.revenue, prev.revenue),
+      orders: pctChange(kpis.orders, prev.orders),
+      customers: pctChange(kpis.customers, prev.customers),
+      aov: pctChange(kpis.aov, prev.aov)
+    },
+    previous: prev,
+    series,
+    statusBreakdown,
+    topItems,
+    peakHours,
+    driverPerformance,
+    recentOrders,
+    insights
+  });
+});
+
 // Close-of-day: auto-trigger audit when shop closes (called by admin or cron)
 app.post('/api/reports/close-of-day', requireRole('admin'), (req, res) => {
   const report = buildDailyReport(req.body && req.body.date);
@@ -2405,6 +2960,51 @@ function pushToDriver(driverId, payload) {
   if (client) client.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+// Admin: read/update the merchant wallet every payment settles into.
+app.get('/api/admin/settings/momo', requireRole('admin'), (req, res) => {
+  const db = loadDatabase();
+  res.json({ success: true, momo: getMomoSettings(db) });
+});
+
+app.put('/api/admin/settings/momo', requireRole('admin'), (req, res) => {
+  const body = req.body || {};
+  const payTo = walletPhone(body.payTo);
+  if (!payTo) {
+    return res.status(400).json({ success: false, message: "Enter a valid Ghanaian mobile money number (e.g. 0559103452)." });
+  }
+  const accountName = String(body.accountName || '').trim().slice(0, 80);
+  if (!accountName) {
+    return res.status(400).json({ success: false, message: "Enter the mobile money account name." });
+  }
+  const db = loadDatabase();
+  db.settings = db.settings || {};
+  db.settings.momo = { payTo, accountName };
+  saveDatabase(db);
+  logAction("MOMO_SETTINGS_UPDATED", req.auth.admin.username, "SETTINGS", { payTo, accountName }, req);
+  res.json({ success: true, momo: getMomoSettings(db) });
+});
+
+// Admin: driver payout requests created from the driver earnings page.
+app.get('/api/admin/payouts', requireRole('admin'), (req, res) => {
+  const db = loadDatabase();
+  const payouts = (db.payouts || [])
+    .slice()
+    .sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0));
+  res.json({ success: true, payouts });
+});
+
+app.post('/api/admin/payouts/:id/pay', requireRole('admin'), (req, res) => {
+  const db = loadDatabase();
+  const payout = (db.payouts || []).find(p => String(p.id) === String(req.params.id));
+  if (!payout) return res.status(404).json({ success: false, message: 'Payout request not found.' });
+  payout.status = 'paid';
+  payout.paidAt = new Date().toISOString();
+  payout.paidBy = req.auth.admin.username;
+  saveDatabase(db);
+  logAction('DRIVER_PAYOUT_PAID', req.auth.admin.username, payout.driverId, { amount: payout.amount }, req);
+  res.json({ success: true, message: 'Payout marked as paid.', payout });
+});
+
 // Health check used by the portals to detect a live API server
 app.get('/api/health', (req, res) => {
   res.json({
@@ -2413,7 +3013,8 @@ app.get('/api/health', (req, res) => {
     time: new Date().toISOString(),
     storage: store.status(),
     momo: {
-      payTo: MOMO_PAY_TO,
+      payTo: getMomoSettings(loadDatabase()).payTo,
+      accountName: getMomoSettings(loadDatabase()).accountName,
       apiConfigured: momoApiConfig().configured,
       networks: listMomoNetworks().map(n => ({ id: n.id, ussd: n.ussd, apiReady: n.apiReady }))
     }

@@ -1,0 +1,174 @@
+/* YEBS Noodles customer + admin portal shared styles */
+:root {
+  --forest: #173d30;
+  --forest-dark: #0f2820;
+  --orange: #e57a45;
+  --orange-dark: #cf6734;
+  --gold: #e9bd68;
+  --cream: #fbf8f0;
+  --paper: #fffefa;
+  --ink: #1e2621;
+  --muted: #6e7971;
+  --line: #e4dfd3;
+  --green: #16a34a;
+  --red: #dc2626;
+  --shadow: 0 12px 36px rgba(18, 44, 34, 0.08);
+  --serif: Georgia, "Times New Roman", serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+header {
+  background: linear-gradient(135deg, var(--forest), var(--forest-dark));
+  color: #fff;
+  padding: 16px 20px;
+}
+.header-wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.brand-link { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
+.brand-logo { width: 42px; height: 42px; border-radius: 50%; background: #fff; object-fit: cover; }
+.brand-title { font-family: var(--serif); font-size: 1.25rem; font-weight: 700; }
+.brand-badge { font-size: 0.72rem; color: var(--gold); text-transform: uppercase; letter-spacing: 0.08em; }
+nav { display: flex; gap: 8px; flex-wrap: wrap; }
+.nav-btn {
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid transparent;
+}
+.nav-btn:hover { background: rgba(255, 255, 255, 0.22); }
+.nav-btn.active { background: var(--orange); border-color: var(--orange); }
+main { flex: 1; max-width: 1080px; width: 100%; margin: 0 auto; padding: 26px 18px 50px; }
+h1 { font-family: var(--serif); color: var(--forest); font-size: 2rem; margin: 0 0 6px; }
+.lead { color: var(--muted); margin: 0 0 22px; }
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-weight: 800;
+  color: var(--forest);
+  font-size: 1.03rem;
+  margin-bottom: 14px;
+}
+.grid { display: grid; gap: 16px; }
+.grid-3 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.stat {
+  background: #f9f7f2;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+}
+.stat-value { font-size: 1.65rem; font-weight: 800; color: var(--forest); }
+.stat-label { font-size: 0.82rem; color: var(--muted); }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 0.84rem; font-weight: 700; color: var(--forest); margin-bottom: 6px; }
+.input, select, textarea {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
+  font-size: 0.94rem;
+  font-family: inherit;
+  background: #fff;
+  color: var(--ink);
+}
+.input:focus, select:focus, textarea:focus { outline: none; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(229, 122, 69, 0.15); }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border: 0;
+  border-radius: 9px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+  background: var(--forest);
+  color: #fff;
+}
+.btn:hover { background: var(--forest-dark); }
+.btn-orange { background: var(--orange); }
+.btn-orange:hover { background: var(--orange-dark); }
+.btn-outline { background: transparent; border: 1.5px solid var(--line); color: var(--forest); }
+.btn-sm { padding: 7px 12px; font-size: 0.78rem; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.row .field { flex: 1 1 220px; margin-bottom: 0; }
+.badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: capitalize;
+  background: #fef3c7;
+  color: #92400e;
+}
+.badge.green { background: #dcfce7; color: #166534; }
+.badge.red { background: #fee2e2; color: #991b1b; }
+.badge.blue { background: #dbeafe; color: #1e40af; }
+.badge.grey { background: #e5e7eb; color: #374151; }
+.notice { padding: 12px 15px; border-radius: 10px; font-size: 0.88rem; font-weight: 600; margin-bottom: 16px; display: none; }
+.notice.error { display: block; background: #fef2f2; border: 1.5px solid #fecaca; color: #b91c1c; }
+.notice.ok { display: block; background: #f0fdf4; border: 1.5px solid #86efac; color: #166534; }
+.notice.info { display: block; background: #eff6ff; border: 1.5px solid #bfdbfe; color: #1e40af; }
+table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+th { text-align: left; padding: 10px 12px; background: #f7f4ed; color: var(--forest); border-bottom: 2px solid var(--line); }
+td { padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:hover td { background: #fbf9f5; }
+.table-wrap { overflow-x: auto; }
+.empty { text-align: center; color: var(--muted); padding: 30px 12px; font-size: 0.9rem; }
+.list-item { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 10px; background: #fff; }
+.list-item:last-child { margin-bottom: 0; }
+.split { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; }
+.muted { color: var(--muted); font-size: 0.84rem; }
+footer {
+  background: var(--forest-dark);
+  color: #9cb3a4;
+  text-align: center;
+  padding: 18px;
+  font-size: 0.8rem;
+  margin-top: auto;
+}
+@media (max-width: 560px) {
+  h1 { font-size: 1.6rem; }
+  main { padding: 18px 12px 40px; }
+  .card { padding: 16px; }
+}
+@media print {
+  header, nav, footer, .no-print { display: none !important; }
+  body { background: #fff; }
+  .card { box-shadow: none; border: 0; }
+}

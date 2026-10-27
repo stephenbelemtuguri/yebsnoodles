@@ -361,6 +361,25 @@
       margin-top: 10px;
       flex-wrap: wrap;
     }
+    .photo-file-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1.5px dashed var(--orange);
+      background: #fff7f1;
+      color: var(--forest);
+      font-weight: 800;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .photo-file-btn:hover { background: #ffefe4; }
+    .photo-file-btn input { display: none; }
+    .photo-helper { font-size: 0.75rem; color: var(--muted); margin-top: 7px; line-height: 1.4; }
     .driver-profile-card {
       background: linear-gradient(135deg, #f8f6f0, #fff);
       border: 1.5px solid var(--line);
@@ -432,9 +451,12 @@
       backdrop-filter: blur(10px);
       z-index: 99999;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
-      padding: 20px;
+      padding: 16px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
     }
     .auth-modal {
       background: #ffffff;
@@ -443,7 +465,11 @@
       border-radius: 16px;
       max-width: 460px;
       width: 100%;
+      max-height: calc(100dvh - 32px);
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
+      margin: auto;
       animation: modalSlideUp 0.3s ease-out;
     }
     @keyframes modalSlideUp {
@@ -453,13 +479,15 @@
     .auth-header {
       background: var(--forest);
       color: white;
-      padding: 24px 20px;
+      padding: 20px 20px;
       text-align: center;
+      flex-shrink: 0;
     }
     .auth-tabs {
       display: flex;
       background: #f0ede4;
       border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
     }
     .auth-tab-btn {
       flex: 1;
@@ -479,7 +507,12 @@
       border-bottom: 2px solid var(--orange);
     }
     .auth-body {
-      padding: 24px 20px;
+      padding: 20px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      flex: 1 1 auto;
+      min-height: 0;
     }
     .auth-form-group {
       margin-bottom: 14px;
@@ -798,7 +831,7 @@
         </div>
         <div id="driverSignupFormWrap" style="display:none;">
           <form id="driverSignupForm">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px;">
               <div class="auth-form-group">
                 <label for="driverSignupFname">First Name</label>
                 <input type="text" id="driverSignupFname" class="auth-input" placeholder="e.g. Kwame" required autocomplete="given-name">
@@ -839,24 +872,28 @@
             </div>
             <div class="auth-form-group">
               <label for="driverSignupPassword">Create Password</label>
-              <input type="password" id="driverSignupPassword" class="auth-input" placeholder="••••••••" required minlength="4" autocomplete="new-password">
+              <input type="password" id="driverSignupPassword" class="auth-input" placeholder="••••••••" required minlength="6" autocomplete="new-password">
             </div>
             <div class="webcam-capture-box" id="webcamCaptureBox">
-              <div style="font-weight:700; color:var(--forest); font-size:0.88rem; margin-bottom:8px;">📸 Live face photo (visible to customers)</div>
-              <div style="font-size:0.72rem; color:#b91c1c; font-weight:800; letter-spacing:0.04em; margin-bottom:6px;">● LIVE CAMERA ONLY — GALLERY UPLOADS DISABLED</div>
-              <div style="font-size:0.76rem; color:var(--muted); margin-bottom:10px;">This becomes the profile picture customers see while you deliver their food. Look at the camera and take the photo in good light.</div>
+              <div style="font-weight:700; color:var(--forest); font-size:0.88rem; margin-bottom:8px;">Profile photo (customers see this)</div>
+              <div style="font-size:0.76rem; color:var(--muted); margin-bottom:10px;">Choose a clear face photo from your folder, or take one with your camera. Good light helps customers recognise you.</div>
+              <label class="photo-file-btn" for="driverPhotoFile">
+                <span>&#128193; Choose photo from your folder</span>
+                <input type="file" id="driverPhotoFile" accept="image/*">
+              </label>
               <video id="webcamVideo" autoplay playsinline muted></video>
               <canvas id="webcamCanvas" style="display:none;"></canvas>
               <img id="webcamPreview" class="webcam-preview" src="" alt="Driver profile photo" style="display:none;">
               <div id="webcamPlaceholder" style="width:100px; height:100px; border-radius:50%; background:var(--forest); color:white; display:grid; place-items:center; font-size:2.5rem; margin:0 auto 8px; border:3px solid var(--gold);">🛵</div>
               <div class="webcam-controls">
-                <button type="button" id="startCameraBtn" class="btn btn-outline btn-sm" style="border-color:var(--orange); color:var(--orange);">📷 Open Camera</button>
+                <button type="button" id="startCameraBtn" class="btn btn-outline btn-sm" style="border-color:var(--orange); color:var(--orange);">&#128247; Use camera instead</button>
                 <button type="button" id="capturePhotoBtn" class="btn btn-orange btn-sm" style="display:none;">📸 Take Photo</button>
                 <button type="button" id="retakePhotoBtn" class="btn btn-outline btn-sm" style="display:none;">🔄 Retake</button>
               </div>
             </div>
+            <div class="photo-helper">Applications are reviewed by the YEBS admin. Your login unlocks automatically once approved.</div>
             <button type="submit" id="driverSignupSubmitBtn" class="btn btn-forest" style="width:100%; padding:12px; font-size:0.95rem; margin-top:8px;">
-              ✨ Complete Registration & Login
+              &#9989; Submit application for approval
             </button>
           </form>
         </div>
@@ -1838,8 +1875,7 @@
       driverSignupFormWrap.style.display = 'block';
       driverLoginFormWrap.style.display = 'none';
       driverAuthError.style.display = 'none';
-      const camBtn = document.getElementById('startCameraBtn');
-      if (camBtn) setTimeout(() => camBtn.click(), 250);
+      if (driverAuthModal) driverAuthModal.scrollTop = 0;
     });
 
     // Handle Driver Login
@@ -1883,6 +1919,51 @@
     const capturePhotoBtn = document.getElementById('capturePhotoBtn');
     const retakePhotoBtn = document.getElementById('retakePhotoBtn');
     const webcamCaptureBox = document.getElementById('webcamCaptureBox');
+
+    // Photo from the user's folder: downscale to a small square JPEG so the
+    // upload stays fast on mobile data and the DB stays lean.
+    const driverPhotoFile = document.getElementById('driverPhotoFile');
+    if (driverPhotoFile) {
+      driverPhotoFile.addEventListener('change', () => {
+        const file = driverPhotoFile.files && driverPhotoFile.files[0];
+        if (!file) return;
+        if (!/^image\//.test(file.type)) {
+          alert('Please choose an image file (JPG, PNG or WEBP).');
+          driverPhotoFile.value = '';
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const SIZE = 480;
+            const canvas = document.createElement('canvas');
+            canvas.width = SIZE;
+            canvas.height = SIZE;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#f3f4f6';
+            ctx.fillRect(0, 0, SIZE, SIZE);
+            const scale = Math.max(SIZE / img.width, SIZE / img.height);
+            const w = img.width * scale;
+            const h = img.height * scale;
+            ctx.drawImage(img, (SIZE - w) / 2, (SIZE - h) / 2, w, h);
+            capturedPhotoData = canvas.toDataURL('image/jpeg', 0.82);
+            webcamPreview.src = capturedPhotoData;
+            webcamPreview.style.display = 'block';
+            webcamPlaceholder.style.display = 'none';
+            webcamVideo.style.display = 'none';
+            webcamCaptureBox.classList.add('has-photo');
+            retakePhotoBtn.style.display = 'inline-flex';
+            startCameraBtn.style.display = 'none';
+            capturePhotoBtn.style.display = 'none';
+          };
+          img.onerror = () => alert('That image could not be read. Please choose another photo.');
+          img.src = reader.result;
+        };
+        reader.onerror = () => alert('Could not read that file. Please try again.');
+        reader.readAsDataURL(file);
+      });
+    }
 
     startCameraBtn.addEventListener('click', async () => {
       try {
@@ -1984,7 +2065,7 @@
         vehicleType = otherVehicle;
       }
       if (!capturedPhotoData) {
-        driverAuthError.textContent = 'Take a live face photo with the camera before signing up. Customers will see this photo.';
+        driverAuthError.textContent = 'Add a profile photo before submitting. Choose a photo from your folder or use the camera.';
         driverAuthError.style.display = 'block';
         return;
       }
@@ -1997,7 +2078,7 @@
 
       const res = await apiDriverSignup({ fname, lname, phone, password, vehicle: vehicleFull, photo: capturedPhotoData });
       btn.disabled = false;
-      btn.textContent = '✨ Complete Registration & Login';
+      btn.textContent = '✨ Submit application for approval';
 
       if (res.success || res.pending) {
         // Store photo locally

@@ -342,31 +342,23 @@
     <div class="kpi-grid">
       <div class="kpi-card revenue">
         <div class="kpi-label">Total Revenue</div>
-        <div class="kpi-value" id="kpiRevenue">GH₵ 0.00</div>
-        <div class="kpi-change positive" id="revenueChange">
-          ↑ 12.5% vs last period
-        </div>
+        <div class="kpi-value" id="kpiRevenue">GH&#8373; 0.00</div>
+        <div class="kpi-change" id="revenueChange">Waiting for live data</div>
       </div>
       <div class="kpi-card orders">
         <div class="kpi-label">Total Orders</div>
         <div class="kpi-value" id="kpiOrders">0</div>
-        <div class="kpi-change positive" id="ordersChange">
-          ↑ 8.3% vs last period
-        </div>
+        <div class="kpi-change" id="ordersChange">Waiting for live data</div>
       </div>
       <div class="kpi-card customers">
         <div class="kpi-label">Active Customers</div>
         <div class="kpi-value" id="kpiCustomers">0</div>
-        <div class="kpi-change positive" id="customersChange">
-          ↑ 15.2% vs last period
-        </div>
+        <div class="kpi-change" id="customersChange">Waiting for live data</div>
       </div>
       <div class="kpi-card growth">
         <div class="kpi-label">Avg Order Value</div>
-        <div class="kpi-value" id="kpiAOV">GH₵ 0.00</div>
-        <div class="kpi-change positive" id="aovChange">
-          ↑ 3.8% vs last period
-        </div>
+        <div class="kpi-value" id="kpiAOV">GH&#8373; 0.00</div>
+        <div class="kpi-change" id="aovChange">Waiting for live data</div>
       </div>
     </div>
 
@@ -374,12 +366,8 @@
     <div class="chart-grid">
       <div class="card">
         <div class="card-title">
-          <span>📈 Revenue Trend</span>
-          <select id="revenueChartType" style="padding:6px 10px; border:1px solid var(--line); border-radius:6px; font-size:0.8rem;">
-            <option value="daily">Daily</option>
-            <option value="weekly" selected>Weekly</option>
-            <option value="monthly">Monthly</option>
-          </select>
+          <span>Revenue &amp; Orders Trend</span>
+          <span id="rangeLabel" style="font-size:0.78rem; color:var(--muted); font-weight:600;">This week</span>
         </div>
         <div class="chart-container">
           <canvas id="revenueChart"></canvas>
@@ -440,6 +428,18 @@
 
     <!-- Detailed Tables -->
     <div class="card">
+      <div class="card-title">Business Insights</div>
+      <div class="insights-grid" id="insightsGrid">
+        <div class="insight-card">
+          <div class="insight-icon">&#128202;</div>
+          <div class="insight-title">Loading live data</div>
+          <div class="insight-text">Insights are calculated from the orders saved in the database.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detailed Tables -->
+    <div class="card">
       <div class="card-title">📋 Recent Orders Detail</div>
       <div style="overflow-x:auto;">
         <table>
@@ -469,11 +469,10 @@
           <thead>
             <tr>
               <th>Driver</th>
-              <th>Deliveries</th>
-              <th>On-Time %</th>
-              <th>Avg Time</th>
-              <th>Rating</th>
-              <th>Earnings</th>
+              <th>Delivered</th>
+              <th>In progress</th>
+              <th>Avg time</th>
+              <th>Delivery value</th>
             </tr>
           </thead>
           <tbody id="driversTableBody">
@@ -489,214 +488,282 @@
   </footer>
 
   <script>
-    const API_BASE = (window.location.origin + '/api');
+    const API_BASE = window.location.origin + '/api';
+    const CURRENCY = 'GH\u20b5';
     let revenueChart, statusChart, peakHoursChart;
+    let currentRange = 'week';
+    let loading = false;
 
-    // Initialize charts
+    function adminToken() {
+      return sessionStorage.getItem('yebs_admin_token')
+        || localStorage.getItem('yebs_admin_token_persist')
+        || '';
+    }
+
+    function authHeaders(extra = {}) {
+      const token = adminToken();
+      return token ? { ...extra, Authorization: 'Bearer ' + token } : { ...extra };
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function money(value) {
+      return CURRENCY + ' ' + (Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function showBanner(message, kind) {
+      let el = document.getElementById('analyticsBanner');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'analyticsBanner';
+        el.style.cssText = 'padding:14px 18px;border-radius:10px;margin-bottom:18px;font-weight:600;font-size:0.9rem;';
+        const wrap = document.querySelector('.main-wrap');
+        wrap.insertBefore(el, wrap.firstChild);
+      }
+      el.style.display = 'block';
+      el.style.background = kind === 'error' ? '#fef2f2' : '#fffbeb';
+      el.style.border = kind === 'error' ? '1.5px solid #fecaca' : '1.5px solid #fbbf24';
+      el.style.color = kind === 'error' ? '#b91c1c' : '#78350f';
+      el.innerHTML = message;
+    }
+
+    function hideBanner() {
+      const el = document.getElementById('analyticsBanner');
+      if (el) el.style.display = 'none';
+    }
+
     function initCharts() {
-      // Revenue Trend Chart
-      const revenueCtx = document.getElementById('revenueChart').getContext('2d');
-      revenueChart = new Chart(revenueCtx, {
+      revenueChart = new Chart(document.getElementById('revenueChart').getContext('2d'), {
         type: 'line',
-        data: {
-          labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-          datasets: [{
-            label: 'Revenue (GH₵)',
-            data: [2450, 3200, 2890, 3650],
+        data: { labels: [], datasets: [
+          {
+            label: 'Revenue (' + CURRENCY + ')',
+            data: [],
             borderColor: '#e57a45',
             backgroundColor: 'rgba(229, 122, 69, 0.1)',
-            tension: 0.4,
+            tension: 0.35,
             fill: true,
             borderWidth: 3,
             pointBackgroundColor: '#e57a45',
-            pointRadius: 5,
-            pointHoverRadius: 7
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false }
+            pointRadius: 4,
+            yAxisID: 'y'
           },
-          scales: {
-            y: {
-              beginAtZero: true,
-              ticks: {
-                callback: value => 'GH₵ ' + value
-              }
-            }
-          }
-        }
-      });
-
-      // Order Status Pie Chart
-      const statusCtx = document.getElementById('statusChart').getContext('2d');
-      statusChart = new Chart(statusCtx, {
-        type: 'doughnut',
-        data: {
-          labels: ['Delivered', 'In Kitchen', 'En Route', 'Pending'],
-          datasets: [{
-            data: [145, 23, 12, 8],
-            backgroundColor: ['#16a34a', '#3b82f6', '#f59e0b', '#fbbf24'],
-            borderWidth: 2,
-            borderColor: '#fff'
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              position: 'bottom'
-            }
-          }
-        }
-      });
-
-      // Peak Hours Bar Chart
-      const peakCtx = document.getElementById('peakHoursChart').getContext('2d');
-      peakHoursChart = new Chart(peakCtx, {
-        type: 'bar',
-        data: {
-          labels: ['6 PM', '7 PM', '8 PM', '9 PM'],
-          datasets: [{
+          {
             label: 'Orders',
-            data: [42, 68, 85, 43],
-            backgroundColor: '#173d30',
-            borderRadius: 6
-          }]
-        },
+            data: [],
+            borderColor: '#173d30',
+            backgroundColor: 'rgba(23, 61, 48, 0.08)',
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 3,
+            yAxisID: 'y1'
+          }
+        ] },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false }
-          },
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { position: 'bottom' } },
           scales: {
-            y: {
-              beginAtZero: true
-            }
+            y: { beginAtZero: true, position: 'left', ticks: { callback: v => CURRENCY + ' ' + v } },
+            y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { precision: 0 } }
           }
+        }
+      });
+
+      statusChart = new Chart(document.getElementById('statusChart').getContext('2d'), {
+        type: 'doughnut',
+        data: { labels: [], datasets: [{ data: [], backgroundColor: ['#fbbf24', '#3b82f6', '#f59e0b', '#8b5cf6', '#16a34a', '#ef4444'], borderWidth: 2, borderColor: '#fff' }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+      });
+
+      peakHoursChart = new Chart(document.getElementById('peakHoursChart').getContext('2d'), {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'Orders', data: [], backgroundColor: '#173d30', borderRadius: 6 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
         }
       });
     }
 
-    // Load analytics data
-    async function loadAnalyticsData() {
-      try {
-        const res = await fetch(`${API_BASE}/analytics/dashboard`);
-        if (res.ok) {
-          const data = await res.json();
-          updateKPIs(data.kpis);
-          updateTopItems(data.topItems);
-          updateOrdersTable(data.recentOrders);
-          updateDriversTable(data.driverPerformance);
-        }
-      } catch (err) {
-        console.error('Failed to load analytics:', err);
-        useMockData();
-      }
+    function renderChange(id, value, suffix) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const n = Number(value) || 0;
+      const arrow = n > 0 ? '\u2191' : (n < 0 ? '\u2193' : '\u2192');
+      el.textContent = arrow + ' ' + Math.abs(n).toFixed(1) + '% vs previous period';
+      el.className = 'kpi-change ' + (n > 0 ? 'positive' : (n < 0 ? 'negative' : 'neutral'));
+      el.style.color = n > 0 ? '#16a34a' : (n < 0 ? '#dc2626' : '#6e7971');
+      if (suffix) el.textContent += ' ' + suffix;
     }
 
-    function updateKPIs(kpis) {
-      document.getElementById('kpiRevenue').textContent = `GH₵ ${kpis.revenue.toLocaleString()}`;
-      document.getElementById('kpiOrders').textContent = kpis.orders.toLocaleString();
-      document.getElementById('kpiCustomers').textContent = kpis.customers.toLocaleString();
-      document.getElementById('kpiAOV').textContent = `GH₵ ${kpis.aov.toFixed(2)}`;
+    function updateKPIs(data) {
+      const k = data.kpis || {};
+      document.getElementById('kpiRevenue').textContent = money(k.revenue);
+      document.getElementById('kpiOrders').textContent = Number(k.orders || 0).toLocaleString();
+      document.getElementById('kpiCustomers').textContent = Number(k.customers || 0).toLocaleString();
+      document.getElementById('kpiAOV').textContent = money(k.aov);
+      renderChange('revenueChange', data.changes && data.changes.revenue);
+      renderChange('ordersChange', data.changes && data.changes.orders);
+      renderChange('customersChange', data.changes && data.changes.customers);
+      renderChange('aovChange', data.changes && data.changes.aov);
+    }
+
+    function updateCharts(data) {
+      const series = data.series || [];
+      revenueChart.data.labels = series.map(p => p.label);
+      revenueChart.data.datasets[0].data = series.map(p => p.revenue);
+      revenueChart.data.datasets[1].data = series.map(p => p.orders);
+      revenueChart.update();
+
+      const status = (data.statusBreakdown || []).filter(s => s.count > 0);
+      statusChart.data.labels = status.map(s => s.label + ' (' + s.count + ')');
+      statusChart.data.datasets[0].data = status.map(s => s.count);
+      if (!status.length) {
+        statusChart.data.labels = ['No orders yet'];
+        statusChart.data.datasets[0].data = [1];
+        statusChart.data.datasets[0].backgroundColor = ['#e5e7eb'];
+      } else {
+        statusChart.data.datasets[0].backgroundColor = ['#fbbf24', '#3b82f6', '#f59e0b', '#8b5cf6', '#16a34a', '#ef4444'];
+      }
+      statusChart.update();
+
+      const peaks = data.peakHours || [];
+      peakHoursChart.data.labels = peaks.map(p => p.label);
+      peakHoursChart.data.datasets[0].data = peaks.map(p => p.orders);
+      peakHoursChart.update();
     }
 
     function updateTopItems(items) {
-      const container = document.getElementById('topItemsList');
-      container.innerHTML = items.map((item, index) => `
+      const el = document.getElementById('topItemsList');
+      if (!items || !items.length) {
+        el.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:0.88rem;">No items sold in this period yet.</div>';
+        return;
+      }
+      const max = Math.max.apply(null, items.map(i => i.quantity)) || 1;
+      el.innerHTML = items.map((item, index) => `
         <div class="top-item">
           <div class="top-item-rank">${index + 1}</div>
           <div class="top-item-info">
-            <div class="top-item-name">${item.name}</div>
-            <div class="top-item-sales">${item.quantity} orders</div>
+            <div class="top-item-name">${escapeHtml(item.name)}</div>
+            <div style="height:6px;background:#f0ede4;border-radius:999px;margin:5px 0;overflow:hidden;">
+              <div style="height:100%;width:${Math.round((item.quantity / max) * 100)}%;background:var(--orange);"></div>
+            </div>
+            <div class="top-item-sales">${item.quantity} portion${item.quantity === 1 ? '' : 's'} sold</div>
           </div>
-          <div class="top-item-revenue">GH₵ ${item.revenue.toFixed(2)}</div>
+          <div class="top-item-revenue">${money(item.revenue)}</div>
         </div>
       `).join('');
     }
 
     function updateOrdersTable(orders) {
       const tbody = document.getElementById('ordersTableBody');
-      tbody.innerHTML = orders.map(order => `
-        <tr>
-          <td style="font-family:monospace; font-weight:700;">${order.orderId}</td>
-          <td>${order.customer}</td>
-          <td>${order.items}</td>
-          <td style="font-weight:700;">GH₵ ${order.amount.toFixed(2)}</td>
-          <td><span style="padding:3px 8px; background:#dcfce7; color:#166534; border-radius:999px; font-size:0.75rem; font-weight:700;">${order.status}</span></td>
-          <td>${order.driver}</td>
-          <td style="color:var(--muted); font-size:0.85rem;">${order.time}</td>
-        </tr>
-      `).join('');
+      if (!orders || !orders.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:26px;">No orders in this period.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = orders.map(order => {
+        const when = order.time ? new Date(order.time).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+        const statusColor = order.status === 'delivered' ? '#dcfce7' : (order.status === 'cancelled' ? '#fee2e2' : '#fef3c7');
+        const statusText = order.status === 'delivered' ? '#166534' : (order.status === 'cancelled' ? '#991b1b' : '#92400e');
+        return `<tr>
+          <td style="font-family:monospace;font-weight:700;">${escapeHtml(order.orderId)}</td>
+          <td>${escapeHtml(order.customer)}</td>
+          <td title="${escapeHtml(order.itemsLabel)}">${order.items} item${order.items === 1 ? '' : 's'}</td>
+          <td style="font-weight:700;">${money(order.amount)}</td>
+          <td><span style="padding:3px 8px;background:${statusColor};color:${statusText};border-radius:999px;font-size:0.75rem;font-weight:700;text-transform:capitalize;">${escapeHtml(order.status)}</span></td>
+          <td>${escapeHtml(order.driver)}</td>
+          <td style="color:var(--muted);font-size:0.85rem;">${escapeHtml(when)}</td>
+        </tr>`;
+      }).join('');
     }
 
     function updateDriversTable(drivers) {
       const tbody = document.getElementById('driversTableBody');
-      tbody.innerHTML = drivers.map(driver => `
-        <tr>
-          <td style="font-weight:700;">${driver.name}</td>
-          <td>${driver.deliveries}</td>
-          <td style="color:#16a34a; font-weight:700;">${driver.onTimeRate}%</td>
-          <td>${driver.avgTime} min</td>
-          <td style="color:#f59e0b; font-weight:700;">⭐ ${driver.rating}</td>
-          <td style="font-weight:700;">GH₵ ${driver.earnings.toFixed(2)}</td>
-        </tr>
+      if (!drivers || !drivers.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:26px;">No driver has handled an order in this period.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = drivers.map(driver => `<tr>
+        <td style="font-weight:700;">${escapeHtml(driver.name)}</td>
+        <td>${driver.deliveries}</td>
+        <td>${driver.active}</td>
+        <td>${driver.avgMinutes == null ? '\u2014' : driver.avgMinutes + ' min'}</td>
+        <td style="font-weight:700;">${money(driver.deliveryValue)}</td>
+      </tr>`).join('');
+    }
+
+    function updateInsights(items) {
+      const el = document.getElementById('insightsGrid');
+      if (!items || !items.length) {
+        el.innerHTML = '<div class="insight-card"><div class="insight-icon">&#128202;</div><div class="insight-title">No insights yet</div><div class="insight-text">Insights appear once orders are saved.</div></div>';
+        return;
+      }
+      const icons = ['&#127942;', '&#9200;', '&#128101;'];
+      el.innerHTML = items.map((item, i) => `
+        <div class="insight-card">
+          <div class="insight-icon">${icons[i % icons.length]}</div>
+          <div class="insight-title">${escapeHtml(item.title)}</div>
+          <div class="insight-text">${escapeHtml(item.text)}</div>
+        </div>
       `).join('');
     }
 
-    function useMockData() {
-      updateKPIs({
-        revenue: 12190,
-        orders: 188,
-        customers: 145,
-        aov: 24.85
-      });
-
-      updateTopItems([
-        { name: 'Ghana Spag Chicken', quantity: 78, revenue: 2340.00 },
-        { name: 'Ghana Spag Sausage', quantity: 52, revenue: 1560.00 },
-        { name: 'Ghana Spag Feast', quantity: 34, revenue: 1360.00 },
-        { name: 'Ghana Spag Veggie', quantity: 24, revenue: 720.00 }
-      ]);
-
-      updateOrdersTable([
-        { orderId: 'YB-5041', customer: 'Kwame A.', items: '2', amount: 48.00, status: 'delivered', driver: 'Kofi O.', time: '12 min ago' },
-        { orderId: 'YB-5040', customer: 'Ama B.', items: '1', amount: 30.00, status: 'enroute', driver: 'Emmanuel T.', time: '18 min ago' },
-        { orderId: 'YB-5039', customer: 'Yaw C.', items: '3', amount: 90.00, status: 'kitchen', driver: 'Not assigned', time: '25 min ago' }
-      ]);
-
-      updateDriversTable([
-        { name: 'Kwame Mensah', deliveries: 45, onTimeRate: 96, avgTime: 16, rating: 4.9, earnings: 675.00 },
-        { name: 'Kofi Owusu', deliveries: 38, onTimeRate: 94, avgTime: 18, rating: 4.8, earnings: 570.00 },
-        { name: 'Emmanuel Tetteh', deliveries: 42, onTimeRate: 98, avgTime: 15, rating: 4.9, earnings: 630.00 }
-      ]);
+    async function loadAnalyticsData() {
+      if (loading) return;
+      loading = true;
+      try {
+        const res = await fetch(API_BASE + '/analytics/dashboard?range=' + encodeURIComponent(currentRange), {
+          headers: authHeaders(),
+          cache: 'no-store'
+        });
+        if (res.status === 401 || res.status === 403) {
+          showBanner('Sign in to the <a href="../admin.html" style="color:inherit;text-decoration:underline;">admin dashboard</a> first. Analytics uses the same admin session.', 'error');
+          return;
+        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          showBanner('Could not load analytics: ' + escapeHtml(data.message || ('server responded ' + res.status)), 'error');
+          return;
+        }
+        hideBanner();
+        updateKPIs(data);
+        updateCharts(data);
+        updateTopItems(data.topItems);
+        updateOrdersTable(data.recentOrders);
+        updateDriversTable(data.driverPerformance);
+        updateInsights(data.insights);
+        const label = document.getElementById('rangeLabel');
+        if (label) label.textContent = { today: 'Today', week: 'Last 7 days', month: 'This month', year: 'This year' }[data.range] || data.range;
+        const updated = document.getElementById('lastUpdated');
+        if (updated) updated.textContent = 'Last updated: ' + new Date(data.generatedAt || Date.now()).toLocaleTimeString('en-GB');
+      } catch (err) {
+        console.error('Failed to load analytics', err);
+        showBanner('Could not reach the server. Check your connection and try again.', 'error');
+      } finally {
+        loading = false;
+      }
     }
 
-    // Date range selector
     document.querySelectorAll('.range-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        const range = btn.dataset.range;
-        console.log('Loading data for range:', range);
-        // Reload data based on selected range
+        currentRange = btn.dataset.range || 'week';
+        loadAnalyticsData();
       });
     });
 
-    // Auto-refresh every 30 seconds
-    setInterval(() => {
-      document.getElementById('lastUpdated').textContent = 'Last updated: Just now';
-      loadAnalyticsData();
-    }, 30000);
-
-    // Initialize
+    setInterval(loadAnalyticsData, 60000);
     initCharts();
     loadAnalyticsData();
-  </script>
+    </script>
 </body>
 </html>

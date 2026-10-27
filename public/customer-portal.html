@@ -4,784 +4,129 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#173d30">
-  <title>YEBS Noodles | My Account - Order History & Saved Addresses</title>
-  <style>
-    :root {
-      --forest: #173d30;
-      --forest-dark: #0f2820;
-      --leaf: #52785b;
-      --orange: #e57a45;
-      --orange-hover: #d26532;
-      --gold: #e9bd68;
-      --cream: #fbf8f0;
-      --paper: #fffefa;
-      --ink: #1e2621;
-      --muted: #6e7971;
-      --line: #e4dfd3;
-      --shadow: 0 12px 36px rgba(18, 44, 34, 0.08);
-      --serif: Georgia, "Times New Roman", serif;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--cream);
-      color: var(--ink);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    header {
-      background: var(--forest);
-      color: white;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-    }
-    .header-wrap {
-      max-width: 1260px;
-      margin: 0 auto;
-      padding: 12px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-    }
-    .brand-link {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      color: white;
-    }
-    .brand-logo {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 2px solid var(--gold);
-      background: white;
-    }
-    .brand-title {
-      font-family: var(--serif);
-      font-size: 1.3rem;
-      font-weight: 700;
-      line-height: 1.1;
-    }
-    .brand-badge {
-      display: inline-block;
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--gold);
-      background: rgba(255,255,255,0.1);
-      padding: 2px 8px;
-      border-radius: 999px;
-    }
-    .header-nav {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .nav-btn {
-      color: #e2ede5;
-      text-decoration: none;
-      font-size: 0.85rem;
-      font-weight: 600;
-      padding: 8px 14px;
-      border-radius: 6px;
-      background: rgba(255,255,255,0.08);
-      transition: all 0.2s;
-    }
-    .nav-btn:hover { background: rgba(255,255,255,0.18); color: white; }
-    .nav-btn.active { background: var(--orange); color: white; }
-
-    .main-wrap {
-      max-width: 1200px;
-      margin: 24px auto;
-      padding: 0 20px;
-      flex: 1;
-      width: 100%;
-    }
-
-    .welcome-banner {
-      background: linear-gradient(135deg, var(--forest) 0%, #1c4b3b 100%);
-      color: white;
-      border-radius: 12px;
-      padding: 24px 28px;
-      margin-bottom: 24px;
-      box-shadow: 0 8px 24px rgba(23,61,48,0.15);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-    .welcome-text h1 {
-      margin: 0 0 8px;
-      font-family: var(--serif);
-      font-size: 2rem;
-      font-weight: 700;
-    }
-    .welcome-text p {
-      margin: 0;
-      opacity: 0.9;
-      font-size: 0.95rem;
-    }
-    .loyalty-badge {
-      background: rgba(255,255,255,0.12);
-      border: 1.5px solid var(--gold);
-      padding: 16px 20px;
-      border-radius: 10px;
-      text-align: center;
-      min-width: 160px;
-    }
-    .loyalty-points {
-      font-size: 2.2rem;
-      font-weight: 800;
-      color: var(--gold);
-      line-height: 1;
-      margin-bottom: 4px;
-    }
-    .loyalty-label {
-      font-size: 0.75rem;
-      opacity: 0.85;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .tabs {
-      display: flex;
-      gap: 8px;
-      border-bottom: 2px solid var(--line);
-      margin-bottom: 24px;
-      overflow-x: auto;
-    }
-    .tab-btn {
-      padding: 12px 20px;
-      font-weight: 700;
-      font-size: 0.92rem;
-      color: var(--muted);
-      background: none;
-      border: none;
-      cursor: pointer;
-      border-bottom: 3px solid transparent;
-      margin-bottom: -2px;
-      white-space: nowrap;
-      transition: all 0.2s;
-    }
-    .tab-btn:hover { color: var(--forest); }
-    .tab-btn.active { color: var(--orange); border-bottom-color: var(--orange); }
-
-    .tab-content {
-      display: none;
-    }
-    .tab-content.active {
-      display: block;
-    }
-
-    .card {
-      background: var(--paper);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 24px;
-      box-shadow: var(--shadow);
-      margin-bottom: 24px;
-    }
-    .card-title {
-      font-family: var(--serif);
-      font-size: 1.4rem;
-      margin: 0 0 20px;
-      color: var(--forest);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    /* Order History */
-    .order-card {
-      border: 1.5px solid var(--line);
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 16px;
-      background: white;
-      transition: all 0.2s;
-    }
-    .order-card:hover {
-      box-shadow: 0 6px 20px rgba(23,61,48,0.08);
-      border-color: var(--gold);
-    }
-    .order-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-    .order-id {
-      font-family: monospace;
-      font-size: 1.2rem;
-      font-weight: 800;
-      color: var(--forest);
-      letter-spacing: 0.05em;
-    }
-    .order-date {
-      font-size: 0.85rem;
-      color: var(--muted);
-    }
-    .status-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      padding: 5px 12px;
-      border-radius: 999px;
-      font-size: 0.75rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .status-delivered { background: #dcfce7; color: #166534; }
-    .status-enroute { background: #fed7aa; color: #9a3412; }
-    .status-kitchen { background: #dbeafe; color: #1e40af; }
-    .status-pending { background: #fef3c7; color: #92400e; }
-    
-    .order-items {
-      background: #f9f7f2;
-      border: 1px solid #eee8db;
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 12px;
-    }
-    .order-item {
-      display: flex;
-      justify-content: space-between;
-      padding: 6px 0;
-      font-size: 0.9rem;
-    }
-    .order-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-top: 12px;
-      border-top: 1px dashed var(--line);
-    }
-    .order-total {
-      font-weight: 800;
-      font-size: 1.15rem;
-      color: var(--forest);
-    }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 10px 16px;
-      border-radius: 6px;
-      font-weight: 700;
-      font-size: 0.85rem;
-      border: 0;
-      cursor: pointer;
-      text-decoration: none;
-      transition: all 0.2s;
-    }
-    .btn-sm { padding: 6px 12px; font-size: 0.78rem; }
-    .btn-orange { background: var(--orange); color: white; }
-    .btn-orange:hover { background: var(--orange-hover); }
-    .btn-outline { background: white; border: 1.5px solid var(--line); color: var(--forest); }
-    .btn-outline:hover { background: #f8f6f0; }
-
-    /* Saved Addresses */
-    .address-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 16px;
-    }
-    .address-card {
-      border: 1.5px solid var(--line);
-      border-radius: 10px;
-      padding: 18px;
-      background: white;
-      position: relative;
-      transition: all 0.2s;
-    }
-    .address-card:hover {
-      border-color: var(--gold);
-      box-shadow: 0 4px 16px rgba(23,61,48,0.06);
-    }
-    .address-card.default {
-      border-color: var(--orange);
-      background: #fffbf5;
-    }
-    .address-label {
-      font-weight: 800;
-      font-size: 1.05rem;
-      color: var(--forest);
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .address-text {
-      font-size: 0.88rem;
-      color: var(--ink);
-      line-height: 1.5;
-      margin-bottom: 12px;
-    }
-    .address-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .default-badge {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      background: var(--orange);
-      color: white;
-      font-size: 0.7rem;
-      font-weight: 700;
-      padding: 3px 10px;
-      border-radius: 999px;
-      text-transform: uppercase;
-    }
-
-    /* Promo Code Section */
-    .promo-input-group {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 16px;
-    }
-    .promo-input {
-      flex: 1;
-      padding: 12px 14px;
-      border: 1.5px solid var(--line);
-      border-radius: 8px;
-      font-size: 0.95rem;
-      text-transform: uppercase;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-    }
-    .promo-input:focus {
-      outline: none;
-      border-color: var(--orange);
-      box-shadow: 0 0 0 3px rgba(229,122,69,0.15);
-    }
-    .promo-result {
-      padding: 14px 16px;
-      border-radius: 8px;
-      font-size: 0.88rem;
-      margin-top: 12px;
-      line-height: 1.5;
-    }
-    .promo-success {
-      background: #f0fdf4;
-      border: 1.5px solid #86efac;
-      color: #166534;
-    }
-    .promo-error {
-      background: #fef2f2;
-      border: 1.5px solid #fecaca;
-      color: #b91c1c;
-    }
-    .available-promos {
-      display: grid;
-      gap: 12px;
-      margin-top: 16px;
-    }
-    .promo-card {
-      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-      border: 1.5px solid #fbbf24;
-      border-radius: 10px;
-      padding: 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-    }
-    .promo-info strong {
-      font-size: 1.1rem;
-      color: #92400e;
-      display: block;
-      margin-bottom: 4px;
-    }
-    .promo-info p {
-      margin: 0;
-      font-size: 0.85rem;
-      color: #78350f;
-    }
-
-    footer {
-      background: var(--forest-dark);
-      color: #a4b8ac;
-      padding: 20px;
-      text-align: center;
-      font-size: 0.8rem;
-      margin-top: auto;
-    }
-
-    /* Responsive */
-    @media (max-width: 768px) {
-      .order-header {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-      .address-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
+  <title>YEBS Noodles | My Orders</title>
+  <link rel="stylesheet" href="portal.css">
 </head>
 <body>
   <header>
     <div class="header-wrap">
       <a href="../index.html" class="brand-link">
-        <img src="../logo.png" alt="YEBS Noodles Logo" class="brand-logo">
+        <img src="../logo.png" alt="YEBS" class="brand-logo">
         <div>
           <div class="brand-title">YEBS Noodles</div>
-          <span class="brand-badge">Customer Account Portal</span>
+          <span class="brand-badge">Customer Portal</span>
         </div>
       </a>
-      <nav class="header-nav">
-        <a href="../index.html" class="nav-btn">🏠 Home</a>
-        <a href="customer-portal.html" class="nav-btn active">My Account</a>
-        <a href="receipts.html" class="nav-btn">🧾 Receipts</a>
-        <span id="customerName" style="font-size:0.8rem; color:var(--gold); font-weight:700;">Loading...</span>
-        <button id="logoutBtn" class="btn-outline" style="padding:6px 12px; font-size:0.8rem;">Logout</button>
+      <nav>
+        <a href="customer-portal.html" class="nav-btn active">My Orders</a>
+        <a href="receipts.html" class="nav-btn">Receipts</a>
+        <a href="customer-reviews.html" class="nav-btn">Reviews &amp; Rewards</a>
+        <a href="../index.html" class="nav-btn">Order Food</a>
       </nav>
     </div>
   </header>
 
-  <div class="main-wrap">
-    <!-- Welcome Banner -->
-    <div class="welcome-banner">
-      <div class="welcome-text">
-        <h1>Welcome back, <span id="welcomeName">Customer</span>! 🎉</h1>
-        <p>Manage your orders, save delivery addresses, and enjoy exclusive promo codes.</p>
-      </div>
-      <div class="loyalty-badge">
-        <div class="loyalty-points" id="loyaltyPoints">0</div>
-        <div class="loyalty-label">Loyalty Points</div>
-      </div>
+  <main>
+    <h1>My Orders</h1>
+    <p class="lead">Look up every order placed with your phone number. Data comes live from the kitchen database.</p>
+
+    <div class="card">
+      <form id="phoneForm" class="row">
+        <div class="field">
+          <label for="phoneInput">Phone number used when ordering</label>
+          <input type="tel" id="phoneInput" class="input" placeholder="e.g. 024 123 4567" autocomplete="tel" required>
+        </div>
+        <button type="submit" class="btn btn-orange">Find my orders</button>
+      </form>
+      <div id="portalNotice" class="notice"></div>
     </div>
 
-    <!-- Tab Navigation -->
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="orders">📦 Order History</button>
-      <button class="tab-btn" data-tab="addresses">📍 Saved Addresses</button>
-      <button class="tab-btn" data-tab="promos">🎁 Promo Codes</button>
-      <button class="tab-btn" data-tab="profile">👤 My Profile</button>
+    <div id="summary" class="grid grid-3" style="margin-bottom:20px; display:none;">
+      <div class="stat"><div class="stat-value" id="statOrders">0</div><div class="stat-label">Orders placed</div></div>
+      <div class="stat"><div class="stat-value" id="statDelivered">0</div><div class="stat-label">Delivered</div></div>
+      <div class="stat"><div class="stat-value" id="statSpent">GH&#8373; 0.00</div><div class="stat-label">Paid to YEBS</div></div>
     </div>
 
-    <!-- Tab 1: Order History -->
-    <div id="orders" class="tab-content active">
-      <div class="card">
-        <div class="card-title">
-          <span>📦 My Order History</span>
-          <span id="orderCount" style="background:var(--orange); color:white; font-size:0.8rem; padding:4px 12px; border-radius:999px; font-weight:700;">0 orders</span>
-        </div>
-        <div id="ordersList">
-          <!-- Orders will be populated here -->
-          <div style="text-align:center; padding:40px 20px; color:var(--muted);">
-            <div style="font-size:3rem; margin-bottom:12px;">📭</div>
-            <p style="font-size:1.05rem; margin:0;">No orders yet. Ready to try our delicious noodles?</p>
-            <a href="../index.html#menu" class="btn btn-orange" style="margin-top:16px;">Browse Menu →</a>
-          </div>
-        </div>
+    <div class="card">
+      <div class="card-title">
+        <span>Order history</span>
+        <button type="button" id="refreshBtn" class="btn btn-outline btn-sm">Refresh</button>
       </div>
+      <div id="ordersList"><div class="empty">Enter your phone number to see your orders.</div></div>
     </div>
+  </main>
 
-    <!-- Tab 2: Saved Addresses -->
-    <div id="addresses" class="tab-content">
-      <div class="card">
-        <div class="card-title">
-          <span>📍 My Saved Addresses</span>
-          <button id="addAddressBtn" class="btn btn-orange btn-sm">+ Add New Address</button>
-        </div>
-        <div id="addressesList" class="address-grid">
-          <!-- Addresses will be populated here -->
-        </div>
-        <div id="noAddresses" style="text-align:center; padding:40px 20px; color:var(--muted); display:none;">
-          <div style="font-size:3rem; margin-bottom:12px;">📍</div>
-          <p style="font-size:1.05rem; margin:0 0 16px;">No saved addresses yet. Add one for faster checkout!</p>
-        </div>
-      </div>
-    </div>
+  <footer>YEBS Noodles &middot; Adabraka, Accra &middot; Live order history from the kitchen database</footer>
 
-    <!-- Tab 3: Promo Codes -->
-    <div id="promos" class="tab-content">
-      <div class="card">
-        <div class="card-title">🎁 Apply Promo Code</div>
-        <div class="promo-input-group">
-          <input type="text" id="promoInput" class="promo-input" placeholder="Enter promo code (e.g. YEBS10)" maxlength="20">
-          <button id="applyPromoBtn" class="btn btn-orange">Validate Code</button>
-        </div>
-        <div id="promoResult"></div>
-      </div>
+  <script src="portal.js"></script>
+  <script>
+    const { api, escapeHtml, money, getPhone, setPhone, statusBadge, notice, clearNotice, when } = window.YebsPortal;
+    const phoneForm = document.getElementById('phoneForm');
+    const phoneInput = document.getElementById('phoneInput');
+    const portalNotice = document.getElementById('portalNotice');
+    const ordersList = document.getElementById('ordersList');
 
-      <div class="card">
-        <div class="card-title">🌟 Available Promotions</div>
-        <div class="available-promos" id="availablePromos">
-          <!-- Will be populated dynamically -->
-          <div class="promo-card">
-            <div class="promo-info">
-              <strong>YEBS10 - 10% Off</strong>
-              <p>Get 10% off your first order. Valid for new customers.</p>
-            </div>
-            <button class="btn btn-outline btn-sm copy-promo-btn" data-code="YEBS10">Copy Code</button>
-          </div>
-          <div class="promo-card">
-            <strong>NOODLES20 - GH₵ 5 Off</strong>
-            <p>GH₵ 5 off orders above GH₵ 25. Valid until end of month.</p>
-          </div>
-          <button class="btn btn-outline btn-sm copy-promo-btn" data-code="NOODLES20">Copy Code</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab 4: Profile -->
-    <div id="profile" class="tab-content">
-      <div class="card">
-        <div class="card-title">👤 My Profile</div>
-        <form id="profileForm">
-          <div style="display:grid; gap:16px;">
-            <div>
-              <label style="display:block; font-weight:700; margin-bottom:6px; font-size:0.85rem;">Full Name</label>
-              <input type="text" id="profileName" class="promo-input" placeholder="Your name" required>
-            </div>
-            <div>
-              <label style="display:block; font-weight:700; margin-bottom:6px; font-size:0.85rem;">Phone Number</label>
-              <input type="tel" id="profilePhone" class="promo-input" placeholder="0XX XXX XXXX" required>
-            </div>
-            <div>
-              <label style="display:block; font-weight:700; margin-bottom:6px; font-size:0.85rem;">Email Address</label>
-              <input type="email" id="profileEmail" class="promo-input" placeholder="your@email.com">
-            </div>
-            <button type="submit" class="btn btn-orange">Save Changes</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <footer>
-    YEBS Noodles Customer Portal · Order History, Saved Addresses & Promo Codes
-  </footer>
-
-  <script type="module">
-    // Customer Portal functionality
-    const API_BASE = (window.location.origin + '/api');
-    
-    // Tab switching
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const tab = btn.dataset.tab;
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById(tab).classList.add('active');
-      });
-    });
-
-    // Load customer data
-    async function loadCustomerData() {
-      // Mock customer ID - in production, get from auth session
-      const customerId = sessionStorage.getItem('customerId') || 'CUST-001';
-      
-      try {
-        // Load orders
-        const ordersRes = await fetch(`${API_BASE}/customers/${customerId}/orders`);
-        if (ordersRes.ok) {
-          const orders = await ordersRes.json();
-          renderOrders(orders);
-        }
-
-        // Load addresses
-        const addressesRes = await fetch(`${API_BASE}/customers/${customerId}/addresses`);
-        if (addressesRes.ok) {
-          const addresses = await addressesRes.json();
-          renderAddresses(addresses);
-        }
-
-        // Load profile
-        const profileRes = await fetch(`${API_BASE}/customers/${customerId}`);
-        if (profileRes.ok) {
-          const profile = await profileRes.json();
-          renderProfile(profile);
-        }
-      } catch (err) {
-        console.error('Failed to load customer data:', err);
-      }
-    }
+    phoneInput.value = getPhone();
 
     function renderOrders(orders) {
-      const container = document.getElementById('ordersList');
-      const countBadge = document.getElementById('orderCount');
-      
-      if (!orders || orders.length === 0) {
-        countBadge.textContent = '0 orders';
+      const summary = document.getElementById('summary');
+      summary.style.display = 'grid';
+      document.getElementById('statOrders').textContent = orders.length;
+      document.getElementById('statDelivered').textContent = orders.filter(o => o.status === 'delivered').length;
+      document.getElementById('statSpent').textContent = money(orders.filter(o => o.paymentStatus === 'paid').reduce((sum, o) => sum + (Number(o.total) || 0), 0));
+
+      if (!orders.length) {
+        ordersList.innerHTML = '<div class="empty">No orders found for that number yet. Place an order from the <a href="../index.html">menu page</a>.</div>';
         return;
       }
-
-      countBadge.textContent = `${orders.length} order${orders.length > 1 ? 's' : ''}`;
-      
-      container.innerHTML = orders.map(order => `
-        <div class="order-card">
-          <div class="order-header">
+      ordersList.innerHTML = orders.map(order => {
+        const items = (order.items || []).map(i => `${i.quantity} &times; ${escapeHtml(i.name)}`).join('<br>');
+        return `<div class="list-item">
+          <div class="split">
             <div>
-              <div class="order-id">${order.orderId}</div>
-              <div class="order-date">${new Date(order.createdAt).toLocaleDateString('en-GB', { 
-                day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' 
-              })}</div>
+              <div class="mono">${escapeHtml(order.id)}</div>
+              <div class="muted">${escapeHtml(when(order.createdAt))}</div>
             </div>
-            <span class="status-badge status-${order.status}">${getStatusIcon(order.status)} ${order.status}</span>
-          </div>
-          <div class="order-items">
-            ${order.items.map(item => `
-              <div class="order-item">
-                <span>${item.quantity}× ${item.name}</span>
-                <span style="font-weight:700;">GH₵ ${item.price.toFixed(2)}</span>
-              </div>
-            `).join('')}
-          </div>
-          <div class="order-footer">
-            <span class="order-total">Total: GH₵ ${order.total.toFixed(2)}</span>
-            <div style="display:flex; gap:8px;">
-              <button class="btn btn-outline btn-sm" onclick="trackOrder('${order.orderId}')">📍 Track</button>
-              <button class="btn btn-orange btn-sm" onclick="reorder('${order.orderId}')">🔄 Reorder</button>
+            <div style="text-align:right;">
+              <div style="font-weight:800;color:var(--forest);">${money(order.total)}</div>
+              <div style="margin-top:4px;">${statusBadge(order.status, order.paymentStatus)}</div>
             </div>
           </div>
-        </div>
-      `).join('');
+          <div style="margin-top:10px;font-size:0.88rem;">${items || '<span class="muted">No items recorded</span>'}</div>
+          <div class="muted" style="margin-top:8px;">Deliver to: ${escapeHtml(order.location || 'Adabraka, Accra')} &middot; ${escapeHtml(order.fulfilment || 'Delivery')}</div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+            <a class="btn btn-outline btn-sm" href="receipts.html?order=${encodeURIComponent(order.id)}">View receipt</a>
+            ${order.status === 'delivered' ? `<a class="btn btn-orange btn-sm" href="customer-reviews.html?order=${encodeURIComponent(order.id)}">Review this order</a>` : ''}
+          </div>
+        </div>`;
+      }).join('');
     }
 
-    function getStatusIcon(status) {
-      const icons = {
-        'pending': '⏳',
-        'kitchen': '🍳',
-        'enroute': '🛵',
-        'arrived': '📍',
-        'delivered': '✅'
-      };
-      return icons[status] || '📦';
-    }
-
-    function renderAddresses(addresses) {
-      const container = document.getElementById('addressesList');
-      const noAddressesMsg = document.getElementById('noAddresses');
-      
-      if (!addresses || addresses.length === 0) {
-        container.style.display = 'none';
-        noAddressesMsg.style.display = 'block';
+    async function loadOrders() {
+      const phone = phoneInput.value.trim();
+      clearNotice(portalNotice);
+      if (!phone) {
+        notice(portalNotice, 'Enter the phone number you used when ordering.', 'error');
         return;
       }
-
-      container.style.display = 'grid';
-      noAddressesMsg.style.display = 'none';
-      
-      container.innerHTML = addresses.map(addr => `
-        <div class="address-card ${addr.isDefault ? 'default' : ''}">
-          ${addr.isDefault ? '<span class="default-badge">Default</span>' : ''}
-          <div class="address-label">
-            <span>${addr.label}</span>
-          </div>
-          <div class="address-text">${addr.address}</div>
-          <div class="address-actions">
-            <button class="btn btn-outline btn-sm" onclick="useAddress('${addr.id}')">Use This</button>
-            <button class="btn btn-outline btn-sm" onclick="editAddress('${addr.id}')">Edit</button>
-            ${!addr.isDefault ? `<button class="btn btn-outline btn-sm" onclick="deleteAddress('${addr.id}')">Delete</button>` : ''}
-          </div>
-        </div>
-      `).join('');
-    }
-
-    function renderProfile(profile) {
-      document.getElementById('welcomeName').textContent = profile.name;
-      document.getElementById('customerName').textContent = profile.name;
-      document.getElementById('profileName').value = profile.name;
-      document.getElementById('profilePhone').value = profile.phone;
-      document.getElementById('profileEmail').value = profile.email || '';
-      document.getElementById('loyaltyPoints').textContent = profile.loyaltyPoints || 0;
-    }
-
-    // Promo code validation
-    document.getElementById('applyPromoBtn').addEventListener('click', async () => {
-      const code = document.getElementById('promoInput').value.trim().toUpperCase();
-      const resultDiv = document.getElementById('promoResult');
-      
-      if (!code) {
-        resultDiv.className = 'promo-result promo-error';
-        resultDiv.textContent = 'Please enter a promo code.';
-        return;
-      }
-
+      setPhone(phone);
+      ordersList.innerHTML = '<div class="empty">Loading your orders...</div>';
       try {
-        const res = await fetch(`${API_BASE}/promo-codes/validate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, orderTotal: 25 }) // Example order total
-        });
-
-        const result = await res.json();
-        
-        if (res.ok && result.valid) {
-          resultDiv.className = 'promo-result promo-success';
-          resultDiv.innerHTML = `
-            <strong>✅ Promo code applied!</strong><br>
-            ${result.discount.type === 'percentage' 
-              ? `You get ${result.discount.value}% off your order!`
-              : `You get GH₵ ${result.discount.value} off your order!`
-            }
-          `;
-        } else {
-          resultDiv.className = 'promo-result promo-error';
-          resultDiv.textContent = `❌ ${result.message || 'Invalid promo code.'}`;
-        }
+        const data = await api('/customers/orders?phone=' + encodeURIComponent(phone));
+        renderOrders(data.orders || []);
       } catch (err) {
-        resultDiv.className = 'promo-result promo-error';
-        resultDiv.textContent = '❌ Failed to validate promo code. Please try again.';
+        ordersList.innerHTML = '<div class="empty">Could not load your orders.</div>';
+        notice(portalNotice, err.message, 'error');
       }
+    }
+
+    phoneForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      loadOrders();
     });
+    document.getElementById('refreshBtn').addEventListener('click', loadOrders);
 
-    // Copy promo code
-    document.querySelectorAll('.copy-promo-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const code = btn.dataset.code;
-        navigator.clipboard.writeText(code);
-        btn.textContent = '✓ Copied!';
-        setTimeout(() => btn.textContent = 'Copy Code', 2000);
-      });
-    });
-
-    // Global functions for inline handlers
-    window.trackOrder = (orderId) => {
-      window.location.href = `../index.html?track=${orderId}`;
-    };
-
-    window.reorder = async (orderId) => {
-      alert(`Reordering ${orderId}... Feature coming soon!`);
-    };
-
-    window.useAddress = (addressId) => {
-      sessionStorage.setItem('selectedAddress', addressId);
-      alert('Address selected! It will be used for your next order.');
-    };
-
-    window.editAddress = (addressId) => {
-      alert(`Editing address ${addressId}... Feature coming soon!`);
-    };
-
-    window.deleteAddress = async (addressId) => {
-      if (confirm('Delete this address?')) {
-        // API call to delete
-        alert('Address deleted!');
-        loadCustomerData();
-      }
-    };
-
-    // Initialize
-    loadCustomerData();
+    if (getPhone()) loadOrders();
   </script>
 </body>
 </html>

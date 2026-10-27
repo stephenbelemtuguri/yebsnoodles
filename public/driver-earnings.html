@@ -367,19 +367,19 @@
       <div class="card-title">⭐ Performance Metrics</div>
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:20px;">
         <div style="text-align:center; padding:16px; background:#f9f7f2; border-radius:8px;">
-          <div style="font-size:2rem; font-weight:800; color:var(--forest);" id="onTimeRate">95%</div>
-          <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">On-Time Rate</div>
+          <div style="font-size:2rem; font-weight:800; color:var(--forest);" id="deliveredCount">0</div>
+          <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">Delivered</div>
         </div>
         <div style="text-align:center; padding:16px; background:#f9f7f2; border-radius:8px;">
-          <div style="font-size:2rem; font-weight:800; color:var(--forest);" id="customerRating">4.8</div>
-          <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">Customer Rating</div>
+          <div style="font-size:2rem; font-weight:800; color:var(--forest);" id="inProgressCount">0</div>
+          <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">In Progress</div>
         </div>
         <div style="text-align:center; padding:16px; background:#f9f7f2; border-radius:8px;">
-          <div style="font-size:2rem; font-weight:800; color:var(--forest);" id="completionRate">98%</div>
+          <div style="font-size:2rem; font-weight:800; color:var(--forest);" id="completionRate">0%</div>
           <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">Completion Rate</div>
         </div>
         <div style="text-align:center; padding:16px; background:#f9f7f2; border-radius:8px;">
-          <div style="font-size:2rem; font-weight:800; color:var(--forest);" id="avgDeliveryTime">18 min</div>
+          <div style="font-size:2rem; font-weight:800; color:var(--forest);" id="avgDeliveryTime">--</div>
           <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">Avg Delivery Time</div>
         </div>
       </div>
@@ -391,195 +391,194 @@
   </footer>
 
   <script>
-    const API_BASE = (window.location.origin + '/api');
+    const API_BASE = window.location.origin + '/api';
+    const CURRENCY = 'GH\u20b5';
     let earningsChart, deliveriesChart;
+    let currentPeriod = 'week';
+    let currentDriverId = null;
 
-    // Mock driver ID - in production, get from auth session
-    const driverId = sessionStorage.getItem('driverId') || 'DRV-001';
+    function driverSession() {
+      const token = sessionStorage.getItem('yebs_driver_token') || localStorage.getItem('yebs_driver_token_persist') || '';
+      let user = null;
+      try { user = JSON.parse(sessionStorage.getItem('yebs_driver_user') || 'null'); } catch (e) {}
+      return { token, user };
+    }
 
-    // Initialize charts
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function money(value) {
+      return CURRENCY + ' ' + (Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function showMessage(message, kind) {
+      let el = document.getElementById('earningsBanner');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'earningsBanner';
+        el.style.cssText = 'padding:14px 18px;border-radius:10px;margin-bottom:18px;font-weight:600;font-size:0.9rem;';
+        document.querySelector('.main-wrap').insertBefore(el, document.querySelector('.main-wrap').firstChild);
+      }
+      el.style.display = 'block';
+      el.style.background = kind === 'error' ? '#fef2f2' : '#f0fdf4';
+      el.style.border = kind === 'error' ? '1.5px solid #fecaca' : '1.5px solid #86efac';
+      el.style.color = kind === 'error' ? '#b91c1c' : '#166534';
+      el.innerHTML = message;
+    }
+
     function initCharts() {
-      // Earnings Chart
-      const earningsCtx = document.getElementById('earningsChart').getContext('2d');
-      earningsChart = new Chart(earningsCtx, {
+      earningsChart = new Chart(document.getElementById('earningsChart').getContext('2d'), {
         type: 'line',
-        data: {
-          labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-          datasets: [{
-            label: 'Earnings (GH₵)',
-            data: [45, 62, 38, 55, 70, 85, 48],
-            borderColor: '#e57a45',
-            backgroundColor: 'rgba(229, 122, 69, 0.1)',
-            tension: 0.4,
-            fill: true,
-            borderWidth: 3
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false }
-          },
-          scales: {
-            y: {
-              beginAtZero: true,
-              ticks: {
-                callback: value => 'GH₵ ' + value
-              }
-            }
-          }
-        }
+        data: { labels: [], datasets: [{ label: 'Delivery fees (' + CURRENCY + ')', data: [], borderColor: '#e57a45', backgroundColor: 'rgba(229, 122, 69, 0.1)', tension: 0.4, fill: true, borderWidth: 3 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => CURRENCY + ' ' + v } } } }
       });
-
-      // Deliveries Chart
-      const deliveriesCtx = document.getElementById('deliveriesChart').getContext('2d');
-      deliveriesChart = new Chart(deliveriesCtx, {
+      deliveriesChart = new Chart(document.getElementById('deliveriesChart').getContext('2d'), {
         type: 'bar',
-        data: {
-          labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-          datasets: [{
-            label: 'Deliveries',
-            data: [12, 15, 10, 14, 18, 22, 13],
-            backgroundColor: '#173d30',
-            borderRadius: 6
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false }
-          },
-          scales: {
-            y: {
-              beginAtZero: true,
-              ticks: {
-                stepSize: 5
-              }
-            }
-          }
-        }
+        data: { labels: [], datasets: [{ label: 'Deliveries', data: [], backgroundColor: '#173d30', borderRadius: 6 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
       });
     }
 
-    // Load driver earnings data
-    async function loadEarningsData() {
-      try {
-        const res = await fetch(`${API_BASE}/drivers/${driverId}/earnings`);
-        if (res.ok) {
-          const data = await res.json();
-          updateEarningsSummary(data);
-          updatePayoutList(data.payouts);
-          updateRecentDeliveries(data.recentDeliveries);
-        }
-      } catch (err) {
-        console.error('Failed to load earnings data:', err);
-        // Use mock data for demo
-        useMockData();
+    function updateSummary(data) {
+      document.getElementById('totalEarnings').textContent = money(data.totalEarnings);
+      document.getElementById('thisWeek').textContent = money(data.thisWeek);
+      document.getElementById('totalDeliveries').textContent = data.totalDeliveries;
+      document.getElementById('avgPerDelivery').textContent = money(data.avgPerDelivery);
+      document.getElementById('pendingPayout').textContent = money(data.pendingPayout);
+      const metrics = data.metrics || {};
+      document.getElementById('deliveredCount').textContent = metrics.delivered || 0;
+      document.getElementById('inProgressCount').textContent = metrics.inProgress || 0;
+      document.getElementById('completionRate').textContent = (metrics.completionRate || 0) + '%';
+      document.getElementById('avgDeliveryTime').textContent = metrics.avgDeliveryTime == null ? '--' : metrics.avgDeliveryTime + ' min';
+      if (data.driver && data.driver.name) {
+        document.getElementById('driverName').textContent = data.driver.name;
       }
     }
 
-    function updateEarningsSummary(data) {
-      document.getElementById('totalEarnings').textContent = `GH₵ ${data.totalEarnings.toFixed(2)}`;
-      document.getElementById('thisWeek').textContent = `GH₵ ${data.thisWeek.toFixed(2)}`;
-      document.getElementById('totalDeliveries').textContent = data.totalDeliveries;
-      document.getElementById('avgPerDelivery').textContent = `GH₵ ${data.avgPerDelivery.toFixed(2)}`;
-      document.getElementById('pendingPayout').textContent = `GH₵ ${data.pendingPayout.toFixed(2)}`;
+    function updateCharts(data) {
+      const chart = data.chart || [];
+      earningsChart.data.labels = chart.map(p => p.label);
+      earningsChart.data.datasets[0].data = chart.map(p => p.earnings);
+      earningsChart.update();
+      deliveriesChart.data.labels = chart.map(p => p.label);
+      deliveriesChart.data.datasets[0].data = chart.map(p => p.deliveries);
+      deliveriesChart.update();
     }
 
     function updatePayoutList(payouts) {
       const container = document.getElementById('payoutList');
-      if (!payouts || payouts.length === 0) {
-        container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted);">No payouts yet</div>';
+      if (!payouts || !payouts.length) {
+        container.innerHTML = '<div style="text-align:center; padding:34px; color:var(--muted);">No payout requests yet. Your delivery fees stay listed above until you request a payout.</div>';
         return;
       }
-
-      container.innerHTML = payouts.map(payout => `
-        <div class="payout-card">
+      container.innerHTML = payouts.map(payout => {
+        const when = payout.requestedAt ? new Date(payout.requestedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+        const status = payout.status === 'paid' ? 'Paid' : 'Requested';
+        return `<div class="payout-card">
           <div class="payout-header">
-            <span class="payout-amount">GH₵ ${payout.amount.toFixed(2)}</span>
-            <span class="payout-status status-${payout.status}">
-              ${payout.status === 'paid' ? '✓' : '⏳'} ${payout.status}
-            </span>
+            <span class="payout-amount">${money(payout.amount)}</span>
+            <span class="payout-status status-${payout.status === 'paid' ? 'paid' : 'pending'}">${status}</span>
           </div>
-          <div style="font-size:0.85rem; color:var(--muted);">
-            ${new Date(payout.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-            · ${payout.deliveries} deliveries
-          </div>
-          ${payout.status === 'paid' ? `<div style="font-size:0.8rem; color:var(--leaf); margin-top:6px;">Paid via ${payout.method}</div>` : ''}
-        </div>
-      `).join('');
+          <div style="font-size:0.85rem; color:var(--muted);">${escapeHtml(when)} &middot; ${payout.deliveries} deliveries</div>
+          <div style="font-size:0.8rem; color:var(--leaf); margin-top:6px;">${escapeHtml(payout.method || 'Mobile Money')}</div>
+        </div>`;
+      }).join('');
     }
 
     function updateRecentDeliveries(deliveries) {
       const container = document.getElementById('recentDeliveries');
-      if (!deliveries || deliveries.length === 0) {
-        container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted);">No recent deliveries</div>';
+      if (!deliveries || !deliveries.length) {
+        container.innerHTML = '<div style="text-align:center; padding:34px; color:var(--muted);">No delivered orders yet.</div>';
         return;
       }
-
-      container.innerHTML = deliveries.map(delivery => `
-        <div class="delivery-row">
+      container.innerHTML = deliveries.map(delivery => {
+        const when = delivery.deliveredAt || delivery.createdAt;
+        return `<div class="delivery-row">
           <div>
-            <div style="font-weight:700; font-family:monospace;">${delivery.orderId}</div>
-            <div style="font-size:0.8rem; color:var(--muted);">${new Date(delivery.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
+            <div style="font-weight:700; font-family:monospace;">${escapeHtml(delivery.orderId)}</div>
+            <div style="font-size:0.8rem; color:var(--muted);">${escapeHtml(delivery.customer)} &middot; ${when ? new Date(when).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</div>
           </div>
           <div style="text-align:right;">
-            <div style="font-weight:800; color:var(--forest);">GH₵ ${delivery.earnings.toFixed(2)}</div>
-            <div style="font-size:0.8rem; color:var(--muted);">${delivery.distance} km</div>
+            <div style="font-weight:800; color:var(--forest);">${money(delivery.fee)}</div>
+            <div style="font-size:0.8rem; color:var(--muted);">delivery fee</div>
           </div>
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
     }
 
-    function useMockData() {
-      // Mock data for demonstration
-      updateEarningsSummary({
-        totalEarnings: 3850.50,
-        thisWeek: 403.00,
-        totalDeliveries: 247,
-        avgPerDelivery: 15.58,
-        pendingPayout: 185.50
-      });
-
-      updatePayoutList([
-        { amount: 520.50, status: 'paid', date: '2024-11-15', deliveries: 35, method: 'MTN MoMo' },
-        { amount: 485.00, status: 'paid', date: '2024-11-08', deliveries: 32, method: 'MTN MoMo' },
-        { amount: 185.50, status: 'pending', date: '2024-11-22', deliveries: 12, method: 'MTN MoMo' }
-      ]);
-
-      updateRecentDeliveries([
-        { orderId: 'YB-5041', date: new Date(), earnings: 18.50, distance: 3.2 },
-        { orderId: 'YB-5040', date: new Date(Date.now() - 3600000), earnings: 15.00, distance: 2.8 },
-        { orderId: 'YB-5039', date: new Date(Date.now() - 7200000), earnings: 22.00, distance: 4.5 },
-        { orderId: 'YB-5038', date: new Date(Date.now() - 10800000), earnings: 16.50, distance: 3.0 },
-        { orderId: 'YB-5037', date: new Date(Date.now() - 14400000), earnings: 19.00, distance: 3.7 }
-      ]);
+    async function loadEarningsData() {
+      const { token, user } = driverSession();
+      if (!token || !user || !user.id) {
+        showMessage('Sign in through the <a href="../driver.html" style="color:inherit;text-decoration:underline;">driver portal</a> to see your real earnings.', 'error');
+        return;
+      }
+      currentDriverId = user.id;
+      try {
+        const res = await fetch(API_BASE + '/drivers/' + encodeURIComponent(user.id) + '/earnings?period=' + currentPeriod, {
+          headers: token ? { Authorization: 'Bearer ' + token } : {},
+          cache: 'no-store'
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401 || res.status === 403) {
+          showMessage('Your driver session expired. Sign in again through the <a href="../driver.html" style="color:inherit;text-decoration:underline;">driver portal</a>.', 'error');
+          return;
+        }
+        if (!res.ok || !data.success) {
+          showMessage(escapeHtml(data.message || 'Could not load your earnings.'), 'error');
+          return;
+        }
+        const banner = document.getElementById('earningsBanner');
+        if (banner) banner.style.display = 'none';
+        updateSummary(data);
+        updateCharts(data);
+        updatePayoutList(data.payouts);
+        updateRecentDeliveries(data.recentDeliveries);
+      } catch (err) {
+        console.error('Failed to load earnings', err);
+        showMessage('Could not reach the server. Check your connection and try again.', 'error');
+      }
     }
 
-    // Period selector handlers
     document.querySelectorAll('.period-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const period = btn.dataset.period;
         const parent = btn.parentElement;
         parent.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        // Update chart data based on period
-        console.log('Loading data for period:', period);
+        currentPeriod = btn.dataset.period || 'week';
+        loadEarningsData();
       });
     });
 
-    // Payout request
     window.requestPayout = async () => {
-      if (confirm('Request payout for pending earnings (GH₵ 185.50)?')) {
-        alert('Payout request submitted! You will receive your payment within 24 hours via MTN MoMo.');
+      const { token, user } = driverSession();
+      if (!token || !user || !user.id) {
+        showMessage('Sign in through the driver portal before requesting a payout.', 'error');
+        return;
+      }
+      if (!confirm('Send a payout request for your pending delivery fees to the admin?')) return;
+      try {
+        const res = await fetch(API_BASE + '/drivers/' + encodeURIComponent(user.id) + '/payouts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({})
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          showMessage(escapeHtml(data.message || 'Could not send the payout request.'), 'error');
+          return;
+        }
+        showMessage(escapeHtml(data.message || 'Payout request sent.'), 'success');
+        loadEarningsData();
+      } catch (err) {
+        showMessage('Could not reach the server. Try again.', 'error');
       }
     };
 
-    // Initialize
     initCharts();
     loadEarningsData();
-  </script>
+    </script>
 </body>
 </html>

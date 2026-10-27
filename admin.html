@@ -1249,6 +1249,27 @@
             <button type="submit" class="btn btn-orange" style="width:100%; padding:12px; font-size:0.95rem;">🔑 Save Credential Changes</button>
           </form>
         </div>
+
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Mobile Money Wallet</h2>
+              <div class="action-meta">Every customer payment is sent to this wallet. Stored in the database and used by checkout, receipts and the driver app.</div>
+            </div>
+          </div>
+          <div id="momoSettingsFeedback" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:0.88rem; font-weight:600;"></div>
+          <form id="momoSettingsForm">
+            <div style="margin-bottom:14px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">MoMo Number <span style="color:#b91c1c;">*</span></label>
+              <input type="tel" id="momoPayTo" class="auth-input" placeholder="e.g. 0559103452" required autocomplete="off">
+            </div>
+            <div style="margin-bottom:20px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Account Name <span style="color:#b91c1c;">*</span></label>
+              <input type="text" id="momoAccountName" class="auth-input" placeholder="Name registered on the MoMo account" required autocomplete="off">
+            </div>
+            <button type="submit" class="btn btn-forest" style="width:100%; padding:12px; font-size:0.95rem;">Save MoMo Wallet</button>
+          </form>
+        </div>
       </div>
     </div>
 
@@ -2242,6 +2263,10 @@
     const adminResetMenuBtn = document.getElementById('adminResetMenuBtn');
     const adminMenuFeedback = document.getElementById('adminMenuFeedback');
 
+    // Images chosen from the admin's folder, kept by card id so the periodic
+    // live refresh cannot wipe an unsaved pick.
+    const pickedMenuImages = new Map();
+
     const LOCAL_IMAGES_LIST = [
       { file: "img_food_3.jpg", label: "img_food_3.jpg — Sliced Sausage & Veggies (15 Cedis default)" },
       { file: "img_food_2.jpg", label: "img_food_2.jpg — Sunny Fried Egg on Noodles (20 Cedis default)" },
@@ -2271,6 +2296,7 @@
       adminMenuCardsContainer.innerHTML = items.map((item, idx) => {
         const formulaClean = (item.formula || item.desc || "").replace(/^=\s*/, '');
         const templateStyle = item.template || "poster-capsule";
+        const pickedImage = pickedMenuImages.get(item.id) || '';
 
         const imageOptions = LOCAL_IMAGES_LIST.map(img => `
           <option value="${img.file}" ${item.image === img.file ? 'selected' : ''}>${img.label}</option>
@@ -2292,7 +2318,7 @@
               </div>
 
               <div style="position:relative; height:180px; width:100%; overflow:hidden; background:#eee;">
-                <img src="${item.image}" alt="${item.name}" id="prev-img-${item.id}" style="width:100%; height:100%; object-fit:cover;">
+                <img src="${pickedImage || item.image}" alt="${item.name}" id="prev-img-${item.id}" style="width:100%; height:100%; object-fit:cover;">
                 <span style="position:absolute; bottom:10px; right:10px; background:rgba(17,43,33,0.9); color:var(--gold); border:1px solid var(--gold); font-size:0.7rem; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;" id="prev-tag-${item.id}">
                   ${item.tag || item.badge || `${item.price} CEDIS`}
                 </span>
@@ -2327,7 +2353,14 @@
                 <select class="admin-edit-select edit-image-select" data-id="${item.id}">
                   ${imageOptions}
                 </select>
-                <input type="text" class="admin-edit-input edit-image-custom" data-id="${item.id}" placeholder="Or custom image URL..." value="${!LOCAL_IMAGES_LIST.some(i => i.file === item.image) ? item.image : ''}" style="margin-top:6px; font-size:0.8rem;">
+                <input type="text" class="admin-edit-input edit-image-custom" data-id="${item.id}" placeholder="Or paste an image URL..." value="${!LOCAL_IMAGES_LIST.some(i => i.file === item.image) && !String(item.image || '').startsWith('data:') ? item.image : ''}" style="margin-top:6px; font-size:0.8rem;">
+                <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                  <label class="btn btn-outline btn-sm" style="cursor:pointer; margin:0; border-color:var(--orange); color:var(--forest);">
+                    &#128193; Choose image from folder
+                    <input type="file" class="edit-image-file" accept="image/*" style="display:none;">
+                  </label>
+                  <span class="edit-image-file-name" style="font-size:0.72rem; color:var(--muted);">${String(item.image || '').startsWith('data:') ? 'Uploaded image stored in database' : 'JPG, PNG or WEBP'}</span>
+                </div>
               </div>
 
               <div>
@@ -2371,32 +2404,95 @@
         formulaInput.addEventListener('input', () => { if (prevFormula) prevFormula.innerHTML = `<span class="eq">=</span> ${formulaInput.value}`; });
         tagInput.addEventListener('input', () => { if (prevTag) prevTag.textContent = tagInput.value || `${priceInput.value} CEDIS`; });
 
+        const imgFile = cardEl.querySelector('.edit-image-file');
+        const imgFileName = cardEl.querySelector('.edit-image-file-name');
+
         imgSelect.addEventListener('change', () => {
+          cardEl.__pickedImage = '';
+          pickedMenuImages.delete(id);
+          if (imgFileName) imgFileName.textContent = 'Using a built-in photo';
           if (prevImg) prevImg.src = imgSelect.value;
         });
         imgCustom.addEventListener('input', () => {
-          if (imgCustom.value.trim() && prevImg) prevImg.src = imgCustom.value.trim();
+          if (imgCustom.value.trim()) {
+            cardEl.__pickedImage = '';
+            pickedMenuImages.delete(id);
+            if (imgFileName) imgFileName.textContent = 'Using your image URL';
+            if (prevImg) prevImg.src = imgCustom.value.trim();
+          }
         });
+
+        if (imgFile) {
+          imgFile.addEventListener('change', () => {
+            const file = imgFile.files && imgFile.files[0];
+            if (!file) return;
+            if (!/^image\//.test(file.type)) {
+              showMenuFeedback('Please choose an image file (JPG, PNG or WEBP).', false);
+              imgFile.value = '';
+              return;
+            }
+            if (file.size > 12 * 1024 * 1024) {
+              showMenuFeedback('That image is larger than 12 MB. Choose a smaller photo.', false);
+              imgFile.value = '';
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+              const image = new Image();
+              image.onload = () => {
+                // Fit inside 1000x1000 and compress so the DB row stays small.
+                const MAX = 1000;
+                const scale = Math.min(1, MAX / Math.max(image.width, image.height));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(image.width * scale));
+                canvas.height = Math.max(1, Math.round(image.height * scale));
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+                cardEl.__pickedImage = dataUrl;
+                pickedMenuImages.set(id, dataUrl);
+                if (prevImg) prevImg.src = dataUrl;
+                if (imgCustom) imgCustom.value = '';
+                if (imgFileName) imgFileName.textContent = file.name + ' (ready to save)';
+                imgFile.value = '';
+              };
+              image.onerror = () => showMenuFeedback('That image could not be read. Try another photo.', false);
+              image.src = reader.result;
+            };
+            reader.onerror = () => showMenuFeedback('Could not read that file. Try again.', false);
+            reader.readAsDataURL(file);
+          });
+        }
 
         // Single Card Save
         const saveBtn = cardEl.querySelector('.save-single-card-btn');
         saveBtn.addEventListener('click', async () => {
           const items = getMenuItems();
           const target = items.find(m => m.id === id);
-          if (target) {
-            target.price = parseFloat(priceInput.value) || target.price;
-            target.name = nameInput.value.trim() || target.name;
-            target.formula = formulaInput.value.trim();
-            target.desc = `= ${target.formula}`;
-            target.tag = tagInput.value.trim();
-            target.badge = target.tag || `${target.price} CEDIS`;
-            target.image = imgCustom.value.trim() || imgSelect.value;
-            target.template = cardEl.querySelector('.edit-template').value;
+          if (!target) return;
+          target.price = parseFloat(priceInput.value) || target.price;
+          target.name = nameInput.value.trim() || target.name;
+          target.formula = formulaInput.value.trim();
+          target.desc = `= ${target.formula}`;
+          target.tag = tagInput.value.trim();
+          target.badge = target.tag || `${target.price} CEDIS`;
+          target.image = pickedMenuImages.get(id) || cardEl.__pickedImage || imgCustom.value.trim() || imgSelect.value;
+          target.template = cardEl.querySelector('.edit-template').value;
 
-            saveMenuItems(items);
-            await apiSaveMenu(items);
-            showMenuFeedback(`✅ Card "${target.name} (${target.price} Cedis)" updated and broadcast live!`);
+          saveBtn.disabled = true;
+          saveBtn.textContent = 'Saving...';
+          const result = await apiSaveMenu(items);
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Update Card';
+          if (!result.success) {
+            showMenuFeedback(result.message || 'Could not save this card.', false);
+            return;
           }
+          showMenuFeedback(`Card "${target.name} (${target.price} Cedis)" saved to the database and live on the site.`);
+          pickedMenuImages.delete(id);
+          renderFoodMenuTab();
         });
       });
     }
@@ -2414,14 +2510,18 @@
             target.desc = `= ${target.formula}`;
             target.tag = cardEl.querySelector('.edit-tag').value.trim();
             target.badge = target.tag || `${target.price} CEDIS`;
-            target.image = cardEl.querySelector('.edit-image-custom').value.trim() || cardEl.querySelector('.edit-image-select').value;
+            target.image = pickedMenuImages.get(id) || cardEl.__pickedImage || cardEl.querySelector('.edit-image-custom').value.trim() || cardEl.querySelector('.edit-image-select').value;
             target.template = cardEl.querySelector('.edit-template').value;
           }
         });
 
-        saveMenuItems(items);
-        await apiSaveMenu(items);
-        showMenuFeedback(`🎉 All 5 food cards saved to database and published live across the website!`);
+        const result = await apiSaveMenu(items);
+        if (!result.success) {
+          showMenuFeedback(result.message || 'Could not save the menu.', false);
+          return;
+        }
+        showMenuFeedback(`All ${items.length} food cards saved to the database and live across the website.`);
+        pickedMenuImages.clear();
         renderFoodMenuTab();
       });
     }
@@ -2950,6 +3050,60 @@
       });
     }
 
+    function adminAuthHeaders(extra = {}) {
+      const token = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
+      return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
+    }
+
+    // ---- Mobile money wallet (stored in the database) ----
+    const momoSettingsForm = document.getElementById('momoSettingsForm');
+    const momoSettingsFeedback = document.getElementById('momoSettingsFeedback');
+
+    function showMomoFeedback(msg, ok) {
+      if (!momoSettingsFeedback) return;
+      momoSettingsFeedback.style.display = 'block';
+      momoSettingsFeedback.style.background = ok ? '#f0fdf4' : '#fef2f2';
+      momoSettingsFeedback.style.border = ok ? '1.5px solid #86efac' : '1.5px solid #fecaca';
+      momoSettingsFeedback.style.color = ok ? '#166534' : '#b91c1c';
+      momoSettingsFeedback.textContent = msg;
+    }
+
+    async function loadMomoSettings() {
+      try {
+        const res = await fetch('/api/admin/settings/momo', { headers: adminAuthHeaders(), cache: 'no-store' });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok && json.momo) {
+          document.getElementById('momoPayTo').value = json.momo.payTo || '';
+          document.getElementById('momoAccountName').value = json.momo.accountName || '';
+        } else if (res.status === 401 || res.status === 403) {
+          showMomoFeedback('Sign in as admin to view the MoMo wallet.', false);
+        }
+      } catch (e) {}
+    }
+
+    if (momoSettingsForm) {
+      momoSettingsForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payTo = document.getElementById('momoPayTo').value.trim();
+        const accountName = document.getElementById('momoAccountName').value.trim();
+        try {
+          const res = await fetch('/api/admin/settings/momo', {
+            method: 'PUT',
+            headers: adminAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ payTo, accountName })
+          });
+          const json = await res.json().catch(() => ({}));
+          if (res.ok && json.success) {
+            showMomoFeedback('Saved. All new payments now go to ' + json.momo.payToLabel + ' (' + json.momo.accountName + ').', true);
+          } else {
+            showMomoFeedback(json.message || 'Could not save the MoMo wallet.', false);
+          }
+        } catch (err) {
+          showMomoFeedback('Could not reach the server. Check your connection and try again.', false);
+        }
+      });
+    }
+
     // Password show/hide toggles for settings form
     document.querySelectorAll('.toggle-pwd-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2967,7 +3121,7 @@
         const tab = btn.dataset.tab;
         if (tab === 'driversTab') loadDriverManagement();
         if (tab === 'reportTab') loadDailyReport(reportDatePicker ? reportDatePicker.value : '');
-        if (tab === 'settingsTab') { /* already reactive */ }
+        if (tab === 'settingsTab') { loadMomoSettings(); }
       });
     });
   </script>

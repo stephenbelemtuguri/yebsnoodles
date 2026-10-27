@@ -17,7 +17,7 @@ export const OWNER_WHATSAPP_NUMBER = "233559103452"; // 055 910 3452
 export const MOMO_CONFIG = {
   number: "0559103452",
   displayNumber: "055 910 3452",
-  merchantName: "YEBS Noodles / Stephen",
+  merchantName: "MATHEW TIA",
   network: "MTN Mobile Money / Telecel Cash / AT Money"
 };
 
@@ -130,8 +130,8 @@ function makeOfflineGridLayer() {
     }
   });
   return new OfflineGrid({
-    attribution: "Offline grid · online tiles restore automatically",
-    zIndex: 0,
+    attribution: "",
+    zIndex: 1,
     updateWhenIdle: false
   });
 }
@@ -166,9 +166,18 @@ export function addReliableBasemap(map) {
 
   function showOfflineNotice() {
     if (notice._div) notice._div.style.display = "block";
+    setOfflineVisible(true);
+  }
+
+  function setOfflineVisible(visible) {
+    try {
+      const el = offline.getContainer && offline.getContainer();
+      if (el) el.style.display = visible ? "" : "none";
+    } catch (e) {}
   }
   function hideOfflineNotice() {
     if (notice._div) notice._div.style.display = "none";
+    setOfflineVisible(false);
   }
 
   function countTileImages() {
@@ -204,6 +213,10 @@ export function addReliableBasemap(map) {
     active = sequence[index];
     errorStreak = 0;
     active.addTo(map);
+    try {
+      const c = active.getContainer && active.getContainer();
+      if (c) c.style.zIndex = 4;
+    } catch (e) {}
     active.on("tileerror", onTileError);
     active.on("tileload", hideOfflineNotice);
     active.on("load", () => { errorStreak = 0; });
@@ -219,6 +232,12 @@ export function addReliableBasemap(map) {
   active.on("tileload", hideOfflineNotice);
   active.on("load", () => { errorStreak = 0; });
   active.addTo(map);
+  try {
+    const c = active.getContainer && active.getContainer();
+    if (c) c.style.zIndex = 4;
+    const oc = offline.getContainer && offline.getContainer();
+    if (oc) { oc.style.zIndex = 1; oc.style.display = "none"; }
+  } catch (e) {}
 
   // Watchdog: Leaflet can silently hang when a tile host is blocked. If no
   // real tiles have decoded after ~3.5s, try the next provider, then settle on
@@ -467,11 +486,7 @@ export function saveMenuItems(items) {
 export const MENU_ITEMS = getMenuItems();
 
 // Default Drivers
-export const DEFAULT_DRIVERS = [
-  { id: "drv-1", name: "Kwame Mensah", phone: "024 456 7890", vehicle: "Royal 125 Motorcycle (GN-4819-24)", isOnline: true },
-  { id: "drv-2", name: "Kofi Owusu", phone: "055 789 1234", vehicle: "Boxer 150 Bike (GE-9021-23)", isOnline: true },
-  { id: "drv-3", name: "Emmanuel Tetteh", phone: "020 112 3344", vehicle: "Honda Ace Scooter (GW-3312-25)", isOnline: false }
-];
+export const DEFAULT_DRIVERS = [];
 
 export const DEFAULT_SESSION_STATE = {
   sessionNumber: 1,
@@ -518,8 +533,10 @@ export function initStore() {
   if (!localStorage.getItem(STORAGE_KEY)) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
   }
+  // The driver roster is owned by the server database. Never seed invented
+  // riders into localStorage - an empty roster is the honest answer.
   if (!localStorage.getItem(DRIVERS_KEY)) {
-    localStorage.setItem(DRIVERS_KEY, JSON.stringify(DEFAULT_DRIVERS));
+    localStorage.setItem(DRIVERS_KEY, JSON.stringify([]));
   }
   if (!localStorage.getItem(SESSION_KEY)) {
     localStorage.setItem(SESSION_KEY, JSON.stringify(DEFAULT_SESSION_STATE));
@@ -1251,9 +1268,9 @@ export function updateDriverLocationOnAllOrders(driverName, locationData) {
 export function getDrivers() {
   try {
     const raw = localStorage.getItem(DRIVERS_KEY);
-    return raw ? JSON.parse(raw) : DEFAULT_DRIVERS;
+    return raw ? JSON.parse(raw) : [];
   } catch (e) {
-    return DEFAULT_DRIVERS;
+    return [];
   }
 }
 
@@ -1302,7 +1319,7 @@ export function authToken(role) {
 }
 
 function authHeaders(extra = {}) {
-  const token = authToken('any');
+  const token = authToken('admin') || authToken('any');
   return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
 }
 
@@ -1352,9 +1369,21 @@ export async function apiDriverSignup({ fname, lname, phone, password, vehicle, 
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.success) {
+      // New riders are held for admin approval. They get no session yet, so
+      // pass the generated username back to the signup screen instead.
+      if (data.pending) {
+        return {
+          success: true,
+          pending: true,
+          driverId: data.driverId,
+          driverName: data.driverName,
+          username: data.username,
+          message: data.message
+        };
+      }
       const token = data.token || (data.driver && data.driver.token);
-      sessionStorage.setItem('yebs_driver_token', token);
-      sessionStorage.setItem('yebs_driver_user', JSON.stringify(data.driver));
+      if (token) sessionStorage.setItem('yebs_driver_token', token);
+      if (data.driver) sessionStorage.setItem('yebs_driver_user', JSON.stringify(data.driver));
       if (photo) sessionStorage.setItem('yebs_driver_photo', photo);
       rememberRegisteredDriver(data.driver);
       return { success: true, driver: data.driver };
@@ -1375,15 +1404,25 @@ export async function apiDriverLogin(username, password) {
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.success) {
       const token = data.token || (data.driver && data.driver.token);
-      sessionStorage.setItem('yebs_driver_token', token);
-      sessionStorage.setItem('yebs_driver_user', JSON.stringify(data.driver));
+      if (token) sessionStorage.setItem('yebs_driver_token', token);
+      if (data.driver) sessionStorage.setItem('yebs_driver_user', JSON.stringify(data.driver));
       if (data.driver && data.driver.photo) {
         sessionStorage.setItem('yebs_driver_photo', data.driver.photo);
       }
       rememberRegisteredDriver(data.driver);
       return { success: true, driver: data.driver };
     }
-    return { success: false, error: data.message || 'Invalid driver credentials' };
+    // Keep the server's pending/rejected reason so the portal can show the
+    // correct screen instead of a generic "invalid credentials" error.
+    return {
+      success: false,
+      pending: !!data.pending,
+      rejected: !!data.rejected,
+      driverId: data.driverId,
+      driverName: data.driverName,
+      message: data.message,
+      error: data.message || 'Invalid driver credentials'
+    };
   } catch (err) {
     return { success: false, error: 'Database server unreachable. Please verify the server is running.' };
   }
@@ -1453,31 +1492,38 @@ export async function apiFetchMenu() {
 }
 
 export async function apiSaveMenu(menuItems) {
+  // Keep the local cache in step for instant UI, but only report success when
+  // the database actually accepted the change.
+  saveMenuItems(menuItems);
+  const token = authToken('admin');
+  if (!token) {
+    return { success: false, message: "Your admin session has expired. Sign in again to save menu changes." };
+  }
   try {
-    saveMenuItems(menuItems);
-    const token = sessionStorage.getItem('yebs_admin_token');
     const res = await fetch(`${API_BASE}/api/menu`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token || ''}`
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({ menuItems })
     });
-    if (res.ok) {
-      const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      saveMenuItems(data.menuItems);
       broadcastEvent("MENU_UPDATED", { items: data.menuItems });
       return { success: true, menuItems: data.menuItems };
     }
+    return { success: false, message: data.message || `Could not save the menu (server responded ${res.status}).` };
   } catch (e) {
     console.warn("Could not save menu to server:", e);
+    return { success: false, message: "Could not reach the server. Check your connection and try again." };
   }
-  return { success: true, menuItems, offline: true };
 }
 
 export async function apiResetMenu() {
   try {
-    const token = sessionStorage.getItem('yebs_admin_token');
+    const token = authToken('admin');
     const res = await fetch(`${API_BASE}/api/menu/reset`, {
       method: 'POST',
       headers: {
@@ -1532,11 +1578,18 @@ export async function apiFetchActiveDrivers() {
       const drivers = await res.json();
       if (Array.isArray(drivers)) {
         drivers.forEach(rememberRegisteredDriver);
+        saveDispatchDrivers(drivers);
         return drivers;
       }
     }
   } catch (e) {}
-  return getDispatchDrivers();
+  return [];
+}
+
+export function saveDispatchDrivers(drivers) {
+  try {
+    localStorage.setItem(DRIVERS_KEY, JSON.stringify(Array.isArray(drivers) ? drivers : []));
+  } catch (e) {}
 }
 
 export async function apiUpdateDriverLocation(driverId, payload) {

@@ -79,5 +79,13 @@
       "tag": "Two Chicken + Beta Malt",
       "template": "poster-capsule"
     }
-  ]
+  ],
+  "settings": {
+    "momo": {
+      "payTo": "0559103452",
+      "accountName": "MATHEW TIA"
+    }
+  },
+  "payouts": [],
+  "reviews": []
 }
