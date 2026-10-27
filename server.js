@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const store = require('./src/data/store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,18 @@ app.use(cors());
 // Photos (driver live face photo + MoMo receipts) are sent as base64 data URLs,
 // so the default 100kb JSON limit is far too small.
 app.use(express.json({ limit: '12mb' }));
+
+// serverless-http (Netlify Functions) hands the body over as a Buffer/string.
+// Normalise it so every JSON handler behaves the same in both modes.
+app.use((req, res, next) => {
+  if (Buffer.isBuffer(req.body)) {
+    const text = req.body.toString('utf8');
+    try { req.body = text ? JSON.parse(text) : {}; } catch (e) { req.body = {}; }
+  } else if (typeof req.body === 'string' && req.body.length) {
+    try { req.body = JSON.parse(req.body); } catch (e) { /* leave original value */ }
+  }
+  next();
+});
 app.use(express.static(__dirname, { extensions: ['html', 'htm'] }));
 
 // Never let browsers cache live operational data.
@@ -60,6 +73,10 @@ if (!AUTH_SECRET) {
     }
   } catch (e) {
     AUTH_SECRET = crypto.randomBytes(48).toString('hex');
+    // Serverless filesystems are read-only and every instance would get a
+    // different secret, silently invalidating every token it issued. Shout
+    // about it so the deployment is fixed instead of "random logouts".
+    console.error('[security] YEBS_AUTH_SECRET is not set. Sessions will not survive between instances - set it in the hosting environment variables.');
   }
 }
 
@@ -191,7 +208,37 @@ function rateSuccess(req, role, identity) {
 // DATABASE
 // ==========================================================
 
+// Guarantee the data file always has every collection and at least one
+// superadmin. Without this, a database.json that predates the accounts (or was
+// committed empty) leaves the platform with no way to sign in or approve drivers.
+function ensureSystemAccounts(db) {
+  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems'];
+  let changed = false;
+
+  collections.forEach(key => {
+    if (!Array.isArray(db[key])) { db[key] = []; changed = true; }
+  });
+
+  if (db.admins.length === 0) {
+    db.admins.push({
+      id: 'adm-1',
+      username: 'yebsnoodles',
+      password: hashPassword('yebs@123'),
+      name: 'YEBS Administrator',
+      role: 'SUPERADMIN',
+      createdAt: new Date().toISOString()
+    });
+    changed = true;
+    console.log('[security] Seeded built-in administrator "yebsnoodles".');
+  }
+
+  return changed;
+}
+
 function loadDatabase() {
+  const cached = store.get();
+  if (cached) return cached;
+
   if (!fs.existsSync(DB_FILE)) {
     const initialData = {
       admins: [
@@ -271,22 +318,32 @@ function loadDatabase() {
         }
       ]
     };
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
+    try { fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2)); } catch (e) { /* read-only fs */ }
+    ensureSystemAccounts(initialData);
     return initialData;
   }
   try {
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    const parsed = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    if (ensureSystemAccounts(parsed)) {
+      try { fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2)); } catch (e) { /* read-only fs */ }
+    }
+    return parsed;
   } catch (e) {
     console.error("Database read error, restoring default", e);
-    return { admins: [], drivers: [], orders: [], sessions: [], auditLogs: [] };
+    const fallback = { admins: [], drivers: [], orders: [], sessions: [], auditLogs: [], menuItems: [] };
+    ensureSystemAccounts(fallback);
+    return fallback;
   }
 }
 
 function saveDatabase(data) {
+  // Memory + Supabase (when configured). The local file is kept in sync so
+  // `npm start` behaves exactly as before.
+  store.set(data);
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
-    console.error("Database write error", e);
+    // Read-only filesystem on Netlify Functions — Supabase already has it.
   }
 }
 
@@ -1205,7 +1262,6 @@ const driversRouter = require('./src/routes/drivers');
 const analyticsRouter = require('./src/routes/analytics');
 const reviewsRouter = require('./src/routes/reviews');
 const chatRouter = require('./src/routes/chat');
-const menuRouter = require('./src/routes/menu');
 const inventoryRouter = require('./src/routes/inventory');
 const loyaltyRouter = require('./src/routes/loyalty');
 const referralsRouter = require('./src/routes/referrals');
@@ -1219,7 +1275,6 @@ app.use('/api/drivers', driversRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/reviews', reviewsRouter);
 app.use('/api/chat', chatRouter);
-app.use('/api/menu', menuRouter);
 app.use('/api/inventory', inventoryRouter);
 app.use('/api/loyalty', loyaltyRouter);
 app.use('/api/referrals', referralsRouter);
@@ -1931,7 +1986,12 @@ function pushToDriver(driverId, payload) {
 
 // Health check used by the portals to detect a live API server
 app.get('/api/health', (req, res) => {
-  res.json({ success: true, service: "YEBS Noodles API", time: new Date().toISOString() });
+  res.json({
+    success: true,
+    service: "YEBS Noodles API",
+    time: new Date().toISOString(),
+    storage: store.status()
+  });
 });
 
 // Friendly JSON error handler (e.g. oversized photo / receipt payload)
@@ -1946,9 +2006,40 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: err && err.message ? err.message : "Server error" });
 });
 
-// Start server
-migratePasswords();
-app.listen(PORT, () => {
-  console.log(`YEBS Noodles API Server running at http://localhost:${PORT}`);
-  console.log(`Security: bcrypt passwords · HMAC signed sessions (${SESSION_TTL_MS / 3600000}h) · login rate limiting`);
-});
+// Boot: load persisted state (Supabase in production, database.json locally),
+// ensure the built-in administrator exists, then upgrade legacy password hashes.
+let startPromise = null;
+function start() {
+  if (!startPromise) {
+    startPromise = (async () => {
+      const data = await store.init(loadDatabase);
+      if (ensureSystemAccounts(data)) {
+        store.set(data);
+        try { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); } catch (e) { /* read-only fs */ }
+      }
+      migratePasswords();
+      return data;
+    })().catch(err => {
+      startPromise = null;
+      throw err;
+    });
+  }
+  return startPromise;
+}
+
+if (require.main === module) {
+  start()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`YEBS Noodles API Server running at http://localhost:${PORT}`);
+        console.log(`Storage: ${store.status()}`);
+        console.log(`Security: bcrypt passwords - HMAC signed sessions (${SESSION_TTL_MS / 3600000}h) - login rate limiting`);
+      });
+    })
+    .catch(err => {
+      console.error('Failed to start YEBS Noodles API:', err.message);
+      process.exit(1);
+    });
+}
+
+module.exports = { app, start, loadDatabase, saveDatabase };

@@ -2182,10 +2182,11 @@
     }
 
     // ── Initial Auth & Render ────────────────────────────────────────────────
+    (async function initDriverPortal() {
       if (!checkDriverAuth()) return;
       if (!(await validateDriverSessionOnServer())) return;
       bootDriverDashboard();
-    
+    })();
   </script>
 </body>
 </html>

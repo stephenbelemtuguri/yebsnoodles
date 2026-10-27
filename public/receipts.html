@@ -285,7 +285,7 @@
   <footer>YEBS Noodles · Order Receipts · Download, Save & Track Payments</footer>
 
   <script>
-    const API = 'http://localhost:3000/api';
+    const API = (window.location.origin + '/api');
     let allReceipts = [];
     let savedReceiptIds = new Set();
     let currentFilter = 'all';

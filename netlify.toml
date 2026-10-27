@@ -1,0 +1,91 @@
+# YEBS Noodles — Netlify deployment
+# Static pages are published from dist/ (built by scripts/netlify-build.js),
+# the Express API runs as a Netlify Function backed by Supabase.
+
+[build]
+  command = "node scripts/netlify-build.js"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+  # Seed document used the very first time the Supabase row is created.
+  included_files = ["database.json"]
+
+# ── API → serverless function ───────────────────────────────────────────────
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+# ── Friendly clean URLs (mirror the Express routes) ─────────────────────────
+[[redirects]]
+  from = "/admin"
+  to = "/admin.html"
+  status = 200
+
+[[redirects]]
+  from = "/dashboard"
+  to = "/admin.html"
+  status = 200
+
+[[redirects]]
+  from = "/admin-panel"
+  to = "/admin.html"
+  status = 200
+
+[[redirects]]
+  from = "/driver"
+  to = "/driver.html"
+  status = 200
+
+[[redirects]]
+  from = "/driver-panel"
+  to = "/driver.html"
+  status = 200
+
+[[redirects]]
+  from = "/rider"
+  to = "/driver.html"
+  status = 200
+
+[[redirects]]
+  from = "/dispatch"
+  to = "/driver.html"
+  status = 200
+
+[[redirects]]
+  from = "/store"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/menu"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/order"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/track"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/customer"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-store"

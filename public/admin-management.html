@@ -453,7 +453,7 @@
   <footer>YEBS Noodles Management Center · Reviews, Chat, Menu, Inventory, Loyalty, Referrals & Dynamic Pricing</footer>
 
   <script>
-    const API = 'http://localhost:3000/api';
+    const API = (window.location.origin + '/api');
 
     // Tab switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -570,57 +570,153 @@
     }
 
     // ===== MENU =====
+    // ----- MENU -----
+    // /api/menu returns the poster menu as a plain array (the same array the
+    // storefront renders). Writes are whole-menu PUTs, so read, edit, save.
+    function adminToken() {
+      return sessionStorage.getItem('yebs_admin_token')
+        || localStorage.getItem('yebs_admin_token_persist')
+        || '';
+    }
+
+    function adminHeaders(extra) {
+      const token = adminToken();
+      return token ? Object.assign({}, extra, { Authorization: 'Bearer ' + token }) : Object.assign({}, extra);
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
+
+    async function fetchMenuArray() {
+      const res = await fetch(`${API}/menu`, { cache: 'no-store' });
+      const data = await res.json().catch(() => null);
+      if (Array.isArray(data)) return data;
+      if (data && Array.isArray(data.items)) return data.items;
+      if (data && Array.isArray(data.menuItems)) return data.menuItems;
+      return [];
+    }
+
+    async function saveMenuArray(items) {
+      const res = await fetch(`${API}/menu`, {
+        method: 'POST',
+        headers: adminHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ menuItems: items })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        alert(data.message || 'Could not save the menu. Sign in at the admin dashboard first, then retry.');
+        return false;
+      }
+      return true;
+    }
+
     async function loadMenu() {
+      const list = document.getElementById('menuItemsList');
       try {
-        const res = await fetch(`${API}/menu`);
-        const data = await res.json();
-        const list = document.getElementById('menuItemsList');
-        list.innerHTML = data.items.map(item => `
+        const items = await fetchMenuArray();
+        if (!items.length) {
+          list.innerHTML = '<p style="color:var(--muted); padding:12px 0;">No menu items yet. Use “Add menu item”.</p>';
+          return;
+        }
+        list.innerHTML = items.map(item => {
+          const price = Number(item.price || 0);
+          const formula = item.formula || item.desc || item.description || '';
+          const desc = String(formula).replace(/^=\s*/, '');
+          const tag = item.tag || item.badge || item.category || 'menu';
+          const available = item.available !== false;
+          return `
           <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-bottom:1px solid var(--line);">
             <div>
-              <strong style="color:var(--forest); font-size:1.05rem;">${item.name}</strong>
-              <span style="color:var(--muted); font-size:0.85rem; margin-left:8px;">${item.category}</span>
-              <div style="font-size:0.85rem; color:var(--ink); margin-top:4px;">${item.description || 'No description'}</div>
+              <strong style="color:var(--forest); font-size:1.05rem;">${escapeHtml(item.name)}</strong>
+              <span style="color:var(--muted); font-size:0.85rem; margin-left:8px;">${escapeHtml(tag)}</span>
+              <div style="font-size:0.85rem; color:var(--ink); margin-top:4px;">${escapeHtml(desc || 'No description')}</div>
             </div>
             <div style="text-align:right;">
-              <div style="font-weight:800; color:var(--orange); font-size:1.2rem;">GH₵ ${item.price.toFixed(2)}</div>
+              <div style="font-weight:800; color:var(--orange); font-size:1.2rem;">GH&#8373; ${price.toFixed(2)}</div>
               <div style="margin-top:6px; display:flex; gap:6px; justify-content:flex-end;">
-                <button class="btn ${item.available ? 'btn-success' : 'btn-outline'} btn-sm" onclick="toggleMenu('${item.id}')">
-                  ${item.available ? '✓ Available' : '✗ Unavailable'}
+                <button class="btn ${available ? 'btn-success' : 'btn-outline'} btn-sm" data-menu-toggle="${escapeHtml(item.id)}">
+                  ${available ? 'Available' : 'Unavailable'}
                 </button>
-                <button class="btn btn-danger btn-sm" onclick="deleteMenu('${item.id}')">Delete</button>
+                <button class="btn btn-danger btn-sm" data-menu-delete="${escapeHtml(item.id)}">Delete</button>
               </div>
             </div>
-          </div>
-        `).join('');
-      } catch (e) { console.error('Menu load failed:', e); }
+          </div>`;
+        }).join('');
+
+        list.querySelectorAll('[data-menu-toggle]').forEach(btn => {
+          btn.addEventListener('click', () => toggleMenu(btn.getAttribute('data-menu-toggle')));
+        });
+        list.querySelectorAll('[data-menu-delete]').forEach(btn => {
+          btn.addEventListener('click', () => deleteMenu(btn.getAttribute('data-menu-delete')));
+        });
+      } catch (e) {
+        console.error('Menu load failed:', e);
+        list.innerHTML = '<p style="color:#b91c1c; padding:12px 0;">Could not load the menu. Check your connection and reload.</p>';
+      }
     }
 
     function showAddMenuForm() { document.getElementById('addMenuForm').style.display = 'block'; }
 
     async function createMenuItem() {
-      const body = {
-        name: document.getElementById('newMenuName').value,
-        price: document.getElementById('newMenuPrice').value,
-        category: document.getElementById('newMenuCategory').value,
-        prepTime: parseInt(document.getElementById('newMenuPrepTime').value),
-        description: document.getElementById('newMenuDesc').value
+      const name = document.getElementById('newMenuName').value.trim();
+      const price = Number(document.getElementById('newMenuPrice').value);
+      const category = document.getElementById('newMenuCategory').value.trim() || 'spaghetti';
+      const description = document.getElementById('newMenuDesc').value.trim();
+      const prepTime = parseInt(document.getElementById('newMenuPrepTime').value, 10);
+
+      if (!name || !Number.isFinite(price) || price <= 0) {
+        alert('Enter a dish name and a price greater than zero.');
+        return;
+      }
+
+      const items = await fetchMenuArray();
+      const item = {
+        id: 'item-' + Date.now(),
+        name,
+        price,
+        category,
+        noodles: ['Spaghetti'],
+        formula: description,
+        desc: description,
+        image: 'img_food_1.jpg',
+        badge: `${price} CEDIS`,
+        tag: category,
+        template: 'poster-capsule',
+        available: true
       };
-      await fetch(`${API}/menu`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      if (Number.isFinite(prepTime)) item.prepTime = prepTime;
+
+      items.push(item);
+      if (!(await saveMenuArray(items))) return;
+
       document.getElementById('addMenuForm').style.display = 'none';
+      ['newMenuName', 'newMenuPrice', 'newMenuDesc', 'newMenuPrepTime'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
       loadMenu();
     }
 
     async function toggleMenu(id) {
-      await fetch(`${API}/menu/${id}/toggle`, { method: 'PATCH' });
-      loadMenu();
+      const items = await fetchMenuArray();
+      const item = items.find(i => String(i.id) === String(id));
+      if (!item) { alert('That item no longer exists. Reloading the menu.'); return loadMenu(); }
+      item.available = item.available === false;
+      if (await saveMenuArray(items)) loadMenu();
     }
 
     async function deleteMenu(id) {
-      if (confirm('Delete this menu item?')) {
-        await fetch(`${API}/menu/${id}`, { method: 'DELETE' });
-        loadMenu();
+      if (!confirm('Delete this menu item?')) return;
+      const items = await fetchMenuArray();
+      const remaining = items.filter(i => String(i.id) !== String(id));
+      if (!remaining.length) {
+        alert('The menu needs at least one item. Add a replacement first.');
+        return;
       }
+      if (await saveMenuArray(remaining)) loadMenu();
     }
 
     // ===== INVENTORY =====

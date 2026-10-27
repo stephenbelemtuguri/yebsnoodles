@@ -17,6 +17,10 @@ uploads/
 tmp/
 temp/
 
+# Netlify
+dist/
+.netlify/
+
 # OS junk
 .DS_Store
 Thumbs.db

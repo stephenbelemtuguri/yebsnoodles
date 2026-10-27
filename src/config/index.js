@@ -174,9 +174,14 @@ const config = {
 // Validation
 if (config.env === 'production') {
   const required = {
-    'JWT_SECRET': config.jwtSecret,
-    'DATABASE_URL': config.databaseUrl
+    'JWT_SECRET': config.jwtSecret
   };
+
+  // Supabase-backed deployments keep state in Postgres via the REST API, so a
+  // raw DATABASE_URL is not needed there.
+  if (!process.env.SUPABASE_URL) {
+    required['DATABASE_URL'] = config.databaseUrl;
+  }
   
   for (const [key, value] of Object.entries(required)) {
     if (!value || value.includes('change') || value.includes('your-')) {

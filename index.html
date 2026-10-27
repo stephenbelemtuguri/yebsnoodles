@@ -2437,49 +2437,7 @@
     updateSessionBanner();
     initPermissionsCheck();
 
-    // ── DevTools Protection (Prevent Source Inspection) ──────────────────────
-    (function() {
-      // Disable right-click context menu
-      document.addEventListener('contextmenu', e => { e.preventDefault(); return false; });
-      
-      // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
-      document.addEventListener('keydown', e => {
-        if (e.key === 'F12' || 
-            (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
-            (e.ctrlKey && e.key === 'U')) {
-          e.preventDefault();
-          return false;
-        }
-      });
-
-      // Detect DevTools opening via console
-      const threshold = 160;
-      let devtoolsOpen = false;
-      const check = () => {
-        const widthThreshold = window.outerWidth - window.innerWidth > threshold;
-        const heightThreshold = window.outerHeight - window.innerHeight > threshold;
-        if (widthThreshold || heightThreshold) {
-          if (!devtoolsOpen) {
-            devtoolsOpen = true;
-            document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;text-align:center;font-family:system-ui;"><div><h1 style="color:#b91c1c;font-size:3rem;">⚠️</h1><p style="font-size:1.2rem;color:#374151;">Developer tools detected.<br>This page has been disabled for security.</p></div></div>';
-          }
-        }
-      };
-      setInterval(check, 1000);
-
-      // Detect console activity
-      const consoleCheck = () => {
-        const before = new Date();
-        debugger;
-        const after = new Date();
-        if (after - before > 100) {
-          document.body.innerHTML = '<div style="display:grid;place-items:center;height:100vh;text-align:center;font-family:system-ui;"><div><h1 style="color:#b91c1c;font-size:3rem;">⚠️</h1><p style="font-size:1.2rem;color:#374151;">Debugging detected.<br>Page access disabled.</p></div></div>';
-        }
-      };
-      setInterval(consoleCheck, 2000);
-    })();
-
-    // ── Fix Customer Location Pin Saving ───────────────────────────────────
+// ── Fix Customer Location Pin Saving ───────────────────────────────────
     if (locateButton) {
       locateButton.addEventListener("click", () => {
         if (!navigator.geolocation) {
