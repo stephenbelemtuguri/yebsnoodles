@@ -2094,7 +2094,7 @@
             </div>
             <div id="approvalStatusIndicator" style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:0.9rem;color:#6b7280;margin-bottom:20px;">
               <div style="width:10px;height:10px;border-radius:50%;background:#fbbf24;animation:pulse 1.8s infinite;flex-shrink:0;"></div>
-              <span>Checking for approval every 8 seconds…</span>
+              <span>Checking for approval every 5 seconds…</span>
             </div>
             <div id="approvalApprovedBanner" style="display:none;background:#f0fdf4;border:2px solid #22c55e;border-radius:12px;padding:16px;margin-bottom:16px;font-size:0.95rem;color:#166534;font-weight:700;">
               ✅ Approved! Your login panel is now ready.
@@ -2140,24 +2140,50 @@
         } catch(e) {}
       }
 
-      async function checkApproval() {
+      let _approvalMisses = 0;
+
+      async function checkApproval(manual) {
         if (!driverId) return;
+        const ind = document.getElementById('approvalStatusIndicator');
         try {
-          const r = await fetch(`/api/drivers/${encodeURIComponent(driverId)}/approval`, { cache: 'no-store' });
-          const d = await r.json();
-          if (d.approvalStatus === 'approved') { onApprovalGranted(); }
-          else if (d.approvalStatus === 'rejected') {
-            if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
-            const ind = document.getElementById('approvalStatusIndicator');
-            if (ind) ind.innerHTML = '<span style="color:#b91c1c;font-weight:700;">✖ Not approved. Contact YEBS Noodles for assistance.</span>';
+          const r = await fetch('/api/drivers/' + encodeURIComponent(driverId) + '/approval?ts=' + Date.now(), { cache: 'no-store' });
+          const d = await r.json().catch(() => ({}));
+
+          if (r.status === 404) {
+            if (ind) ind.innerHTML = '<span style="color:#b91c1c;font-weight:700;">We could not find your application on the server. Tap "Check Approval Now"; if it still fails, register again.</span>';
+            return;
           }
-        } catch(e) {}
+          if (!r.ok || d.success === false) throw new Error(d.message || ('Server said ' + r.status));
+
+          _approvalMisses = 0;
+          if (d.approvalStatus === 'approved') {
+            onApprovalGranted();
+            return;
+          }
+          if (d.approvalStatus === 'rejected') {
+            if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
+            if (ind) ind.innerHTML = '<span style="color:#b91c1c;font-weight:700;">Not approved. Contact YEBS Noodles for assistance.</span>';
+            return;
+          }
+          if (ind) {
+            ind.innerHTML = '<div style="width:10px;height:10px;border-radius:50%;background:#fbbf24;animation:pulse 1.8s infinite;flex-shrink:0;"></div>' +
+              '<span>Waiting for admin approval &mdash; checking every 5 seconds…</span>';
+          }
+          if (manual && ind) {
+            ind.innerHTML = '<span style="color:#92400e;font-weight:700;">Still pending. The admin has not approved this account yet.</span>';
+          }
+        } catch (e) {
+          _approvalMisses += 1;
+          if (ind && _approvalMisses >= 2) {
+            ind.innerHTML = '<span style="color:#b45309;font-weight:700;">Connection problem &mdash; still trying. Tap "Check Approval Now" to retry.</span>';
+          }
+        }
       }
 
       if (_approvalPollTimer) clearInterval(_approvalPollTimer);
       if (driverId) {
         checkApproval();
-        _approvalPollTimer = setInterval(checkApproval, 8000);
+        _approvalPollTimer = setInterval(checkApproval, 5000);
         // SSE real-time push
         if (typeof EventSource !== 'undefined') {
           const es = new EventSource(`/api/sse/driver/${encodeURIComponent(driverId)}`);
@@ -2166,7 +2192,7 @@
         }
       }
 
-      document.getElementById('approvalCheckNowBtn').onclick = () => checkApproval();
+      document.getElementById('approvalCheckNowBtn').onclick = () => checkApproval(true);
       document.getElementById('approvalGoToLoginBtn').onclick = () => {
         if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
         overlay.style.display = 'none';

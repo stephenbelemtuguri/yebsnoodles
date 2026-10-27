@@ -376,8 +376,66 @@
     .location-button { min-height: 36px; padding: 0 14px; border: 1px solid #cfd8cc; border-radius: 6px; background: #f4f7f0; color: var(--forest); font-size: .78rem; font-weight: 700; }
     .location-button:hover { background: #e9efe5; }
     .location-status { color: var(--muted); font-size: .75rem; }
+    .gps-preview { margin-top: 10px; padding: 12px 13px; border: 1.5px solid #bbf7d0; border-radius: 10px; background: #f0fdf4; }
+    .gps-preview[hidden] { display: none; }
+    .gps-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+    .gps-ok { font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #166534; }
+    .gps-clear { border: 0; background: transparent; color: #b91c1c; font-size: .72rem; font-weight: 700; text-decoration: underline; }
+    .gps-coords { font-family: ui-monospace, monospace; font-size: .95rem; font-weight: 700; color: #14532d; }
+    .gps-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+    .gps-links a { font-size: .75rem; font-weight: 700; color: #15803d; text-decoration: underline; }
+    .gps-note { margin-top: 5px; font-size: .7rem; color: #166534; }
     .order-submit { width: 100%; margin-top: 10px; font-size: 1rem; padding: 14px; }
     .clear-cart { border: 0; background: transparent; color: #9a5441; font-size: .76rem; font-weight: 700; }
+
+    /* Payment chooser (Pay now vs Pay on delivery) */
+    .pay-chooser { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 600px) { .pay-chooser { grid-template-columns: 1fr; } }
+    .pay-option { position: relative; display: flex; align-items: center; gap: 10px; margin: 0; padding: 13px 14px; border: 1.5px solid #deded4; border-radius: 10px; background: white; cursor: pointer; transition: border-color .15s, box-shadow .15s, background .15s; }
+    .pay-option:hover { border-color: #b9c9b4; }
+    .pay-option input { position: absolute; opacity: 0; width: 1px; height: 1px; min-height: 0; margin: 0; }
+    .pay-option .pay-dot { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #c3cec0; background: white; display: grid; place-items: center; }
+    .pay-option .pay-dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: transparent; }
+    .pay-option-body { display: flex; flex-direction: column; gap: 2px; }
+    .pay-option-body strong { font-size: .88rem; color: var(--forest); }
+    .pay-option-body small { font-size: .72rem; color: var(--muted); font-weight: 500; }
+    .pay-option.selected { border-color: var(--forest); background: #f3f8f1; box-shadow: 0 0 0 3px rgb(23 61 48 / 8%); }
+    .pay-option.selected .pay-dot { border-color: var(--forest); }
+    .pay-option.selected .pay-dot::after { background: var(--forest); }
+
+    .pay-networks { margin-top: 14px; padding: 16px; border: 1.5px dashed #cfe0c9; border-radius: 12px; background: #fbfdf9; }
+    .pay-networks[hidden] { display: none; }
+    .pay-networks-title { margin: 0 0 10px; font-size: .8rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #4b5c4b; }
+    .pay-network-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    @media (max-width: 600px) { .pay-network-grid { grid-template-columns: 1fr; } }
+    .pay-network { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 12px; border: 1.5px solid #deded4; border-radius: 10px; background: white; cursor: pointer; text-align: left; font: inherit; transition: transform .12s, border-color .15s, box-shadow .15s; }
+    .pay-network:hover { transform: translateY(-1px); border-color: #b9c9b4; }
+    .pay-network.selected { border-color: var(--forest); box-shadow: 0 0 0 3px rgb(23 61 48 / 10%); }
+    .pay-network .pay-net-name { font-size: .82rem; font-weight: 800; color: var(--forest); line-height: 1.25; }
+    .pay-network .pay-net-ussd { font-family: ui-monospace, monospace; font-size: .78rem; font-weight: 700; color: #6b7280; }
+    .pay-network .pay-net-badge { margin-top: 3px; font-size: .64rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #166534; background: #dcfce7; border-radius: 999px; padding: 2px 7px; }
+    .pay-wallet { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 11px 13px; border-radius: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; }
+    .pay-wallet span { display: block; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: #15803d; font-weight: 800; }
+    .pay-wallet strong { display: block; font-size: 1.05rem; color: #14532d; font-family: ui-monospace, monospace; letter-spacing: .02em; }
+    .pay-wallet small { display: block; font-size: .7rem; color: #166534; }
+    .pay-copy { min-height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid #86efac; background: white; color: #166534; font-size: .74rem; font-weight: 800; }
+    .pay-status { margin-top: 10px; font-size: .8rem; line-height: 1.5; color: var(--muted); }
+    .pay-hint { margin: 8px 0 0; font-size: .72rem; color: var(--muted); line-height: 1.5; }
+
+    /* Pay now modal */
+    .pay-modal-card { background: white; border-radius: 18px; width: min(520px, 100%); max-height: 92vh; overflow: auto; box-shadow: 0 24px 60px rgba(0,0,0,.45); animation: modalSlideUp .3s ease-out; }
+    .pay-modal-head { background: var(--forest); color: white; padding: 20px 22px; position: relative; }
+    .pay-modal-head h3 { margin: 0 0 4px; font-family: var(--serif); font-size: 1.3rem; color: var(--gold); }
+    .pay-modal-head p { margin: 0; font-size: .8rem; color: #c9dccd; }
+    .pay-modal-close { position: absolute; top: 14px; right: 16px; background: transparent; border: 0; color: white; font-size: 1.5rem; line-height: 1; cursor: pointer; }
+    .pay-modal-body { padding: 20px 22px 24px; }
+    .pay-amount { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .pay-amount .amount { font-size: 1.7rem; font-weight: 900; color: var(--forest); }
+    .pay-amount .ref { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--muted); }
+    .pay-step { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid #f0eee7; }
+    .pay-step .num { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; background: var(--forest); color: white; font-size: .72rem; font-weight: 800; display: grid; place-items: center; }
+    .pay-step .step-text { font-size: .82rem; color: #374151; line-height: 1.5; }
+    .pay-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 
     /* ================================================= */
     /* LIVE TRACKING DRAWER / MODAL (BOLT / YANGO STYLE) */
@@ -855,19 +913,57 @@
               <div class="field field-full" id="addressField">
                 <label for="location">Delivery address / area in Accra <span class="required">*</span></label>
                 <input id="location" name="location" autocomplete="street-address" placeholder="Area, street, landmark (e.g. Ring Road, Ridge, Circle)" required>
+                <div id="gpsPinPreview" class="gps-preview" hidden></div>
                 <div class="location-tools">
                   <button class="location-button" id="locateButton" type="button">⌖ Share my GPS pin</button>
+                  <button class="location-button" id="pasteMapLinkBtn" type="button">Paste Google/Apple Maps link</button>
                   <span class="location-status" id="locationStatus">Share exact pin for instant driver navigation.</span>
                 </div>
               </div>
               <div class="field field-full">
-                <label for="payment">Payment preference <span class="required">*</span></label>
-                <select id="payment" name="payment">
-                  <option value="MTN Mobile Money">MTN Mobile Money — pay now, instant auto-verify</option>
-                  <option value="Telecel Cash">Telecel Cash — pay now, instant auto-verify</option>
-                  <option value="AT Money">AT Money — pay now, instant auto-verify</option>
-                  <option value="Pay on Delivery (Cash)">Pay on Delivery — cash to rider at handover</option>
-                </select>
+                <label>Payment preference <span class="required">*</span></label>
+                <div class="pay-chooser" id="paymentChooser" role="radiogroup" aria-label="Payment preference">
+                  <label class="pay-option selected" data-paymode="now">
+                    <input type="radio" name="payMode" id="payModeNow" value="now" checked>
+                    <span class="pay-dot" aria-hidden="true"></span>
+                    <span class="pay-option-body">
+                      <strong>Pay now</strong>
+                      <small>MTN MoMo &middot; Telecel Cash &middot; AT Money</small>
+                    </span>
+                  </label>
+                  <label class="pay-option" data-paymode="delivery">
+                    <input type="radio" name="payMode" id="payModeDelivery" value="delivery">
+                    <span class="pay-dot" aria-hidden="true"></span>
+                    <span class="pay-option-body">
+                      <strong>Pay on delivery</strong>
+                      <small>Cash to the rider at handover</small>
+                    </span>
+                  </label>
+                </div>
+
+                <div class="pay-networks" id="paymentNetworkPanel">
+                  <p class="pay-networks-title">Choose your mobile money network</p>
+                  <div class="pay-network-grid" id="paymentNetworkTiles" role="radiogroup" aria-label="Mobile money network"></div>
+
+                  <div class="pay-wallet">
+                    <div>
+                      <span>Pay to</span>
+                      <strong id="payWalletNumber">055 910 3452</strong>
+                      <small id="payWalletName">YEBS Noodles / Stephen</small>
+                    </div>
+                    <button type="button" id="copyPayNumberBtn" class="pay-copy">Copy number</button>
+                  </div>
+
+                  <div class="field" style="margin:12px 0 0;">
+                    <label for="payerPhone">Mobile money number paying <span class="required">*</span></label>
+                    <input id="payerPhone" name="payerPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. 024 123 4567">
+                  </div>
+                  <div id="paymentPanelStatus" class="pay-status" role="status" aria-live="polite"></div>
+                  <p class="pay-hint">You will get the exact USSD steps and an instant confirmation screen right after placing the order. Every cedi goes straight to the YEBS wallet &mdash; no card needed.</p>
+                </div>
+
+                <input type="hidden" id="payment" name="payment" value="MTN Mobile Money">
+                <input type="hidden" id="paymentNetwork" name="paymentNetwork" value="mtn">
               </div>
               <div class="field field-full">
                 <label for="notes">Anything else we should know?</label>
@@ -1051,10 +1147,10 @@
               ⚡ Dial *170# (MTN)
             </a>
             <a href="tel:*110%23" class="button" style="flex:1; min-width:130px; min-height:36px; font-size:0.78rem; background:#ef4444; color:white; font-weight:800; border:0; display:flex; align-items:center; justify-content:center; gap:6px;">
-              ⚡ Dial *110# (Telecel)
+              ⚡ Dial *110# (Telecel / Vodafone)
             </a>
             <a href="tel:*110%23" class="button" style="flex:1; min-width:130px; min-height:36px; font-size:0.78rem; background:#0ea5e9; color:white; font-weight:800; border:0; display:flex; align-items:center; justify-content:center; gap:6px;">
-              ⚡ Dial *110# (AT)
+              ⚡ Dial *110# (AT Money)
             </a>
           </div>
           <div style="font-size:0.72rem; color:#15803d; margin-top:5px;">
@@ -1223,6 +1319,9 @@
       resolveDriverPhone,
       apiUploadMomoReceipt,
       apiPayMomo,
+      apiRequestMomo,
+      apiMomoStatus,
+      apiFetchPaymentNetworks,
       apiFetchOrder,
       apiFetchActiveDrivers,
       syncOrdersFromServer,
@@ -1585,26 +1684,6 @@
       `).join('');
     }
 
-    locateButton.addEventListener('click', () => {
-      if (!navigator.geolocation) {
-        locationStatus.textContent = "Geolocation is not supported by your browser. Enter address above.";
-        return;
-      }
-      locationStatus.textContent = "Fetching your GPS pin…";
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          customerGpsPin = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          locationStatus.textContent = `GPS pin captured: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
-          if (!locationInput.value) {
-            locationInput.value = `GPS Pin: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)} (Accra)`;
-          }
-        },
-        err => {
-          locationStatus.textContent = "Could not get automatic GPS pin. Please enter your street / landmark above.";
-        },
-        { enableHighAccuracy: true, timeout: 8000 }
-      );
-    });
 
     function showOrderIdModal(order) {
       if (!order || !orderIdModal) return;
@@ -1779,6 +1858,22 @@
 
       const formData = new FormData(checkoutForm);
       const fulfilment = formData.get("fulfilment") || "Delivery";
+
+      // "Pay now" needs a network and the wallet number that will pay.
+      const payMode = currentPayMode();
+      const payNetworkHidden = document.getElementById("paymentNetwork");
+      const payNetwork = payMode === "now" ? ((payNetworkHidden && payNetworkHidden.value) || "mtn") : "cash";
+      const payerPhoneEl = document.getElementById("payerPhone");
+      const payerPhone = payerPhoneEl ? payerPhoneEl.value.trim() : "";
+      if (payMode === "now") {
+        const payerDigits = payerPhone.replace(/\D/g, "").replace(/^233/, "0");
+        if (!/^0\d{9}$/.test(payerDigits)) {
+          formFeedback.textContent = "Enter the mobile money number that will pay (e.g. 024 123 4567), or choose Pay on delivery.";
+          if (payerPhoneEl) payerPhoneEl.focus();
+          return;
+        }
+      }
+
       const subtotal = entries.reduce((sum, item) => sum + (item.price * item.quantity), 0);
       const deliveryFee = fulfilment === "Delivery" ? 15 : 0;
       const total = subtotal + deliveryFee;
@@ -1790,7 +1885,9 @@
         location: formData.get("location"),
         mapPin: customerGpsPin || { lat: 5.5650, lng: -0.2100 },
         timing: formData.get("timing"),
-        payment: formData.get("payment"),
+        payment: payMode === "now" ? payNetworkById(payNetwork).label : "Pay on Delivery (Cash)",
+        paymentNetwork: payNetwork,
+        payerPhone: payMode === "now" ? payerPhone : null,
         notes: formData.get("notes"),
         items: entries,
         subtotal,
@@ -1853,6 +1950,14 @@
       formFeedback.style.color = "#166534";
       formFeedback.textContent = `✅ Order ${newOrder.id} placed! Your Order ID is also your 4-digit collection PIN: ${newOrder.pickupPin}.`;
       showOrderIdModal(newOrder);
+
+      // "Pay now" customers go straight to the MoMo panel so the order is
+      // never left unpaid by accident. Cash orders just see the Order ID.
+      if (payMode === "now" && newOrder.paymentMode !== "cash") {
+        openPayNowModal(newOrder, payNetwork);
+      } else {
+        formFeedback.textContent = `Order ${newOrder.id} placed. Pay GH\u20b5${Number(newOrder.total).toFixed(2)} cash to the rider at handover.`;
+      }
     });
 
     // ===================================
@@ -2213,7 +2318,7 @@
     // ----------------------------------------------------
     // MoMo receipt upload (customer side)
     // ----------------------------------------------------
-    function fileToCompressedDataUrl(file, maxSize = 900, quality = 0.78) {
+    function compressImageFile(file, maxSize = 900, quality = 0.78) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onerror = () => reject(new Error("Could not read the file."));
@@ -2254,7 +2359,7 @@
 
         try {
           let dataUrl = null;
-          if (file) dataUrl = await fileToCompressedDataUrl(file);
+          if (file) dataUrl = await compressImageFile(file);
 
           const amountValue = momoAmountInput && momoAmountInput.value !== ""
             ? Number(momoAmountInput.value)
@@ -2438,41 +2543,630 @@
     initPermissionsCheck();
 
 // ── Fix Customer Location Pin Saving ───────────────────────────────────
-    if (locateButton) {
-      locateButton.addEventListener("click", () => {
+    // ── Delivery pin tools: real GPS + Google/Apple Maps links ──────────
+    // One single source of truth: `customerGpsPin` is what the order sends
+    // as `mapPin`, so the rider navigates to the exact shared coordinate.
+    function parseCoordsFromText(text) {
+      const value = String(text || '');
+      const patterns = [
+        /@(-?\d{1,2}\.\d{3,}),\s*(-?\d{1,3}\.\d{3,})/,
+        /[?&](?:q|query|ll|destination|daddr|center|viewpoint)=(-?\d{1,2}\.\d{3,}),\s*(-?\d{1,3}\.\d{3,})/,
+        /!3d(-?\d{1,2}\.\d{3,})!4d(-?\d{1,3}\.\d{3,})/,
+        /(?:^|\s)(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})(?:$|\s)/
+      ];
+      for (let i = 0; i < patterns.length; i++) {
+        const m = value.match(patterns[i]);
+        if (!m) continue;
+        const lat = Number(m[1]);
+        const lng = Number(m[2]);
+        if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+          return { lat, lng };
+        }
+      }
+      return null;
+    }
+
+    function setLocationStatus(text, tone) {
+      const el = document.getElementById('locationStatus');
+      if (!el) return;
+      el.textContent = text;
+      el.style.color = tone === 'error' ? '#b91c1c' : (tone === 'ok' ? '#166534' : '');
+    }
+
+    function renderGpsPreview() {
+      const box = document.getElementById('gpsPinPreview');
+      if (!box) return;
+      if (!customerGpsPin || !Number.isFinite(customerGpsPin.lat) || !Number.isFinite(customerGpsPin.lng)) {
+        box.hidden = true;
+        box.innerHTML = '';
+        return;
+      }
+      const lat = customerGpsPin.lat.toFixed(5);
+      const lng = customerGpsPin.lng.toFixed(5);
+      const gmaps = 'https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lng;
+      const amaps = 'https://maps.apple.com/?ll=' + lat + ',' + lng + '&q=YEBS%20Noodles%20delivery&z=17';
+      const directions = 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lng;
+      box.hidden = false;
+      box.innerHTML =
+        '<div class="gps-preview-head">' +
+          '<span class="gps-ok">Exact delivery pin saved</span>' +
+          '<button type="button" class="gps-clear" id="clearGpsPinBtn">Remove pin</button>' +
+        '</div>' +
+        '<div class="gps-coords">' + lat + ', ' + lng + '</div>' +
+        '<div class="gps-links">' +
+          '<a href="' + gmaps + '" target="_blank" rel="noopener">Open in Google Maps</a>' +
+          '<a href="' + amaps + '" target="_blank" rel="noopener">Open in Apple Maps</a>' +
+          '<a href="' + directions + '" target="_blank" rel="noopener">Rider directions</a>' +
+        '</div>' +
+        '<div class="gps-note">Your rider navigates to this exact coordinate — not just the typed address.</div>';
+      const clearBtn = document.getElementById('clearGpsPinBtn');
+      if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+          customerGpsPin = null;
+          renderGpsPreview();
+          setLocationStatus('Pin removed. You can share it again or keep the typed address.', '');
+        });
+      }
+    }
+
+    function setDeliveryPin(pin, source) {
+      if (!pin || !Number.isFinite(pin.lat) || !Number.isFinite(pin.lng)) return;
+      customerGpsPin = { lat: pin.lat, lng: pin.lng, source: source || 'gps', at: new Date().toISOString() };
+      renderGpsPreview();
+    }
+
+    function geolocationFailureMessage(err) {
+      if (!window.isSecureContext) {
+        return 'GPS needs a secure https:// connection. Paste a Google/Apple Maps link instead.';
+      }
+      if (!err) return 'Could not read your location. Paste a Google/Apple Maps link or type your landmark.';
+      if (err.code === 1) return 'Location is blocked for this site. Tap the padlock in your address bar → Location → Allow, then tap Share my GPS pin again.';
+      if (err.code === 2) return 'Your phone could not get a GPS fix. Step outside or near a window, or paste a Maps link instead.';
+      if (err.code === 3) return 'GPS timed out. Try again, or paste a Google/Apple Maps link instead.';
+      return err.message || 'Could not read your location. Paste a Maps link or type your landmark.';
+    }
+
+    function initLocationPinTools() {
+      const btn = document.getElementById('locateButton');
+      const pasteBtn = document.getElementById('pasteMapLinkBtn');
+      const input = document.getElementById('location');
+      if (!btn || !input) return;
+
+      // A pasted Maps link or "lat,lng" in the address box is a real pin too.
+      const readAddressForPin = () => {
+        const parsed = parseCoordsFromText(input.value);
+        if (parsed && (!customerGpsPin || customerGpsPin.lat !== parsed.lat || customerGpsPin.lng !== parsed.lng)) {
+          setDeliveryPin(parsed, 'map-link');
+          setLocationStatus('Pin found in your shared location — locked to the exact spot.', 'ok');
+        }
+        return parsed;
+      };
+      input.addEventListener('input', readAddressForPin);
+      input.addEventListener('blur', readAddressForPin);
+
+      btn.addEventListener('click', () => {
         if (!navigator.geolocation) {
-          if (locationStatus) locationStatus.textContent = "❌ Geolocation not supported by your browser.";
+          setLocationStatus('This browser has no GPS support. Paste a Google/Apple Maps link instead.', 'error');
           return;
         }
-        if (locationStatus) locationStatus.textContent = "📍 Getting your location…";
-        locateButton.disabled = true;
+        const originalLabel = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Getting your exact pin…';
+        setLocationStatus('Asking your phone for an exact GPS fix…', '');
+
+        let settled = false;
+        const finish = () => {
+          settled = true;
+          btn.disabled = false;
+          btn.textContent = originalLabel;
+        };
+        const guard = setTimeout(() => {
+          if (settled) return;
+          finish();
+          setLocationStatus('GPS is taking too long. Tap again, or paste a Google/Apple Maps link.', 'error');
+        }, 20000);
 
         navigator.geolocation.getCurrentPosition(
           (pos) => {
-            customerGpsPin = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-            if (locationInput) {
-              locationInput.value = `Lat: ${pos.coords.latitude.toFixed(5)}, Lng: ${pos.coords.longitude.toFixed(5)}`;
-            }
-            if (locationStatus) {
-              locationStatus.textContent = "✅ Location pinned! This exact GPS coordinate will be sent to your rider.";
-              locationStatus.style.color = "#166534";
-            }
-            locateButton.disabled = false;
-            locateButton.textContent = "✅ Location Pinned";
-            setTimeout(() => { locateButton.textContent = "📍 Use my current location"; }, 3000);
+            if (settled) return;
+            clearTimeout(guard);
+            setDeliveryPin({ lat: pos.coords.latitude, lng: pos.coords.longitude }, 'gps');
+            const accuracy = Number(pos.coords.accuracy || 0);
+            setLocationStatus(
+              'Exact pin captured' + (accuracy ? ' (±' + Math.round(accuracy) + ' m)' : '') + '. Your rider will navigate straight to this spot.',
+              'ok'
+            );
+            btn.textContent = 'Pin saved';
+            setTimeout(() => { btn.textContent = originalLabel; }, 2200);
+            settled = true;
+            btn.disabled = false;
           },
           (err) => {
-            if (locationStatus) {
-              locationStatus.textContent = `❌ ${err.message || "Could not access your location. Please enable location permissions."}`;
-              locationStatus.style.color = "#b91c1c";
-            }
-            locateButton.disabled = false;
+            if (settled) return;
+            clearTimeout(guard);
+            finish();
+            setLocationStatus(geolocationFailureMessage(err), 'error');
           },
-          { enableHighAccuracy: true, timeout: 8000 }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
       });
+
+      if (pasteBtn) {
+        pasteBtn.addEventListener('click', async () => {
+          let text = '';
+          try {
+            text = await navigator.clipboard.readText();
+          } catch (e) {
+            text = window.prompt('Paste your Google Maps or Apple Maps link:') || '';
+          }
+          text = String(text || '').trim();
+          if (!text) {
+            setLocationStatus('Copy the shared location first (Maps → Share → Copy link), then tap Paste Maps link.', 'error');
+            return;
+          }
+          const parsed = parseCoordsFromText(text);
+          if (!parsed) {
+            setLocationStatus('That link has no coordinates. In Google Maps tap Share → Copy link and paste the full link.', 'error');
+            return;
+          }
+          const existing = input.value.trim();
+          if (/^https?:\/\//i.test(text) || !existing) {
+            input.value = 'Maps pin: ' + parsed.lat.toFixed(5) + ', ' + parsed.lng.toFixed(5);
+          }
+          setDeliveryPin(parsed, 'map-link');
+          setLocationStatus('Pin read from the shared Maps link — exact delivery point saved.', 'ok');
+          input.dispatchEvent(new Event('change'));
+        });
+      }
+
+      renderGpsPreview();
     }
+
+    initLocationPinTools();
+
+    // ── Payment preference + "Pay now" panel ────────────────────────────
+    // The chosen network decides both the USSD code and (when MTN API
+    // credentials are configured on the server) a real payment prompt.
+    let PAY_NETWORKS = [
+      { id: 'mtn', label: 'MTN Mobile Money', shortLabel: 'MTN MoMo', ussd: '*170#', dial: '*170', color: '#facc15', textColor: '#713f12', apiReady: false },
+      { id: 'telecel', label: 'Telecel Cash (formerly Vodafone Cash)', shortLabel: 'Telecel Cash', ussd: '*110#', dial: '*110', color: '#ef4444', textColor: '#ffffff', apiReady: false },
+      { id: 'at', label: 'AT Money (AirtelTigo)', shortLabel: 'AT Money', ussd: '*110#', dial: '*110', color: '#0ea5e9', textColor: '#ffffff', apiReady: false }
+    ];
+    let PAY_WALLET = { number: MOMO_CONFIG.number, label: MOMO_CONFIG.displayNumber, merchant: MOMO_CONFIG.merchantName };
+    let selectedPayNetwork = 'mtn';
+    let currentPayOrder = null;
+    let payPollTimer = null;
+
+    function currentPayMode() {
+      const checked = document.querySelector('input[name="payMode"]:checked');
+      return checked ? checked.value : 'now';
+    }
+
+    function payNetworkById(id) {
+      return PAY_NETWORKS.find(n => n.id === id) || PAY_NETWORKS[0];
+    }
+
+    function networkTileHtml(net, selected, compact) {
+      const badge = net.apiReady ? '<span class="pay-net-badge">Instant prompt</span>' : '';
+      return '<button type="button" class="pay-network' + (selected ? ' selected' : '') + '" data-net="' + net.id + '"' +
+        ' role="radio" aria-checked="' + (selected ? 'true' : 'false') + '" style="' + (compact ? 'padding:10px;' : '') + '">' +
+        '<span class="pay-net-name">' + net.shortLabel + '</span>' +
+        '<span class="pay-net-ussd">' + net.ussd + '</span>' +
+        badge +
+        '</button>';
+    }
+
+    function renderNetworkTiles() {
+      const main = document.getElementById('paymentNetworkTiles');
+      if (main) {
+        main.innerHTML = PAY_NETWORKS.map(n => networkTileHtml(n, n.id === selectedPayNetwork, false)).join('');
+        main.querySelectorAll('.pay-network').forEach(btn => {
+          btn.addEventListener('click', () => selectPayNetwork(btn.dataset.net));
+        });
+      }
+      const modalRow = document.getElementById('payNowNetworkRow');
+      if (modalRow) {
+        modalRow.innerHTML = PAY_NETWORKS.map(n => networkTileHtml(n, n.id === selectedPayNetwork, true)).join('');
+        modalRow.querySelectorAll('.pay-network').forEach(btn => {
+          btn.addEventListener('click', () => selectPayNetwork(btn.dataset.net));
+        });
+      }
+      document.querySelectorAll('[data-pay-wallet]').forEach(el => { el.textContent = PAY_WALLET.label; });
+      const numEl = document.getElementById('payWalletNumber');
+      if (numEl) numEl.textContent = PAY_WALLET.label;
+      const nameEl = document.getElementById('payWalletName');
+      if (nameEl) nameEl.textContent = PAY_WALLET.merchant;
+    }
+
+    function selectPayNetwork(id) {
+      if (!PAY_NETWORKS.some(n => n.id === id)) return;
+      selectedPayNetwork = id;
+      const net = payNetworkById(id);
+      const hidden = document.getElementById('paymentNetwork');
+      if (hidden) hidden.value = id;
+      if (currentPayMode() === 'now') {
+        const paymentHidden = document.getElementById('payment');
+        if (paymentHidden) paymentHidden.value = net.label;
+      }
+      renderNetworkTiles();
+      applyPayNetworkToModal();
+      const status = document.getElementById('paymentPanelStatus');
+      if (status) {
+        status.style.color = '';
+        status.textContent = net.shortLabel + ' selected — dial ' + net.ussd + ' to pay, or send the prompt from the next screen.';
+      }
+    }
+
+    function updatePaymentPreferenceUi() {
+      const mode = currentPayMode();
+      document.querySelectorAll('.pay-option').forEach(opt => {
+        const input = opt.querySelector('input[type="radio"]');
+        opt.classList.toggle('selected', !!(input && input.checked));
+      });
+      const panel = document.getElementById('paymentNetworkPanel');
+      if (panel) panel.hidden = mode !== 'now';
+      const paymentHidden = document.getElementById('payment');
+      const networkHidden = document.getElementById('paymentNetwork');
+      if (mode === 'delivery') {
+        if (paymentHidden) paymentHidden.value = 'Pay on Delivery (Cash)';
+        if (networkHidden) networkHidden.value = 'cash';
+      } else {
+        if (paymentHidden) paymentHidden.value = payNetworkById(selectedPayNetwork).label;
+        if (networkHidden) networkHidden.value = selectedPayNetwork;
+      }
+    }
+
+    function bindPaymentPreference() {
+      document.querySelectorAll('input[name="payMode"]').forEach(radio => {
+        radio.addEventListener('change', updatePaymentPreferenceUi);
+      });
+      const copyBtn = document.getElementById('copyPayNumberBtn');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(PAY_WALLET.number);
+            copyBtn.textContent = 'Copied';
+            setTimeout(() => { copyBtn.textContent = 'Copy number'; }, 1800);
+          } catch (e) {
+            window.prompt('Copy the YEBS MoMo number:', PAY_WALLET.number);
+          }
+        });
+      }
+      const phone = document.getElementById('payerPhone');
+      if (phone) {
+        phone.addEventListener('input', () => {
+          const digits = phone.value.replace(/\D/g, '').replace(/^233/, '0');
+          if (digits.length === 10) {
+            const prefix = digits.slice(0, 3);
+            const guess = PAY_NETWORKS.find(n => {
+              if (n.id === 'mtn') return ['024', '054', '055', '059', '025'].includes(prefix);
+              if (n.id === 'telecel') return ['020', '050'].includes(prefix);
+              return ['026', '027', '056', '057'].includes(prefix);
+            });
+            if (guess && guess.id !== selectedPayNetwork) selectPayNetwork(guess.id);
+          }
+        });
+      }
+      renderNetworkTiles();
+      updatePaymentPreferenceUi();
+      loadPaymentNetworks();
+    }
+
+    async function loadPaymentNetworks() {
+      try {
+        const data = await apiFetchPaymentNetworks();
+        if (data && Array.isArray(data.networks) && data.networks.length) {
+          PAY_NETWORKS = data.networks.map(n => ({
+            id: n.id,
+            label: n.label || n.shortLabel,
+            shortLabel: n.shortLabel || n.label,
+            ussd: n.ussd || '*170#',
+            dial: n.dial || (n.ussd || '*170#').replace(/#$/, ''),
+            color: n.color || '#facc15',
+            textColor: n.textColor || '#713f12',
+            apiReady: !!n.apiReady
+          }));
+        }
+        if (data && data.payTo) {
+          PAY_WALLET = { number: data.payTo, label: data.payToLabel || data.payTo, merchant: data.merchant || MOMO_CONFIG.merchantName };
+        }
+      } catch (e) { /* keep local defaults */ }
+      renderNetworkTiles();
+      updatePaymentPreferenceUi();
+    }
+
+    // ---------- Pay now modal ----------
+    function applyPayNetworkToModal() {
+      const net = payNetworkById(selectedPayNetwork);
+      const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+      set('payNowNetworkName', net.shortLabel);
+      set('payNowUssd', net.ussd);
+      set('payNowStepWallet', PAY_WALLET.label);
+      set('payNowWalletNumber', PAY_WALLET.label);
+      set('payNowWalletName', PAY_WALLET.merchant);
+      const dial = document.getElementById('payNowDialBtn');
+      if (dial) {
+        dial.href = 'tel:' + encodeURIComponent(net.dial + '#');
+        dial.textContent = 'Dial ' + net.ussd + ' (' + net.shortLabel + ')';
+        dial.style.background = net.color;
+        dial.style.color = net.textColor;
+      }
+      const push = document.getElementById('payNowPushBtn');
+      if (push) {
+        push.style.display = net.id === 'mtn' && net.apiReady ? 'block' : 'none';
+      }
+      const stepRef = document.getElementById('payNowStepRef');
+      if (stepRef && currentPayOrder) stepRef.textContent = currentPayOrder.id;
+      const stepAmount = document.getElementById('payNowStepAmount');
+      if (stepAmount && currentPayOrder) stepAmount.textContent = 'GH₵' + Number(currentPayOrder.total || 0).toFixed(2);
+    }
+
+    function setPayNowStatus(text, tone) {
+      const el = document.getElementById('payNowStatus');
+      if (!el) return;
+      el.textContent = text;
+      el.style.color = tone === 'error' ? '#b91c1c' : (tone === 'ok' ? '#166534' : '#6b7280');
+    }
+
+    function setPushStatus(text, tone) {
+      const el = document.getElementById('payNowPushStatus');
+      if (!el) return;
+      el.textContent = text;
+      el.style.color = tone === 'error' ? '#b91c1c' : '#15803d';
+    }
+
+    function stopPayPolling() {
+      if (payPollTimer) { clearInterval(payPollTimer); payPollTimer = null; }
+    }
+
+    function markPayNowPaid(message) {
+      stopPayPolling();
+      setPayNowStatus(message || 'Payment verified. Your order is fully paid.', 'ok');
+      setPushStatus('', '');
+      const confirmBtn = document.getElementById('payNowConfirmBtn');
+      if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Payment received ✔'; }
+      const laterBtn = document.getElementById('payNowLaterBtn');
+      if (laterBtn) laterBtn.textContent = 'View my order & live tracking';
+      playChime('arrival');
+      if (currentPayOrder && currentPayOrder.id) {
+        apiFetchOrder(currentPayOrder.id).catch(() => {});
+      }
+    }
+
+    function openPayNowModal(order, network) {
+      const modal = document.getElementById('payNowModal');
+      if (!modal || !order) return;
+      currentPayOrder = order;
+      if (network && PAY_NETWORKS.some(n => n.id === network)) selectedPayNetwork = network;
+      else if (order.paymentNetwork && PAY_NETWORKS.some(n => n.id === order.paymentNetwork)) selectedPayNetwork = order.paymentNetwork;
+      currentlyTrackedOrderId = order.id;
+
+      const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+      set('payNowOrderId', order.id);
+      set('payNowRef', order.id);
+      set('payNowAmount', 'GH₵' + Number(order.total || 0).toFixed(2));
+      set('payNowStepRef', order.id);
+      set('payNowStepAmount', 'GH₵' + Number(order.total || 0).toFixed(2));
+      const confirmBtn = document.getElementById('payNowConfirmBtn');
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'I have paid — verify now'; }
+      const laterBtn = document.getElementById('payNowLaterBtn');
+      if (laterBtn) laterBtn.textContent = "I'll pay later on the tracking screen";
+      const txn = document.getElementById('payNowTxn');
+      if (txn) txn.value = '';
+      const receipt = document.getElementById('payNowReceipt');
+      if (receipt) receipt.value = '';
+      setPayNowStatus('', '');
+      setPushStatus('', '');
+      renderNetworkTiles();
+      applyPayNetworkToModal();
+      modal.style.display = 'flex';
+      const card = modal.querySelector('.pay-modal-card');
+      if (card) card.scrollTop = 0;
+      document.body.style.overflow = 'hidden';
+      stopPayPolling();
+    }
+
+    function closePayNowModal() {
+      const modal = document.getElementById('payNowModal');
+      if (!modal) return;
+      modal.style.display = 'none';
+      document.body.style.overflow = '';
+      stopPayPolling();
+    }
+
+    async function pushPaymentPrompt() {
+      if (!currentPayOrder) return;
+      const net = payNetworkById(selectedPayNetwork);
+      if (net.id !== 'mtn') {
+        setPushStatus('Automatic prompts are available on MTN. For ' + net.shortLabel + ' use ' + net.ussd + ' below.', 'error');
+        return;
+      }
+      const phoneInput = document.getElementById('payerPhone');
+      let phone = phoneInput ? phoneInput.value.replace(/\D/g, '').replace(/^233/, '0') : '';
+      if (!/^0\d{9}$/.test(phone)) {
+        phone = window.prompt('Enter the MTN MoMo number that will pay (e.g. 0241234567):') || '';
+        phone = phone.replace(/\D/g, '').replace(/^233/, '0');
+      }
+      if (!/^0\d{9}$/.test(phone)) {
+        setPushStatus('Enter a valid 10-digit MoMo number first.', 'error');
+        return;
+      }
+      const btn = document.getElementById('payNowPushBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Sending prompt…'; }
+      setPushStatus('Contacting MTN MoMo…', 'ok');
+      const res = await apiRequestMomo(currentPayOrder.id, { network: 'mtn', phone });
+      if (btn) { btn.disabled = false; btn.textContent = 'Send payment prompt'; }
+      if (!res || !res.success) {
+        setPushStatus((res && res.message) || 'Could not send the prompt.', 'error');
+        return;
+      }
+      if (res.mode === 'api' && res.requested) {
+        setPushStatus('Prompt sent to ' + phone + '. Approve it on your phone, then wait here — this screen updates automatically.', 'ok');
+        startPayPolling();
+      } else {
+        setPushStatus((res.message || 'Use the USSD code below, then confirm your transaction ID.') + ' Pay to ' + (res.payToLabel || PAY_WALLET.label) + ' with reference ' + (res.reference || currentPayOrder.id) + '.', 'ok');
+      }
+    }
+
+    function startPayPolling() {
+      stopPayPolling();
+      const status = document.getElementById('payNowStatus');
+      if (status) { status.textContent = 'Waiting for MTN approval…'; status.style.color = '#92400e'; }
+      let tries = 0;
+      payPollTimer = setInterval(async () => {
+        tries += 1;
+        if (!currentPayOrder) { stopPayPolling(); return; }
+        const res = await apiMomoStatus(currentPayOrder.id);
+        if (res && res.paid) {
+          markPayNowPaid(res.message || 'Payment confirmed by MTN.');
+          return;
+        }
+        if (res && res.requestStatus === 'failed') {
+          stopPayPolling();
+          setPayNowStatus('MTN declined the prompt. Try again or dial ' + payNetworkById(selectedPayNetwork).ussd + ' to pay.', 'error');
+          return;
+        }
+        if (tries >= 36) {
+          stopPayPolling();
+          setPayNowStatus('Still waiting for MTN. Once you approve the prompt, confirm with your transaction ID below.', 'error');
+        }
+      }, 5000);
+    }
+
+    async function confirmPayNow() {
+      if (!currentPayOrder) return;
+      const txnInput = document.getElementById('payNowTxn');
+      const ref = txnInput ? txnInput.value.trim() : '';
+      const fileInput = document.getElementById('payNowReceipt');
+      const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+      if (!ref && !file) {
+        setPayNowStatus('Enter the transaction ID from your MoMo SMS, or upload the receipt screenshot.', 'error');
+        return;
+      }
+      const btn = document.getElementById('payNowConfirmBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Verifying…'; }
+      setPayNowStatus('Checking your payment…', '');
+      try {
+        let dataUrl = null;
+        if (file) dataUrl = await compressImageFile(file);
+        const phoneInput = document.getElementById('payerPhone');
+        const sender = phoneInput ? phoneInput.value.trim() : '';
+        const res = await apiPayMomo(currentPayOrder.id, {
+          transactionRef: ref || null,
+          amount: Number(currentPayOrder.total || 0),
+          senderPhone: sender || null,
+          receiptImage: dataUrl,
+          method: dataUrl && !ref ? 'auto-receipt' : 'auto-momo'
+        });
+        if (res && res.success) {
+          markPayNowPaid(res.alreadyPaid ? 'This order was already paid. Nothing else to do.' : ('Payment verified instantly. ' + (res.message || '')));
+          return;
+        }
+        if (res && res.needsReview) {
+          setPayNowStatus(res.message, 'error');
+        } else {
+          setPayNowStatus((res && res.message) || 'Could not verify this payment. Check the transaction ID and try again.', 'error');
+        }
+      } catch (err) {
+        setPayNowStatus(err.message || 'Could not verify the payment. Please try again.', 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'I have paid — verify now'; }
+      }
+    }
+
+    function bindPayNowModal() {
+      const modal = document.getElementById('payNowModal');
+      if (!modal) return;
+      const closeBtn = document.getElementById('payNowCloseBtn');
+      if (closeBtn) closeBtn.addEventListener('click', closePayNowModal);
+      const laterBtn = document.getElementById('payNowLaterBtn');
+      if (laterBtn) laterBtn.addEventListener('click', () => {
+        closePayNowModal();
+        openTrackingModal(currentlyTrackedOrderId);
+      });
+      const confirmBtn = document.getElementById('payNowConfirmBtn');
+      if (confirmBtn) confirmBtn.addEventListener('click', confirmPayNow);
+      const pushBtn = document.getElementById('payNowPushBtn');
+      if (pushBtn) pushBtn.addEventListener('click', pushPaymentPrompt);
+      const copyBtn = document.getElementById('payNowCopyBtn');
+      if (copyBtn) copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(PAY_WALLET.number);
+          copyBtn.textContent = 'Copied';
+          setTimeout(() => { copyBtn.textContent = 'Copy number'; }, 1800);
+        } catch (e) {
+          window.prompt('Copy the YEBS MoMo number:', PAY_WALLET.number);
+        }
+      });
+    }
+
+    bindPaymentPreference();
+    bindPayNowModal();
   </script>
+
+  <!-- PAY NOW MODAL (MTN MoMo / Telecel Cash / AT Money) -->
+  <div id="payNowModal" class="track-overlay" style="display:none; z-index:12000;" role="dialog" aria-modal="true" aria-labelledby="payNowTitle">
+    <div class="pay-modal-card">
+      <div class="pay-modal-head">
+        <button type="button" class="pay-modal-close" id="payNowCloseBtn" aria-label="Close">&times;</button>
+        <h3 id="payNowTitle">Complete your payment</h3>
+        <p id="payNowSubtitle">Order <span id="payNowOrderId">YB----</span> &middot; pay with mobile money &middot; no card needed</p>
+      </div>
+      <div class="pay-modal-body">
+        <div class="pay-amount">
+          <div>
+            <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:#6b7280; font-weight:800;">Amount due</div>
+            <div class="amount" id="payNowAmount">GH&#8373;0.00</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:#6b7280; font-weight:800;">Reference</div>
+            <div class="ref" id="payNowRef">YB----</div>
+          </div>
+        </div>
+
+        <div id="payNowNetworkRow" class="pay-network-grid" style="margin-bottom:6px;" role="radiogroup" aria-label="Mobile money network"></div>
+
+        <div class="pay-wallet" style="margin-top:12px;">
+          <div>
+            <span>Pay to</span>
+            <strong id="payNowWalletNumber">055 910 3452</strong>
+            <small id="payNowWalletName">YEBS Noodles / Stephen</small>
+          </div>
+          <button type="button" id="payNowCopyBtn" class="pay-copy">Copy number</button>
+        </div>
+
+        <div class="pay-step">
+          <span class="num">1</span>
+          <div class="step-text">Dial <strong id="payNowUssd">*170#</strong> from your <strong id="payNowNetworkName">MTN MoMo</strong> line and send <strong id="payNowStepAmount">GH&#8373;0.00</strong> to <strong id="payNowStepWallet">055 910 3452</strong>.</div>
+        </div>
+        <div class="pay-step">
+          <span class="num">2</span>
+          <div class="step-text">Use your Order ID <strong id="payNowStepRef">YB----</strong> as the reference / narration.</div>
+        </div>
+        <div class="pay-step">
+          <span class="num">3</span>
+          <div class="step-text">Enter the transaction ID from your MoMo SMS below (or upload the receipt) and confirm &mdash; verification is instant.</div>
+        </div>
+
+        <div class="pay-actions">
+          <a id="payNowDialBtn" href="tel:*170%23" class="button" style="flex:1; min-height:40px; font-size:.82rem; display:flex; align-items:center; justify-content:center; background:#facc15; color:#713f12; font-weight:800;">Dial *170#</a>
+          <button type="button" id="payNowPushBtn" class="button" style="flex:1; min-height:40px; font-size:.82rem; background:#16342a; color:#fff; display:none;">Send payment prompt</button>
+        </div>
+        <div id="payNowPushStatus" style="font-size:.76rem; color:#15803d; margin-top:8px;" role="status" aria-live="polite"></div>
+
+        <div style="margin-top:14px; padding-top:12px; border-top:1px dashed #e5e7eb;">
+          <label for="payNowTxn" style="font-size:.78rem; font-weight:800; color:#374151; display:block; margin-bottom:6px;">Transaction ID (or upload the receipt)</label>
+          <input id="payNowTxn" type="text" autocomplete="off" placeholder="e.g. MP240412.1234.A56789" style="min-height:40px;">
+          <input id="payNowReceipt" type="file" accept="image/*" capture="environment" style="margin-top:8px; font-size:.75rem; padding:4px;">
+          <button type="button" id="payNowConfirmBtn" class="button button-orange" style="width:100%; min-height:42px; margin-top:10px; font-size:.9rem;">I have paid &mdash; verify now</button>
+          <div id="payNowStatus" style="font-size:.8rem; margin-top:8px; font-weight:600; color:#6b7280;" role="status" aria-live="polite"></div>
+          <p style="font-size:.7rem; color:#6b7280; margin-top:8px;">Never share your MoMo PIN with anyone. YEBS will never ask for it.</p>
+        </div>
+
+        <button type="button" id="payNowLaterBtn" class="button" style="width:100%; min-height:38px; margin-top:10px; font-size:.82rem; background:white; border:1px solid #deded4; color:#374151;">I'll pay later on the tracking screen</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Official Menu Poster Modal Lightbox -->
   <div id="menuPosterModal" class="auth-overlay" style="display:none;" role="dialog" aria-modal="true">

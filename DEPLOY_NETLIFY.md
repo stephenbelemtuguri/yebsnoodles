@@ -37,6 +37,27 @@ unless you want the value hidden after saving.
 | `LOG_FILE_ENABLED` | `false` |
 | `BASE_URL` | `https://your-site-name.netlify.app` |
 
+### Optional: real MTN MoMo payment prompts
+
+The checkout always works with the USSD flow (dial `*170#` / `*110#`, pay,
+enter the transaction ID). If you have a **MTN MoMo Collections API** account
+from <https://momodeveloper.mtn.com>, add these too and the "Send payment
+prompt" button becomes live — the server pushes a payment request straight to
+the customer's phone and confirms it automatically.
+
+| Key | Value |
+|---|---|
+| `MTN_MOMO_SUBSCRIPTION_KEY` | primary key of your MoMo API subscription |
+| `MTN_MOMO_API_USER` | the API user UUID you created |
+| `MTN_MOMO_API_KEY` | the API key generated for that user |
+| `MTN_MOMO_TARGET_ENV` | `mtnghana` (sandbox: `sandbox`) |
+| `MTN_MOMO_CALLBACK_HOST` | optional host for settlement callbacks |
+| `MOMO_PAY_TO` | wallet that receives the money — defaults to `0559103452` |
+
+Telecel Cash and AT Money do not expose a public collections API, so those
+always use USSD plus transaction-ID/receipt confirmation. Without the MTN keys
+`/api/health` reports `momo.apiConfigured: false` and every flow still works.
+
 `YEBS_AUTH_SECRET` must stay stable — if it changes, everyone is signed out.
 Never commit these values to git; keep them only in Netlify's environment
 variables (and in your local `.env`, which is git-ignored).
@@ -90,6 +111,25 @@ an administrator approves them:
 1. Driver registers at `/driver` (camera photo required).
 2. Admin opens `/admin` → **Drivers** → approve.
 3. Driver signs in normally.
+
+This gate depends on `SUPABASE_SERVICE_ROLE_KEY`. Without it every function
+instance keeps its own in-memory copy, so a sign-up handled by one instance is
+invisible to the admin handled by another — and approvals appear to "do nothing".
+Check `/api/health`: it must say `"storage": "supabase"` before testing the gate.
+
+## 7. Checkout, GPS pin and payment
+
+- **Share my GPS pin** asks the phone for a high-accuracy fix and shows the exact
+  coordinate with Google Maps / Apple Maps links. Pasting a Google or Apple Maps
+  link (or `5.60, -0.18`) into the address field is also read as the pin.
+- **Pay now** shows the network panel. The USSD codes are MTN `*170#`,
+  Telecel Cash `*110#` and AT Money `*110#` (Telecel and AT share the code; the
+  SIM decides which wallet opens).
+- After the order is placed the payment screen opens with the amount, the order
+  reference, the dial button, a transaction-ID box and a receipt upload. Proof
+  is verified instantly against the order total.
+- **Pay on delivery** skips all of that; the rider collects the cash and the
+  order is marked paid at handover.
 
 ## Local development
 

@@ -1566,6 +1566,55 @@ export async function apiPayMomo(orderId, { transactionRef, amount, senderPhone,
   }
 }
 
+// Customer picks a MoMo network and asks the server to send a payment
+// request. With MTN Collections credentials this pushes a real prompt to the
+// phone; otherwise the response carries the exact USSD steps.
+export async function apiRequestMomo(orderId, { network, phone } = {}) {
+  try {
+    const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/pay/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ network, phone })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data && data.order) mergeServerOrders([data.order]);
+    return { ...data, httpStatus: res.status };
+  } catch (e) {
+    return { success: false, message: "Could not reach the payment service. Check your connection and try again." };
+  }
+}
+
+// Poll whether a pushed MoMo request has been approved on the phone.
+export async function apiMomoStatus(orderId) {
+  try {
+    const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/pay/status`, { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (data && data.order) mergeServerOrders([data.order]);
+    return { ...data, httpStatus: res.status };
+  } catch (e) {
+    return { success: false, paid: false, message: "Could not check the payment status." };
+  }
+}
+
+// Supported networks + merchant wallet details for the checkout panel.
+export async function apiFetchPaymentNetworks() {
+  try {
+    const res = await fetch(`${API_BASE}/api/payments/networks`, { cache: "no-store" });
+    if (res.ok) return await res.json();
+  } catch (e) {}
+  return {
+    payTo: MOMO_CONFIG.number,
+    payToLabel: MOMO_CONFIG.displayNumber,
+    merchant: MOMO_CONFIG.merchantName,
+    apiConfigured: false,
+    networks: [
+      { id: "mtn", label: "MTN Mobile Money", shortLabel: "MTN MoMo", ussd: "*170#", dial: "*170", color: "#facc15", textColor: "#713f12", apiReady: false },
+      { id: "telecel", label: "Telecel Cash (formerly Vodafone Cash)", shortLabel: "Telecel Cash", ussd: "*110#", dial: "*110", color: "#ef4444", textColor: "#ffffff", apiReady: false },
+      { id: "at", label: "AT Money (AirtelTigo)", shortLabel: "AT Money", ussd: "*110#", dial: "*110", color: "#0ea5e9", textColor: "#ffffff", apiReady: false }
+    ]
+  };
+}
+
 // Rider confirms cash received at handover.
 export async function apiPayCash(orderId, amount) {
   try {

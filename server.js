@@ -62,6 +62,16 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 // A stable signing secret is generated once and never leaves this machine.
 let AUTH_SECRET = process.env.YEBS_AUTH_SECRET || '';
+if (!AUTH_SECRET && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY)) {
+  // Netlify function instances cannot share a generated secret file. Derive a
+  // stable one from the service key already present in the environment so an
+  // admin signed in on one instance stays signed in on the next.
+  AUTH_SECRET = crypto
+    .createHmac('sha256', String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY))
+    .update('yebs-auth-v1')
+    .digest('hex');
+  console.warn('[security] YEBS_AUTH_SECRET not set; deriving a stable secret from the Supabase service key. Set YEBS_AUTH_SECRET explicitly to rotate sessions.');
+}
 if (!AUTH_SECRET) {
   try {
     if (fs.existsSync(SECRET_FILE)) {
@@ -478,6 +488,8 @@ function paymentModeFor(paymentLabel) {
 function paymentFieldsFor(order) {
   return {
     paymentMode: order.paymentMode || paymentModeFor(order.payment),
+    paymentNetwork: order.paymentNetwork || normalizeNetwork(order.payment) || null,
+    paymentNetworkLabel: (MOMO_NETWORKS[order.paymentNetwork] || {}).label || null,
     paymentStatus: order.paymentStatus || (order.paymentVerified ? 'paid' : 'unpaid'),
     paymentRef: order.paymentRef || order.id,
     paymentVerified: order.paymentVerified === true,
@@ -485,6 +497,9 @@ function paymentFieldsFor(order) {
     verificationMethod: order.verificationMethod || null,
     momoAmount: order.momoAmount || null,
     momoTransactionRef: order.momoTransactionRef || null,
+    momoRequestId: order.momoRequestId || null,
+    momoRequestStatus: order.momoRequestStatus || null,
+    momoRequestAt: order.momoRequestAt || null,
     momoReceipt: order.momoReceipt ? {
       image: order.momoReceipt.image || null,
       transactionRef: order.momoReceipt.transactionRef || '',
@@ -859,6 +874,252 @@ function findDuplicateReceipt(db, hash, orderId) {
   return db.orders.find(o => String(o.id) !== String(orderId) && o.momoReceipt && o.momoReceipt.hash === hash);
 }
 
+// ==========================================================
+// MOBILE MONEY NETWORKS + COLLECTIONS API
+// ----------------------------------------------------------
+// Every Ghanaian wallet settles into the same YEBS merchant number.
+// MTN additionally publishes a Collections API; when the owner adds the
+// real credentials (see DEPLOY_NETLIFY.md) the server pushes a payment
+// prompt straight to the customer's phone. Without credentials we fall
+// back to the USSD flow on the exact same wallet rail, then the customer
+// confirms with the transaction ID / receipt.
+// ==========================================================
+
+const MOMO_PAY_TO = process.env.MOMO_PAY_TO || '0559103452';
+const MOMO_MERCHANT_NAME = process.env.MOMO_MERCHANT_NAME || 'YEBS Noodles / Stephen';
+
+const MOMO_NETWORKS = {
+  mtn: {
+    id: 'mtn',
+    label: 'MTN Mobile Money',
+    shortLabel: 'MTN MoMo',
+    ussd: '*170#',
+    dial: '*170',
+    prefixes: ['024', '054', '055', '059', '025'],
+    supportsApi: true,
+    color: '#facc15',
+    textColor: '#713f12'
+  },
+  telecel: {
+    id: 'telecel',
+    label: 'Telecel Cash (formerly Vodafone Cash)',
+    shortLabel: 'Telecel Cash',
+    ussd: '*110#',
+    dial: '*110',
+    prefixes: ['020', '050'],
+    supportsApi: false,
+    color: '#ef4444',
+    textColor: '#ffffff'
+  },
+  at: {
+    id: 'at',
+    label: 'AT Money (AirtelTigo)',
+    shortLabel: 'AT Money',
+    ussd: '*110#',
+    dial: '*110',
+    prefixes: ['026', '027', '056', '057'],
+    supportsApi: false,
+    color: '#0ea5e9',
+    textColor: '#ffffff'
+  }
+};
+
+function listMomoNetworks() {
+  const api = momoApiConfig();
+  return Object.values(MOMO_NETWORKS).map(n => ({
+    id: n.id,
+    label: n.label,
+    shortLabel: n.shortLabel,
+    ussd: n.ussd,
+    dial: n.dial,
+    color: n.color,
+    textColor: n.textColor,
+    apiReady: !!(n.supportsApi && api.configured)
+  }));
+}
+
+function normalizeNetwork(value) {
+  const v = String(value || '').toLowerCase().trim();
+  if (!v) return '';
+  if (/mtn|^0?55|momo/.test(v) && !/telecel|vodafone|airtel|tigo/.test(v)) return 'mtn';
+  if (/telecel|vodafone|voda/.test(v)) return 'telecel';
+  if (/airtel|tigo|\bat\b|atmoney|at-money/.test(v)) return 'at';
+  if (/cash|delivery|on arrival/.test(v)) return 'cash';
+  return '';
+}
+
+// Best-effort network guess from a Ghanaian wallet number.
+function networkFromPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '').replace(/^233/, '0');
+  const prefix = digits.slice(0, 3);
+  for (const net of Object.values(MOMO_NETWORKS)) {
+    if (net.prefixes.includes(prefix)) return net.id;
+  }
+  return '';
+}
+
+function walletPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '').replace(/^233/, '0');
+  return /^0\d{9}$/.test(digits) ? digits : '';
+}
+
+function momoApiConfig() {
+  const cfg = {
+    subscriptionKey: process.env.MTN_MOMO_SUBSCRIPTION_KEY || process.env.MOMO_SUBSCRIPTION_KEY || '',
+    apiUser: process.env.MTN_MOMO_API_USER || process.env.MOMO_API_USER || '',
+    apiKey: process.env.MTN_MOMO_API_KEY || process.env.MOMO_API_KEY || '',
+    targetEnvironment: process.env.MTN_MOMO_TARGET_ENV || process.env.MOMO_TARGET_ENV || 'mtnghana',
+    callbackHost: process.env.MTN_MOMO_CALLBACK_HOST || process.env.MOMO_CALLBACK_HOST || ''
+  };
+  cfg.configured = !!(cfg.subscriptionKey && cfg.apiUser && cfg.apiKey);
+  return cfg;
+}
+
+async function momoFetch(url, options, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    let body = null;
+    const text = await res.text();
+    if (text) {
+      try { body = JSON.parse(text); } catch (e) { body = text.slice(0, 400); }
+    }
+    return { ok: res.ok, status: res.status, body };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Exchange API user/key for an OAuth token (MTN Collections v1_0).
+async function momoAccessToken(cfg) {
+  const basic = Buffer.from(`${cfg.apiUser}:${cfg.apiKey}`).toString('base64');
+  const res = await momoFetch(`${cfg.baseUrl || 'https://proxy.momoapi.mtn.com'}/collection/token/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${basic}`,
+      'Ocp-Apim-Subscription-Key': cfg.subscriptionKey
+    }
+  });
+  if (!res.ok || !res.body || !res.body.access_token) {
+    throw new Error(`MTN token request failed (${res.status})`);
+  }
+  return res.body.access_token;
+}
+
+// Push a real MoMo payment prompt to the customer's phone.
+// Returns { ok, configured, status, referenceId, message }.
+async function requestMomoCollection({ amount, phone, referenceId, payerMessage, payeeNote }) {
+  const cfg = momoApiConfig();
+  if (!cfg.configured) {
+    return {
+      ok: false,
+      configured: false,
+      status: 'ussd',
+      message: 'Card-free MoMo request is not enabled on this deployment. Use the USSD code below and confirm with your transaction ID.'
+    };
+  }
+
+  try {
+    const token = await momoAccessToken(cfg);
+    const base = cfg.baseUrl || 'https://proxy.momoapi.mtn.com';
+    const res = await momoFetch(`${base}/collection/v1_0/requesttopay`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Reference-Id': referenceId,
+        'X-Target-Environment': cfg.targetEnvironment,
+        'Ocp-Apim-Subscription-Key': cfg.subscriptionKey,
+        'Content-Type': 'application/json',
+        ...(cfg.callbackHost ? { 'X-Callback-Url': `https://${cfg.callbackHost}/api/payments/momo/callback` } : {})
+      },
+      body: JSON.stringify({
+        amount: String(Number(amount).toFixed(2)),
+        currency: 'GHS',
+        externalId: String(referenceId),
+        payer: { partyIdType: 'MSISDN', partyId: String(phone).replace(/^0/, '233') },
+        payerMessage: String(payerMessage || 'YEBS Noodles order').slice(0, 60),
+        payeeNote: String(payeeNote || 'YEBS Noodles').slice(0, 60)
+      })
+    }, 20000);
+
+    if (res.status === 202) {
+      return {
+        ok: true,
+        configured: true,
+        status: 'pending',
+        referenceId,
+        message: 'Payment request sent. Approve the prompt on your phone by entering your MoMo PIN.'
+      };
+    }
+    return {
+      ok: false,
+      configured: true,
+      status: 'failed',
+      referenceId,
+      message: (res.body && (res.body.message || res.body.error)) || `MTN rejected the request (${res.status}). Use the USSD code instead.`
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      configured: true,
+      status: 'error',
+      referenceId,
+      message: `Could not reach MTN MoMo (${err.message}). Use the USSD code instead.`
+    };
+  }
+}
+
+// Ask MTN whether a request-to-pay has settled.
+async function fetchMomoRequestStatus(referenceId) {
+  const cfg = momoApiConfig();
+  if (!cfg.configured) return { configured: false, status: 'unknown' };
+  try {
+    const token = await momoAccessToken(cfg);
+    const base = cfg.baseUrl || 'https://proxy.momoapi.mtn.com';
+    const res = await momoFetch(`${base}/collection/v1_0/requesttopay/${encodeURIComponent(referenceId)}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Target-Environment': cfg.targetEnvironment,
+        'Ocp-Apim-Subscription-Key': cfg.subscriptionKey
+      }
+    });
+    if (!res.ok || !res.body) return { configured: true, status: 'unknown' };
+    return {
+      configured: true,
+      status: String(res.body.status || 'unknown').toLowerCase(),
+      reason: res.body.reason || null,
+      amount: res.body.amount || null
+    };
+  } catch (err) {
+    return { configured: true, status: 'unknown', error: err.message };
+  }
+}
+
+// Pull a lat/lng out of a Google/Apple Maps link or a raw "5.55, -0.21" string.
+function extractCoordinates(text) {
+  const value = String(text || '');
+  if (!value) return null;
+  const patterns = [
+    /@(-?\d{1,2}\.\d{3,}),\s*(-?\d{1,3}\.\d{3,})/,
+    /[?&](?:q|query|ll|destination|daddr)=(-?\d{1,2}\.\d{3,}),\s*(-?\d{1,3}\.\d{3,})/,
+    /!3d(-?\d{1,2}\.\d{3,})!4d(-?\d{1,3}\.\d{3,})/,
+    /(?:^|\s)(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})(?:$|\s)/
+  ];
+  for (const re of patterns) {
+    const m = value.match(re);
+    if (m) {
+      const lat = Number(m[1]);
+      const lng = Number(m[2]);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+        return { lat, lng };
+      }
+    }
+  }
+  return null;
+}
+
 // Core MoMo verification used by customer proof, admin SMS matching and receipts.
 function applyMomoPayment(db, order, opts) {
   const { transactionRef, amount, sender, receiptImage, method, actor, note } = opts;
@@ -989,6 +1250,152 @@ app.post('/api/orders/:id/pay/momo', (req, res) => {
     needsReview: !!result.needsReview,
     conflict: !!result.conflict,
     message: result.message,
+    order: projectOrder(order, 'public')
+  });
+});
+
+// Public: which MoMo networks/USSD codes this deployment supports.
+app.get('/api/payments/networks', (req, res) => {
+  res.json({
+    success: true,
+    payTo: MOMO_PAY_TO,
+    payToLabel: MOMO_PAY_TO.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3'),
+    merchant: MOMO_MERCHANT_NAME,
+    apiConfigured: momoApiConfig().configured,
+    networks: listMomoNetworks()
+  });
+});
+
+// Customer chooses "Pay now" + a network: push a real MoMo prompt when the
+// Collections API is configured, otherwise return the exact USSD steps.
+app.post('/api/orders/:id/pay/request', async (req, res) => {
+  const db = loadDatabase();
+  const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
+  if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+
+  if (order.paymentStatus === 'paid') {
+    return res.status(200).json({
+      success: true,
+      alreadyPaid: true,
+      message: "This order is already paid.",
+      order: projectOrder(order, 'public')
+    });
+  }
+
+  const body = req.body || {};
+  const network = normalizeNetwork(body.network || body.paymentNetwork || order.paymentNetwork || order.payment);
+  if (!network || network === 'cash') {
+    return res.status(400).json({ success: false, message: "Choose MTN MoMo, Telecel Cash or AT Money first." });
+  }
+  const net = MOMO_NETWORKS[network];
+  if (!net) return res.status(400).json({ success: false, message: "Unknown mobile money network." });
+
+  const phone = walletPhone(body.phone || body.senderPhone || order.momoPayerPhone);
+  if (!phone) {
+    return res.status(400).json({ success: false, message: "Enter the mobile money number that will pay (e.g. 024 123 4567)." });
+  }
+
+  const amount = Number(order.total) || 0;
+  const referenceId = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+  order.paymentNetwork = network;
+  order.payment = net.label;
+  order.paymentMode = 'momo';
+  order.momoPayerPhone = phone;
+
+  const result = network === 'mtn'
+    ? await requestMomoCollection({
+        amount,
+        phone,
+        referenceId,
+        payerMessage: `YEBS order ${order.id}`,
+        payeeNote: `YEBS Noodles ${order.id}`
+      })
+    : {
+        ok: false,
+        configured: false,
+        status: 'ussd',
+        message: 'Pay from your wallet with the USSD code below, then confirm with the transaction ID.'
+      };
+
+  if (result.configured && result.ok) {
+    order.momoRequestId = referenceId;
+    order.momoRequestStatus = 'pending';
+    order.momoRequestAt = new Date().toISOString();
+  } else {
+    order.momoRequestId = null;
+    order.momoRequestStatus = result.configured ? (result.status || 'failed') : 'ussd';
+  }
+
+  addPaymentAudit(order, result.ok ? 'MOMO_REQUEST_SENT' : 'MOMO_USSD_INSTRUCTIONS', order.customer, {
+    network,
+    phone,
+    amount,
+    mode: result.configured ? 'api' : 'ussd',
+    status: order.momoRequestStatus
+  });
+  saveDatabase(db);
+  logAction(result.ok ? 'MOMO_REQUEST_SENT' : 'MOMO_USSD_INSTRUCTIONS', order.customer, order.id, {
+    network, amount, mode: result.configured ? 'api' : 'ussd'
+  }, req);
+
+  res.json({
+    success: true,
+    requested: result.ok,
+    configured: result.configured,
+    mode: result.configured ? 'api' : 'ussd',
+    status: order.momoRequestStatus,
+    reference: result.configured ? referenceId : order.id,
+    network,
+    networkLabel: net.label,
+    ussd: net.ussd,
+    dial: net.dial,
+    payTo: MOMO_PAY_TO,
+    payToLabel: MOMO_PAY_TO.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3'),
+    merchant: MOMO_MERCHANT_NAME,
+    amount,
+    phone,
+    message: result.message,
+    order: projectOrder(order, 'public')
+  });
+});
+
+// Poll a pushed MoMo request; auto-marks the order paid when MTN settles it.
+app.get('/api/orders/:id/pay/status', async (req, res) => {
+  const db = loadDatabase();
+  const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
+  if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+
+  let networkStatus = order.momoRequestStatus || null;
+
+  if (order.paymentStatus !== 'paid' && order.momoRequestId) {
+    const state = await fetchMomoRequestStatus(order.momoRequestId);
+    if (state.configured && state.status && state.status !== 'unknown') {
+      networkStatus = state.status;
+      order.momoRequestStatus = state.status;
+      if (state.status === 'successful') {
+        applyMomoPayment(db, order, {
+          transactionRef: order.momoRequestId,
+          amount: Number(order.total),
+          sender: order.momoPayerPhone,
+          method: 'mtn-api',
+          actor: 'MTN MOMO API',
+          note: 'Settled by MTN Collections API'
+        });
+        logAction('MOMO_API_SETTLED', 'MTN MOMO API', order.id, { amount: order.total }, req);
+      }
+      saveDatabase(db);
+    }
+  }
+
+  res.json({
+    success: true,
+    paid: order.paymentStatus === 'paid',
+    paymentStatus: order.paymentStatus,
+    requestStatus: networkStatus,
+    message: order.paymentStatus === 'paid'
+      ? 'Payment confirmed by the mobile money network.'
+      : (networkStatus === 'failed' ? 'The mobile money network declined this request. Try again or use the USSD code.' : 'Waiting for the customer to approve the payment prompt.'),
     order: projectOrder(order, 'public')
   });
 });
@@ -1336,8 +1743,18 @@ app.post('/api/orders', (req, res) => {
   }
 
   const currentSession = (db.sessions && db.sessions[0]) || { sessionNumber: 1 };
-  const payment = cleanString(body.payment || 'MTN Mobile Money', 80);
-  const paymentMode = paymentModeFor(payment);
+  const requestedNetwork = normalizeNetwork(body.paymentNetwork);
+  const network = requestedNetwork === 'cash' ? '' : (requestedNetwork || normalizeNetwork(body.payment));
+  const payment = cleanString(body.payment || (network ? MOMO_NETWORKS[network].label : 'MTN Mobile Money'), 80);
+  const paymentMode = paymentModeFor(payment) === 'cash' || requestedNetwork === 'cash' ? 'cash' : 'momo';
+
+  // Prefer an explicit pin, then any coordinates embedded in the address
+  // (pasted Google/Apple Maps link), then the Adabraka kitchen default.
+  const pinFromAddress = extractCoordinates(body.location);
+  const hasPin = body.mapPin && Number.isFinite(Number(body.mapPin.lat)) && Number.isFinite(Number(body.mapPin.lng));
+  const orderPin = hasPin
+    ? { lat: Number(body.mapPin.lat), lng: Number(body.mapPin.lng) }
+    : (pinFromAddress || { lat: 5.5650, lng: -0.2100 });
 
   const newOrder = {
     id,
@@ -1350,9 +1767,8 @@ app.post('/api/orders', (req, res) => {
     phone,
     fulfilment: cleanString(body.fulfilment || "Delivery", 40),
     location: cleanString(body.location || "Adabraka, Accra", 200),
-    mapPin: body.mapPin && Number.isFinite(Number(body.mapPin.lat)) && Number.isFinite(Number(body.mapPin.lng))
-      ? { lat: Number(body.mapPin.lat), lng: Number(body.mapPin.lng) }
-      : { lat: 5.5650, lng: -0.2100 },
+    mapPin: orderPin,
+    pinSource: hasPin ? 'shared-gps' : (pinFromAddress ? 'map-link' : 'default'),
     timing: cleanString(body.timing || "As soon as possible", 60),
     items,
     subtotal,
@@ -1360,6 +1776,7 @@ app.post('/api/orders', (req, res) => {
     total,
     payment,
     paymentMode,
+    paymentNetwork: network || null,
     paymentStatus: 'unpaid',
     paymentRef: id,
     paymentVerified: false,
@@ -1367,6 +1784,10 @@ app.post('/api/orders', (req, res) => {
     verificationMethod: null,
     momoAmount: null,
     momoTransactionRef: null,
+    momoRequestId: null,
+    momoRequestStatus: null,
+    momoRequestAt: null,
+    momoPayerPhone: walletPhone(body.payerPhone) || null,
     momoReceipt: null,
     paymentAudit: [],
     notes: cleanString(body.notes, 500),
@@ -1990,7 +2411,12 @@ app.get('/api/health', (req, res) => {
     success: true,
     service: "YEBS Noodles API",
     time: new Date().toISOString(),
-    storage: store.status()
+    storage: store.status(),
+    momo: {
+      payTo: MOMO_PAY_TO,
+      apiConfigured: momoApiConfig().configured,
+      networks: listMomoNetworks().map(n => ({ id: n.id, ussd: n.ussd, apiReady: n.apiReady }))
+    }
   });
 });
 

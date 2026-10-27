@@ -2673,6 +2673,23 @@
     // ============================================================
     // DRIVER MANAGEMENT TAB
     // ============================================================
+    // Shared helper for driver admin actions. Never fails silently: the HTTP
+    // status and the server message are both surfaced to the admin.
+    async function driverAdminAction(url, token, options, btn, busyLabel) {
+      const original = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; if (busyLabel) btn.textContent = busyLabel; }
+      try {
+        const res = await fetch(url, options);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.success === false) {
+          throw new Error(data.message || ('Request failed (' + res.status + ').'));
+        }
+        return data;
+      } finally {
+        if (btn) { btn.disabled = false; if (busyLabel) btn.textContent = original; }
+      }
+    }
+
     async function loadDriverManagement() {
       if (!checkAdminAuth()) return;
       const token = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
@@ -2707,29 +2724,40 @@
           btn.addEventListener('click', async () => {
             const id = btn.dataset.id;
             const name = btn.dataset.name;
-            if (!confirm(`Approve ${name} as a YEBS driver?`)) return;
-            btn.disabled = true; btn.textContent = 'Approving…';
-            await fetch('/api/auth/driver/approve', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-              body: JSON.stringify({ driverId: id, approved: true })
-            });
-            loadDriverManagement();
+            if (!confirm('Approve ' + name + ' as a YEBS driver?\n\nTheir login is enabled immediately after this.')) return;
+            let result = null;
+            try {
+              result = await driverAdminAction('/api/auth/driver/approve', token, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ driverId: id, approved: true })
+              }, btn, 'Approving...');
+            } catch (err) {
+              alert('Could not approve ' + name + '.\n\n' + err.message +
+                '\n\nIf this keeps happening, confirm SUPABASE_SERVICE_ROLE_KEY and YEBS_AUTH_SECRET are set in Netlify, then try again.');
+            }
+            if (result && result.driver && result.driver.username) {
+              alert(name + ' approved.\n\nDriver username: ' + result.driver.username + '\nLogin is now enabled.');
+            }
+            await loadDriverManagement();
           });
         });
         pendingGrid.querySelectorAll('.reject-driver-btn').forEach(btn => {
           btn.addEventListener('click', async () => {
             const id = btn.dataset.id;
             const name = btn.dataset.name;
-            const reason = prompt(`Reason for rejecting ${name} (optional):`);
+            const reason = prompt('Reason for rejecting ' + name + ' (optional):');
             if (reason === null) return;
-            btn.disabled = true;
-            await fetch('/api/auth/driver/approve', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-              body: JSON.stringify({ driverId: id, approved: false, reason: reason || 'Not approved' })
-            });
-            loadDriverManagement();
+            try {
+              await driverAdminAction('/api/auth/driver/approve', token, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ driverId: id, approved: false, reason: reason || 'Not approved' })
+              }, btn, 'Rejecting...');
+            } catch (err) {
+              alert('Could not reject ' + name + '.\n\n' + err.message);
+            }
+            await loadDriverManagement();
           });
         });
       }
@@ -2756,19 +2784,31 @@
         approvedGrid.querySelectorAll('.toggle-driver-btn').forEach(btn => {
           btn.addEventListener('click', async () => {
             const id = btn.dataset.id;
-            btn.disabled = true;
-            await fetch(`/api/drivers/${id}/toggle`, { method: 'PATCH', headers: { 'Authorization': `Bearer ${token}` } });
-            loadDriverManagement();
+            try {
+              await driverAdminAction('/api/drivers/' + id + '/toggle', token, {
+                method: 'PATCH',
+                headers: { 'Authorization': 'Bearer ' + token }
+              }, btn, 'Updating...');
+            } catch (err) {
+              alert('Could not update this driver.\n\n' + err.message);
+            }
+            await loadDriverManagement();
           });
         });
         approvedGrid.querySelectorAll('.remove-driver-btn').forEach(btn => {
           btn.addEventListener('click', async () => {
             const id = btn.dataset.id;
             const name = btn.dataset.name;
-            if (!confirm(`Permanently remove ${name} from the system? This cannot be undone.`)) return;
-            btn.disabled = true;
-            await fetch(`/api/drivers/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
-            loadDriverManagement();
+            if (!confirm('Permanently remove ' + name + ' from the system? This cannot be undone.')) return;
+            try {
+              await driverAdminAction('/api/drivers/' + id, token, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+              }, btn, 'Removing...');
+            } catch (err) {
+              alert('Could not remove ' + name + '.\n\n' + err.message);
+            }
+            await loadDriverManagement();
           });
         });
       }
