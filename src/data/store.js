@@ -118,6 +118,7 @@ async function refresh() {
     lastError = null;
   } catch (err) {
     lastError = err.message;
+    lastReadAt = Date.now(); // don't hammer a broken endpoint on every request
     console.error('[store] refresh failed:', err.message);
   }
   return cache;

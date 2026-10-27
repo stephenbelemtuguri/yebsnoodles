@@ -18,11 +18,22 @@ const handler = serverless(app);
 
 let bootPromise = null;
 
+// Netlify can hand over either the function path
+// (/.netlify/functions/api/orders) or, depending on how the rewrite is applied,
+// the visitor-facing path (/api/orders). Normalise both to /api/…
 function pathForExpress(event) {
-  const raw = String(event.path || '/');
-  const suffix = raw.replace(/^\/\.netlify\/functions\/api/, '');
-  const withApi = '/api' + (suffix === '' || suffix === '/' ? '/' : (suffix.startsWith('/') ? suffix : `/${suffix}`));
-  return withApi;
+  let raw = String(event.path || '/');
+  if (event.rawUrl) {
+    try {
+      const rawPath = new URL(event.rawUrl).pathname;
+      if (rawPath && rawPath.startsWith('/api')) raw = rawPath;
+    } catch (e) { /* ignore malformed URLs */ }
+  }
+  if (raw.startsWith('/.netlify/functions/api')) {
+    raw = raw.slice('/.netlify/functions/api'.length) || '/';
+  }
+  if (raw.startsWith('/api/') || raw === '/api') return raw;
+  return '/api' + (raw.startsWith('/') ? raw : `/${raw}`);
 }
 
 exports.handler = async (event, context) => {
