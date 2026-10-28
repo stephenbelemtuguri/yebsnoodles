@@ -3413,7 +3413,7 @@ app.get('/api/health', (req, res) => {
           ? 'postgres'
           : 'supabase-rest',
       path: store.remoteMode === 'local' ? DB_FILE : null,
-      persistent: store.remoteMode !== 'local' || Boolean(process.env.DB_PATH)
+      persistent: store.isRemote() || (store.remoteMode === 'local' && Boolean(process.env.DB_PATH))
     },
     pickupPoint: pickup,
     deliveryFee: Number(db.settings && db.settings.deliveryFee) || 15,
