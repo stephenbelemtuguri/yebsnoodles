@@ -5,12 +5,14 @@ static pages (`index.html`, `admin.html`, `driver.html`, `public/`) are served
 from the same origin, so nothing else is required.
 
 ```
-Browser ──► Render web service (Express) ──► /var/data/database.json (persistent disk)
-                                      └──► Supabase (optional, shared state)
+Browser ──► Render web service (Express) ──► Render PostgreSQL (DATABASE_URL)
+                                      └──► Supabase (optional alternative)
 ```
 
-`render.yaml` in the repo root is a Blueprint, so Render can create the service,
-the disk and the environment variables in one go.
+`render.yaml` in the repo root is a Blueprint: Render creates the web service
+**and a PostgreSQL database**, then injects `DATABASE_URL` automatically. The API
+creates its `yebs_state` table on first boot, so there is no manual database key
+to copy.
 
 ---
 
@@ -30,23 +32,26 @@ Render deploys straight from GitHub, so the repo must be up to date.
    (one-click Blueprint) or <https://dashboard.render.com/blueprints> and choose
    **New Blueprint Instance**.
 2. Connect GitHub and pick `stephenbelemtuguri/yebsnoodles`.
-3. Render reads `render.yaml` and shows the `yebs-noodles` service with a 1 GB
-   disk mounted at `/var/data`.
+3. Render reads `render.yaml` and shows the `yebs-noodles` service plus the
+   `yebs-db` PostgreSQL database.
 4. Fill in the variables marked `sync: false` (WhatsApp, Supabase, MTN). They are
    optional — press **Apply** and the site still works without them.
 5. Wait for the first deploy. The health check is `GET /api/health`.
 
 > If you prefer a manual **New → Web Service**, use:
 > **Runtime** Node, **Build** `npm install --omit=dev`, **Start** `node server.js`,
-> **Health check** `/api/health`, then add the same environment variables and a
-> disk mounted at `/var/data`.
+> **Health check** `/api/health`. Create a Render PostgreSQL instance and set
+> `DATABASE_URL` to its internal connection string.
 
 ## 3. Environment variables
+
+`DATABASE_URL` is injected by Render from `yebs-db`; you do **not** need to paste
+a database key. Everything else is optional:
 
 | Key | Value | Why |
 |---|---|---|
 | `NODE_ENV` | `production` | Production behaviour |
-| `DB_PATH` | `/var/data/database.json` | Keeps data on the disk |
+| `DATABASE_URL` | from `yebs-db` (automatic) | Orders, menu and drivers |
 | `WHATSAPP_TOKEN` | Meta permanent token | Automatic order alerts |
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp phone number ID | Automatic order alerts |
 | `WHATSAPP_TO` | `233559103452` | Kitchen number |
@@ -54,8 +59,7 @@ Render deploys straight from GitHub, so the repo must be up to date.
 | `SUPABASE_URL` | `https://dujmpwcarxliadnfdydr.supabase.co` | Optional shared DB |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role key | Optional shared DB (REST) |
 | `SUPABASE_STATE_TABLE` | `yebs_state` | Optional shared DB |
-| `DATABASE_POOL_URL` | session pooler URI with the real password | Optional shared DB (Postgres) |
-| `DATABASE_URL` | direct URI with the real password | Fallback for Postgres |
+| `DATABASE_POOL_URL` | Supabase session-pooler URI | Optional, overrides Render DB |
 | `MOMO_SUBSCRIPTION_KEY` | MTN key | Optional automatic MoMo |
 | `MOMO_API_USER` | MTN API user | Optional automatic MoMo |
 | `MOMO_API_KEY` | MTN API key | Optional automatic MoMo |
@@ -69,26 +73,23 @@ Render deploys straight from GitHub, so the repo must be up to date.
 ```json
 {
   "storage": "postgres",
-  "database": { "engine": "supabase-postgres", "persistent": true },
+  "database": { "engine": "postgres", "persistent": true },
   "whatsapp": { "configured": true, "to": "233 559 103 452" }
 }
 ```
 
-### Connecting Supabase (recommended)
+### Optional: use Supabase instead of the Render database
 
-You only need **one** of these:
+Put the Supabase session-pooler URI (with the real password) in
+`DATABASE_POOL_URL`, or set `SUPABASE_SERVICE_ROLE_KEY` and run
+`supabase/yebs_state.sql` once. Locally, `npm run supabase:setup` creates the
+table, seeds it from `database.json` and verifies the connection.
 
-1. **Database URL (simplest).** Supabase → Project Settings → Database →
-   Connection string → **Session pooler**, then replace `[YOUR-PASSWORD]` with
-   the real password. Put it in `DATABASE_POOL_URL` (and `DATABASE_URL`).
-   The app creates `public.yebs_state` automatically on first boot and stores
-   everything there.
-2. **Service-role key.** Supabase → Project Settings → API Keys → secret /
-   `service_role`. Put it in `SUPABASE_SERVICE_ROLE_KEY`, then run
-   `supabase/yebs_state.sql` once in the SQL Editor.
+### Share the Render database with Netlify
 
-Locally you can run `npm run supabase:setup` to create the table, seed it from
-`database.json` and verify the connection.
+Render → `yebs-db` → **Connect** → copy the **External Database URL** and add it
+to Netlify as `DATABASE_URL`. Both the Render site and the Netlify site then read
+and write the same orders, menu and drivers — no Supabase key required.
 
 ## 4. First sign-in and setup
 
@@ -105,18 +106,20 @@ Change the admin password in **Settings** before going live.
 
 ## 5. Notes
 
-- **Disk persistence:** the free instance type has no persistent disk. Use the
-  `starter` plan (as in `render.yaml`) or connect Supabase and leave `DB_PATH`
-  unset. `render.yaml` uses `starter` with a 1 GB disk.
-- **Free plan sleep:** free web services sleep after inactivity; the first
-  request after a nap can take ~30 s. A paid plan stays awake.
-- **Single instance:** keep one instance. The JSON store is file-based; two
-  instances would overwrite each other. Use Supabase if you need to scale.
+- **Database persistence:** data lives in the Render PostgreSQL database, so
+  redeploys and restarts keep orders, drivers and menu edits.
+- **Free plan limits:** the free web service sleeps after inactivity (the first
+  request can take ~30 s) and Render's free PostgreSQL expires after 30 days.
+  Change `plan: free` to `starter` and the database to `basic-256mb` for
+  production.
+- **Single instance:** keep one web instance. The JSON state document is one row;
+  multiple instances can overwrite each other. Scale with Supabase if needed.
 - **HTTPS:** Render provides TLS automatically, so the live GPS button and the
   driver webcam work without extra configuration.
 - **Logs:** Render → your service → **Logs** shows requests, WhatsApp errors and
   database writes.
-- **Redeploys** keep `/var/data` intact; deleting the disk deletes the data.
+- **Health check:** `/api/health` reports `storage: postgres` and
+  `database.persistent: true` when the database is connected.
 
 ## 6. Custom domain (optional)
 

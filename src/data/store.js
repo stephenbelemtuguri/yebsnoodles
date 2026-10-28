@@ -93,8 +93,8 @@ function ensurePostgres() {
     const { Pool } = loadPg();
     pgPool = new Pool({
       connectionString: DATABASE_URL,
-      // Supabase requires TLS; the pooler presents its own certificate.
-      ssl: /supabase|pooler/i.test(DATABASE_URL) ? { rejectUnauthorized: false } : undefined,
+      // Hosted Postgres (Supabase/Render) requires TLS.
+      ssl: /supabase|pooler|render\.com|dpg-/i.test(DATABASE_URL) ? { rejectUnauthorized: false } : undefined,
       max: Number(process.env.PG_POOL_MAX || 2),
       idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 8000

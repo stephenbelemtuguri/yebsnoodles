@@ -3410,7 +3410,7 @@ app.get('/api/health', (req, res) => {
       engine: store.remoteMode === 'local'
         ? 'json-file'
         : store.remoteMode === 'postgres'
-          ? 'supabase-postgres'
+          ? 'postgres'
           : 'supabase-rest',
       path: store.remoteMode === 'local' ? DB_FILE : null,
       persistent: store.remoteMode !== 'local' || Boolean(process.env.DB_PATH)

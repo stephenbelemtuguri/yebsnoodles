@@ -31,6 +31,11 @@ publishable key). It is used only by the server.
 Locally, `npm run supabase:setup` creates the table, seeds it from
 `database.json` and verifies the connection.
 
+**C. Reuse the Render database.** If you deploy on Render first, open
+`yebs-db` → **Connect** → copy the **External Database URL** and add it as
+`DATABASE_URL` in Netlify. Both sites then share the same data, and you do not
+need a Supabase key at all.
+
 ## 2. Add the environment variables in Netlify
 
 In the Netlify screen you were on (**Site configuration → Environment variables**),
@@ -43,7 +48,7 @@ unless you want the value hidden after saving.
 | `SUPABASE_URL` | `https://dujmpwcarxliadnfdydr.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | the **secret** key from option B (optional if using A) |
 | `DATABASE_POOL_URL` | session-pooler URI from option A (optional if using B) |
-| `DATABASE_URL` | direct URI from option A (optional if using B) |
+| `DATABASE_URL` | direct URI from option A, or the Render external URL (optional if using B) |
 | `YEBS_AUTH_SECRET` | a long random string — generate one with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
 | `JWT_SECRET` | another long random string (same command) |
 | `SESSION_SECRET` | another long random string (same command) |

@@ -56,7 +56,7 @@ function isPlaceholder(url) {
   const { Client } = require('pg');
   const client = new Client({
     connectionString: DB_URL,
-    ssl: /supabase|pooler/i.test(DB_URL) ? { rejectUnauthorized: false } : undefined,
+    ssl: /supabase|pooler|render\.com|dpg-/i.test(DB_URL) ? { rejectUnauthorized: false } : undefined,
     connectionTimeoutMillis: 12000
   });
 
