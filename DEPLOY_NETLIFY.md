@@ -17,10 +17,25 @@ Browser ──► Netlify CDN (index.html, admin.html, driver.html, images)
 Choose **one** of these:
 
 **A. Database URL (creates the table automatically).** Supabase → Project
-Settings → Database → Connection string → **Session pooler**. Replace
-`[YOUR-PASSWORD]` with the real database password and put the URI in
-`DATABASE_POOL_URL` (and `DATABASE_URL`). The API creates `public.yebs_state` on
-first boot and stores all orders, drivers and menu changes there.
+Settings → Database → Connection string → **Session pooler**. Put the URI in
+`DATABASE_POOL_URL` (and `DATABASE_URL`).
+
+> Use the **Session pooler** host (`aws-0-<region>.pooler.supabase.com:6543`),
+> **not** `db.<ref>.supabase.co`. The direct host is IPv6-only, and Render,
+> Netlify and most home ISPs cannot reach it — that is the `P1001` /
+> `ENOTFOUND` error.
+
+The easiest way to set the password (it URL-encodes `@ : # /` for you):
+
+```bash
+node scripts/set-db-password.js "YOUR-SUPABASE-DATABASE-PASSWORD"
+# or
+npm run db:password -- "YOUR-SUPABASE-DATABASE-PASSWORD"
+```
+
+That writes `DATABASE_PASSWORD`, `DATABASE_URL` and `DATABASE_POOL_URL`, then
+runs `supabase:setup`, which creates `public.yebs_state`, enables RLS, seeds it
+from `database.json` and reads the row back.
 
 **B. Service-role key.** Open
 <https://supabase.com/dashboard/project/dujmpwcarxliadnfdydr/sql/new>, paste

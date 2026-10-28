@@ -80,10 +80,34 @@ a database key. Everything else is optional:
 
 ### Optional: use Supabase instead of the Render database
 
-Put the Supabase session-pooler URI (with the real password) in
-`DATABASE_POOL_URL`, or set `SUPABASE_SERVICE_ROLE_KEY` and run
-`supabase/yebs_state.sql` once. Locally, `npm run supabase:setup` creates the
-table, seeds it from `database.json` and verifies the connection.
+Put the Supabase **session-pooler** URI in `DATABASE_POOL_URL`, or set
+`SUPABASE_SERVICE_ROLE_KEY` and run `supabase/yebs_state.sql` once. Locally:
+
+```bash
+node scripts/set-db-password.js "YOUR-SUPABASE-DATABASE-PASSWORD"
+```
+
+creates `public.yebs_state`, seeds it from `database.json` and verifies the
+connection.
+
+### Troubleshooting `P1001: Can't reach database server`
+
+`P1001` is a Prisma error. It appears when a Render service still runs a Prisma
+command, and Prisma is pointed at the IPv6-only Supabase direct host
+(`db.<ref>.supabase.co`), which Render cannot reach.
+
+1. **Render → your service → Settings → Build & Deploy**
+   - **Build Command:** `npm install --omit=dev`
+   - **Pre-Deploy Command:** leave **empty**
+   - **Start Command:** `node server.js`
+   - **Health Check Path:** `/api/health`
+   - Press **Save**, then **Clear build cache & deploy**.
+2. Or skip all of that and use the Blueprint: delete the old service, open
+   <https://render.com/deploy?repo=https://github.com/stephenbelemtuguri/yebsnoodles>
+   and press **Apply**. It creates `yebs-db` and injects `DATABASE_URL`, so
+   Prisma and Supabase are not involved at all.
+3. If you really want Supabase on Render, use the **session pooler** URI in
+   `DATABASE_POOL_URL` (never the `db.<ref>.supabase.co` host).
 
 ### Share the Render database with Netlify
 
