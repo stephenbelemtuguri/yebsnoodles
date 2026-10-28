@@ -416,6 +416,23 @@
     .poster-availability::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #16a34a; }
     .poster-availability.sold-out { color: #991b1b; }
     .poster-availability.sold-out::before { background: #dc2626; }
+    .poster-availability.coming-soon-badge {
+      background: linear-gradient(135deg, #d97706, #b45309);
+      color: #ffffff;
+      border: 1px solid #fde68a;
+      box-shadow: 0 3px 10px rgba(217, 119, 6, 0.35);
+    }
+    .poster-availability.coming-soon-badge::before {
+      background: #fde68a;
+      box-shadow: 0 0 6px #f59e0b;
+    }
+    .poster-card.coming-soon-card {
+      border-color: #f59e0b;
+    }
+    .cust-menu-filter-pill:hover {
+      border-color: var(--gold) !important;
+      transform: translateY(-1px);
+    }
     .poster-card.sold-out .poster-food-img { filter: grayscale(.75); }
     .poster-card-footer { gap: 10px; }
     .poster-desc { margin: 0; font-size: .82rem; line-height: 1.5; color: #5b675c; }
@@ -1033,6 +1050,25 @@
               Base delivery is <strong>GH₵3.00/km</strong> from VIP Station. Order <strong>2–3 meals</strong> for <strong>GH₵2 off</strong> &bull; <strong>4–5 meals</strong> for <strong>GH₵4 off</strong> &bull; <strong>6+ meals</strong> for <strong>GH₵6 off delivery!</strong>
             </span>
           </div>
+        </div>
+
+        <!-- Food Category Filter Pills -->
+        <div class="menu-filter-bar" style="display:flex; gap:8px; overflow-x:auto; padding:14px 2px 6px; -webkit-overflow-scrolling:touch; scrollbar-width:none;">
+          <button type="button" class="cust-menu-filter-pill active" data-filter="all" style="padding:8px 16px; border-radius:999px; font-size:0.82rem; font-weight:700; border:1.5px solid var(--forest); background:var(--forest); color:var(--gold); cursor:pointer; white-space:nowrap; transition:all 0.15s ease;">
+            🍽️ All Dishes
+          </button>
+          <button type="button" class="cust-menu-filter-pill" data-filter="spaghetti" style="padding:8px 16px; border-radius:999px; font-size:0.82rem; font-weight:700; border:1.5px solid var(--line); background:#ffffff; color:var(--forest); cursor:pointer; white-space:nowrap; transition:all 0.15s ease;">
+            🍝 Spaghetti
+          </button>
+          <button type="button" class="cust-menu-filter-pill" data-filter="indomie" style="padding:8px 16px; border-radius:999px; font-size:0.82rem; font-weight:700; border:1.5px solid var(--line); background:#ffffff; color:var(--forest); cursor:pointer; white-space:nowrap; transition:all 0.15s ease;">
+            🍜 Indomie
+          </button>
+          <button type="button" class="cust-menu-filter-pill" data-filter="coming_soon" style="padding:8px 16px; border-radius:999px; font-size:0.82rem; font-weight:700; border:1.5px solid #f59e0b; background:#fef3c7; color:#b45309; cursor:pointer; white-space:nowrap; transition:all 0.15s ease;">
+            🚀 Coming Soon
+          </button>
+          <button type="button" class="cust-menu-filter-pill" data-filter="specials" style="padding:8px 16px; border-radius:999px; font-size:0.82rem; font-weight:700; border:1.5px solid var(--line); background:#ffffff; color:var(--forest); cursor:pointer; white-space:nowrap; transition:all 0.15s ease;">
+            🎁 With Free Beta Malt
+          </button>
         </div>
 
         <div class="menu-grid" id="menuGrid">
@@ -1824,16 +1860,42 @@
       return raw || 'img_food_1.jpg';
     }
 
+    let currentMenuFilter = 'all';
+
     function renderMenu() {
-      const items = getMenuItems();
+      const allItems = getMenuItems();
+      let items = allItems;
+      if (currentMenuFilter === 'spaghetti') {
+        items = allItems.filter(m => (m.noodles && m.noodles.some(n => /spaghetti/i.test(n))) || /spaghetti/i.test(m.name));
+      } else if (currentMenuFilter === 'indomie') {
+        items = allItems.filter(m => (m.noodles && m.noodles.some(n => /indomie/i.test(n))) || /indomie/i.test(m.name));
+      } else if (currentMenuFilter === 'coming_soon') {
+        items = allItems.filter(m => m.status === 'coming_soon' || m.comingSoon === true || String(m.tag || '').toLowerCase().includes('coming soon'));
+      } else if (currentMenuFilter === 'specials') {
+        items = allItems.filter(m => /beta malt/i.test(m.tag || '') || /beta malt/i.test(m.formula || '') || /beta malt/i.test(m.desc || ''));
+      }
+
+      if (items.length === 0) {
+        menuGrid.innerHTML = `
+          <div style="grid-column: 1 / -1; text-align:center; padding:40px 20px; background:#faf7ee; border-radius:16px; border:1px dashed var(--gold);">
+            <div style="font-size:2rem; margin-bottom:8px;">🍜</div>
+            <strong style="color:var(--forest); font-size:1.05rem;">No dishes found under this category</strong>
+            <p style="color:var(--muted); font-size:0.85rem; margin:6px 0 16px;">Try switching to "All Dishes" to view our complete menu.</p>
+            <button type="button" class="button button-forest" onclick="setMenuFilter('all')" style="padding:8px 18px; font-size:0.85rem;">View All Dishes</button>
+          </div>
+        `;
+        return;
+      }
+
       menuGrid.innerHTML = items.map((item, index) => {
         const formulaText = item.formula || item.desc || "";
         const cleanFormula = formulaText.replace(/^=\s*/, '');
-        const soldOut = item.available === false;
+        const isComingSoon = item.status === 'coming_soon' || item.comingSoon === true || String(item.tag || '').toLowerCase().includes('coming soon');
+        const soldOut = !isComingSoon && (item.available === false || item.status === 'sold_out');
         const description = item.description || cleanFormula || 'Fresh Ghanaian street-style noodles, cooked to order.';
         const imgSrc = menuImageSrc(item.image);
         return `
-        <article class="poster-card${soldOut ? ' sold-out' : ''}" id="card-${item.id}">
+        <article class="poster-card${isComingSoon ? ' coming-soon-card' : (soldOut ? ' sold-out' : '')}" id="card-${item.id}">
           <!-- Poster Capsule Bar matching Image 1 -->
           <div class="poster-capsule-bar">
             <div class="poster-price-badge">
@@ -1849,38 +1911,81 @@
           <!-- Realistic Food Photo -->
           <div class="poster-food-img-wrap">
             <img src="${imgSrc}" alt="${item.name} - ${item.price} Cedis" class="poster-food-img" width="600" height="420" loading="${index === 0 ? 'eager' : 'lazy'}" ${index === 0 ? 'fetchpriority="high"' : ''} decoding="async" onerror="this.onerror=null;this.src='img_food_1.jpg';this.classList.add('img-fallback');">
-            <span class="poster-availability${soldOut ? ' sold-out' : ''}">${soldOut ? 'Sold out today' : 'Available today'}</span>
-            <span class="poster-tag-pill">${item.tag || item.badge || 'Freshly cooked'}</span>
+            ${isComingSoon
+              ? `<span class="poster-availability coming-soon-badge">🚀 Coming Soon</span>`
+              : `<span class="poster-availability${soldOut ? ' sold-out' : ''}">${soldOut ? 'Sold out today' : 'Available today'}</span>`
+            }
+            <span class="poster-tag-pill${isComingSoon ? ' coming-soon-tag' : ''}">${item.tag || item.badge || (isComingSoon ? 'Launching Soon' : 'Freshly cooked')}</span>
           </div>
 
           <!-- Noodle Customization & Add CTA -->
           <div class="poster-card-footer">
             <p class="poster-desc">${description}</p>
             <div class="poster-meta-row">
-              <span class="poster-rating">★ Kitchen favourite</span>
+              <span class="poster-rating">${isComingSoon ? '✨ Preview Only' : '★ Kitchen favourite'}</span>
               <span>${item.prepTime || 'Ready in 20–30 min'}</span>
             </div>
-            ${item.noodles && item.noodles.length > 1
+            ${item.noodles && item.noodles.length > 1 && !isComingSoon
               ? `<div>
                   <label class="field-label" for="noodle-${item.id}" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; color:var(--forest); margin-bottom:4px; display:block;">Select Noodles:</label>
                   <select class="noodle-select" id="noodle-${item.id}" style="margin-bottom:0; font-weight:600;">
                     ${item.noodles.map(t => `<option value="${t}">${t}</option>`).join('')}
                   </select>
                 </div>`
-              : `<div style="font-size:0.8rem; color:var(--muted); font-weight:600;">🍝 Served with your choice of freshly boiled noodles</div>`
+              : (isComingSoon
+                  ? `<div style="font-size:0.8rem; color:#b45309; font-weight:700; background:#fef3c7; border:1px dashed #f59e0b; padding:8px 12px; border-radius:8px; text-align:center;">🚀 Preparing kitchen spices & recipe. Launching soon!</div>`
+                  : `<div style="font-size:0.8rem; color:var(--muted); font-weight:600;">🍝 Served with your choice of freshly boiled noodles</div>`)
             }
-            <button class="button button-orange menu-add-btn" type="button" data-id="${item.id}" ${soldOut ? 'disabled' : ''} style="width:100%; font-weight:800; font-size:0.95rem; border-radius:10px; box-shadow:0 4px 12px rgba(229,122,69,0.3);">
-              ${soldOut ? 'Sold out — check back soon' : `Add to order · GH₵${item.price}`}
-            </button>
+            ${isComingSoon
+              ? `<button class="button coming-soon-btn" type="button" disabled style="width:100%; font-weight:800; font-size:0.92rem; border-radius:10px; background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color:#ffffff; cursor:not-allowed; opacity:0.9; box-shadow:0 4px 12px rgba(217,119,6,0.25);">
+                  🚀 Coming Soon · GH₵${item.price}
+                </button>`
+              : `<button class="button button-orange menu-add-btn" type="button" data-id="${item.id}" ${soldOut ? 'disabled' : ''} style="width:100%; font-weight:800; font-size:0.95rem; border-radius:10px; box-shadow:0 4px 12px rgba(229,122,69,0.3);">
+                  ${soldOut ? 'Sold out — check back soon' : `Add to order · GH₵${item.price}`}
+                </button>`
+            }
           </div>
         </article>
-      `}).join('');
+        `;
+      }).join('');
     }
+
+    window.setMenuFilter = function(filter) {
+      currentMenuFilter = filter;
+      document.querySelectorAll('.cust-menu-filter-pill').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === filter);
+        if (btn.dataset.filter === filter) {
+          btn.style.background = 'var(--forest)';
+          btn.style.color = 'var(--gold)';
+          btn.style.borderColor = 'var(--forest)';
+        } else {
+          btn.style.background = btn.dataset.filter === 'coming_soon' ? '#fef3c7' : '#ffffff';
+          btn.style.color = btn.dataset.filter === 'coming_soon' ? '#b45309' : 'var(--forest)';
+          btn.style.borderColor = btn.dataset.filter === 'coming_soon' ? '#f59e0b' : 'var(--line)';
+        }
+      });
+      renderMenu();
+    };
+
+    document.querySelectorAll('.cust-menu-filter-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setMenuFilter(btn.dataset.filter);
+      });
+    });
 
     function addToCart(id) {
       const items = getMenuItems();
       const item = items.find(m => m.id === id);
       if (!item) return;
+      const isComingSoon = item.status === 'coming_soon' || item.comingSoon === true || String(item.tag || '').toLowerCase().includes('coming soon');
+      if (isComingSoon) {
+        if (typeof showToast === 'function') showToast("🚀 This special dish is launching soon! Check back shortly.");
+        return;
+      }
+      if (item.available === false || item.status === 'sold_out') {
+        if (typeof showToast === 'function') showToast("⚠️ This dish is sold out today.");
+        return;
+      }
       const select = document.getElementById(`noodle-${id}`);
       const noodle = select ? select.value : item.noodles[0];
       const key = `${id}:${noodle}`;

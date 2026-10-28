@@ -60,6 +60,35 @@ create table if not exists public.yebs_orders (
   raw_data         jsonb
 );
 
+-- Defensive migration: ensure all columns exist if the table was previously created
+alter table public.yebs_orders add column if not exists pickup_pin text;
+alter table public.yebs_orders add column if not exists session_number int;
+alter table public.yebs_orders add column if not exists customer_name text;
+alter table public.yebs_orders add column if not exists customer_phone text;
+alter table public.yebs_orders add column if not exists fulfilment text;
+alter table public.yebs_orders add column if not exists location text;
+alter table public.yebs_orders add column if not exists map_pin jsonb;
+alter table public.yebs_orders add column if not exists timing text;
+alter table public.yebs_orders add column if not exists subtotal numeric(10,2);
+alter table public.yebs_orders add column if not exists delivery_fee numeric(10,2);
+alter table public.yebs_orders add column if not exists total numeric(10,2);
+alter table public.yebs_orders add column if not exists payment text;
+alter table public.yebs_orders add column if not exists payment_mode text;
+alter table public.yebs_orders add column if not exists payment_network text;
+alter table public.yebs_orders add column if not exists payment_status text default 'unpaid';
+alter table public.yebs_orders add column if not exists payment_ref text;
+alter table public.yebs_orders add column if not exists payment_verified boolean default false;
+alter table public.yebs_orders add column if not exists status text default 'Received';
+alter table public.yebs_orders add column if not exists kitchen_status text default 'NEW';
+alter table public.yebs_orders add column if not exists items jsonb;
+alter table public.yebs_orders add column if not exists notes text;
+alter table public.yebs_orders add column if not exists driver_id text;
+alter table public.yebs_orders add column if not exists driver_name text;
+alter table public.yebs_orders add column if not exists driver_phone text;
+alter table public.yebs_orders add column if not exists created_at timestamptz default now();
+alter table public.yebs_orders add column if not exists updated_at timestamptz default now();
+alter table public.yebs_orders add column if not exists raw_data jsonb;
+
 create index if not exists idx_yebs_orders_status on public.yebs_orders (status);
 create index if not exists idx_yebs_orders_created on public.yebs_orders (created_at desc);
 create index if not exists idx_yebs_orders_driver on public.yebs_orders (driver_id);
@@ -89,6 +118,25 @@ create table if not exists public.yebs_drivers (
   raw_data        jsonb
 );
 
+alter table public.yebs_drivers add column if not exists username text;
+alter table public.yebs_drivers add column if not exists name text;
+alter table public.yebs_drivers add column if not exists fname text;
+alter table public.yebs_drivers add column if not exists lname text;
+alter table public.yebs_drivers add column if not exists email text;
+alter table public.yebs_drivers add column if not exists phone text;
+alter table public.yebs_drivers add column if not exists vehicle text;
+alter table public.yebs_drivers add column if not exists photo text;
+alter table public.yebs_drivers add column if not exists approval_status text default 'pending';
+alter table public.yebs_drivers add column if not exists is_active boolean default true;
+alter table public.yebs_drivers add column if not exists failed_attempts int default 0;
+alter table public.yebs_drivers add column if not exists lockout_until timestamptz;
+alter table public.yebs_drivers add column if not exists lat numeric(10,6);
+alter table public.yebs_drivers add column if not exists lng numeric(10,6);
+alter table public.yebs_drivers add column if not exists status_text text default 'Available';
+alter table public.yebs_drivers add column if not exists created_at timestamptz default now();
+alter table public.yebs_drivers add column if not exists updated_at timestamptz default now();
+alter table public.yebs_drivers add column if not exists raw_data jsonb;
+
 create index if not exists idx_yebs_drivers_active on public.yebs_drivers (is_active, approval_status);
 
 -- ────────────────────────────────────────────────────────────────────────────
@@ -108,22 +156,52 @@ create table if not exists public.yebs_admins (
   updated_at      timestamptz default now()
 );
 
+alter table public.yebs_admins add column if not exists username text;
+alter table public.yebs_admins add column if not exists name text;
+alter table public.yebs_admins add column if not exists email text;
+alter table public.yebs_admins add column if not exists phone text;
+alter table public.yebs_admins add column if not exists role text default 'ADMIN';
+alter table public.yebs_admins add column if not exists photo text;
+alter table public.yebs_admins add column if not exists failed_attempts int default 0;
+alter table public.yebs_admins add column if not exists lockout_until timestamptz;
+alter table public.yebs_admins add column if not exists created_at timestamptz default now();
+alter table public.yebs_admins add column if not exists updated_at timestamptz default now();
+
 -- ────────────────────────────────────────────────────────────────────────────
 -- 4. MENU ITEMS TABLE
 -- ────────────────────────────────────────────────────────────────────────────
 create table if not exists public.yebs_menu_items (
-  id         text primary key,
-  name       text not null,
-  price      numeric(10,2) not null,
-  badge      text,
-  tag        text,
-  "desc"     text,
-  formula    text,
-  image      text,
-  noodles    jsonb,
-  template   text default 'poster-capsule',
-  updated_at timestamptz default now()
+  id          text primary key,
+  name        text not null,
+  price       numeric(10,2) not null,
+  badge       text,
+  tag         text,
+  "desc"      text,
+  description text,
+  formula     text,
+  image       text,
+  noodles     jsonb,
+  template    text default 'poster-capsule',
+  available   boolean default true,
+  status      text default 'available',
+  prep_time   text default 'Ready in 20–30 min',
+  updated_at  timestamptz default now()
 );
+
+alter table public.yebs_menu_items add column if not exists name text;
+alter table public.yebs_menu_items add column if not exists price numeric(10,2);
+alter table public.yebs_menu_items add column if not exists badge text;
+alter table public.yebs_menu_items add column if not exists tag text;
+alter table public.yebs_menu_items add column if not exists "desc" text;
+alter table public.yebs_menu_items add column if not exists description text;
+alter table public.yebs_menu_items add column if not exists formula text;
+alter table public.yebs_menu_items add column if not exists image text;
+alter table public.yebs_menu_items add column if not exists noodles jsonb;
+alter table public.yebs_menu_items add column if not exists template text default 'poster-capsule';
+alter table public.yebs_menu_items add column if not exists available boolean default true;
+alter table public.yebs_menu_items add column if not exists status text default 'available';
+alter table public.yebs_menu_items add column if not exists prep_time text default 'Ready in 20–30 min';
+alter table public.yebs_menu_items add column if not exists updated_at timestamptz default now();
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- 5. REVIEWS TABLE
@@ -395,31 +473,39 @@ begin
     for mnu in select jsonb_array_elements(new.data->'menuItems')
     loop
       insert into public.yebs_menu_items (
-        id, name, price, badge, tag, "desc", formula, image, noodles, template, updated_at
+        id, name, price, badge, tag, "desc", description, formula, image, noodles, template, available, status, prep_time, updated_at
       ) values (
         mnu->>'id',
         mnu->>'name',
         (mnu->>'price')::numeric,
         mnu->>'badge',
         mnu->>'tag',
-        mnu->>'desc',
+        coalesce(mnu->>'desc', mnu->>'formula'),
+        coalesce(mnu->>'description', mnu->>'desc', mnu->>'formula'),
         mnu->>'formula',
         mnu->>'image',
-        mnu->'noodles',
+        coalesce(mnu->'noodles', '["Spaghetti", "Indomie"]'::jsonb),
         coalesce(mnu->>'template', 'poster-capsule'),
+        coalesce((mnu->>'available')::boolean, true),
+        coalesce(mnu->>'status', case when (mnu->>'available')::boolean = false then 'sold_out' else 'available' end),
+        coalesce(mnu->>'prepTime', mnu->>'prep_time', 'Ready in 20–30 min'),
         now()
       )
       on conflict (id) do update set
-        name       = excluded.name,
-        price      = excluded.price,
-        badge      = excluded.badge,
-        tag        = excluded.tag,
-        "desc"     = excluded."desc",
-        formula    = excluded.formula,
-        image      = excluded.image,
-        noodles    = excluded.noodles,
-        template   = excluded.template,
-        updated_at = now();
+        name        = excluded.name,
+        price       = excluded.price,
+        badge       = excluded.badge,
+        tag         = excluded.tag,
+        "desc"      = excluded."desc",
+        description = excluded.description,
+        formula     = excluded.formula,
+        image       = excluded.image,
+        noodles     = excluded.noodles,
+        template    = excluded.template,
+        available   = excluded.available,
+        status      = excluded.status,
+        prep_time   = excluded.prep_time,
+        updated_at  = now();
     end loop;
   end if;
 
@@ -542,11 +628,15 @@ begin
         'price', price,
         'badge', badge,
         'tag', tag,
-        'desc', "desc",
+        'desc', coalesce("desc", formula),
+        'description', coalesce(description, "desc", formula),
         'formula', formula,
         'image', image,
-        'noodles', coalesce(noodles, '[]'::jsonb),
-        'template', coalesce(template, 'poster-capsule')
+        'noodles', coalesce(noodles, '["Spaghetti", "Indomie"]'::jsonb),
+        'template', coalesce(template, 'poster-capsule'),
+        'available', coalesce(available, true),
+        'status', coalesce(status, 'available'),
+        'prepTime', coalesce(prep_time, 'Ready in 20–30 min')
       ) order by price asc
     ), '[]'::jsonb) into menu_arr from public.yebs_menu_items;
 

@@ -1574,6 +1574,62 @@ export async function apiSaveMenu(menuItems) {
   }
 }
 
+export async function apiCreateMenuItem(itemData) {
+  const token = authToken('admin');
+  if (!token) {
+    return { success: false, message: "Your admin session has expired. Sign in again to create dishes." };
+  }
+  try {
+    const res = await fetch(`${API_BASE}/api/menu/item`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(itemData)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      if (Array.isArray(data.menuItems)) {
+        saveMenuItems(data.menuItems);
+        broadcastEvent("MENU_UPDATED", { items: data.menuItems });
+      }
+      return { success: true, item: data.item, menuItems: data.menuItems };
+    }
+    return { success: false, message: data.message || `Failed to create dish (Status ${res.status})` };
+  } catch (e) {
+    console.warn("Could not create menu item:", e);
+    return { success: false, message: "Network connection error while creating dish." };
+  }
+}
+
+export async function apiDeleteMenuItem(id) {
+  const token = authToken('admin');
+  if (!token) {
+    return { success: false, message: "Your admin session has expired. Sign in again to delete dishes." };
+  }
+  try {
+    const res = await fetch(`${API_BASE}/api/menu/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      if (Array.isArray(data.menuItems)) {
+        saveMenuItems(data.menuItems);
+        broadcastEvent("MENU_UPDATED", { items: data.menuItems });
+      }
+      return { success: true, menuItems: data.menuItems };
+    }
+    return { success: false, message: data.message || `Failed to delete dish (Status ${res.status})` };
+  } catch (e) {
+    console.warn("Could not delete menu item:", e);
+    return { success: false, message: "Network connection error while deleting dish." };
+  }
+}
+
 export async function apiResetMenu() {
   try {
     const token = authToken('admin');

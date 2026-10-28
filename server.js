@@ -2844,6 +2844,48 @@ app.post('/api/menu', requireRole('admin'), (req, res) => {
   res.json({ success: true, menuItems: db.menuItems });
 });
 
+app.post('/api/menu/item', requireRole('admin'), (req, res) => {
+  const itemData = req.body || {};
+  if (!itemData.name || !itemData.name.trim()) {
+    return res.status(400).json({ success: false, message: "Dish title / name is required." });
+  }
+  const price = Number(itemData.price);
+  if (!price || price <= 0) {
+    return res.status(400).json({ success: false, message: "A valid positive price in Cedis is required." });
+  }
+
+  const db = loadDatabase();
+  if (!db.menuItems || !Array.isArray(db.menuItems)) {
+    db.menuItems = [...DEFAULT_POSTER_MENU];
+  }
+
+  const id = itemData.id && String(itemData.id).trim()
+    ? String(itemData.id).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '')
+    : 'dish_' + Date.now().toString(36);
+
+  const newItem = {
+    id,
+    name: itemData.name.trim(),
+    price: Math.round(price * 100) / 100,
+    badge: itemData.badge || `${price} CEDIS`,
+    tag: itemData.tag || (itemData.status === 'coming_soon' ? '🚀 COMING SOON' : 'Freshly Cooked'),
+    formula: itemData.formula || itemData.desc || 'Cooked to perfection with freshly boiled noodles',
+    desc: itemData.desc || itemData.description || itemData.formula || 'Fresh Ghanaian noodles cooked to order',
+    description: itemData.description || itemData.desc || 'Fresh Ghanaian noodles cooked to order',
+    image: itemData.image || 'img_food_1.jpg',
+    noodles: Array.isArray(itemData.noodles) && itemData.noodles.length > 0 ? itemData.noodles : ['Spaghetti', 'Indomie'],
+    template: itemData.template || 'poster-capsule',
+    available: itemData.status === 'sold_out' ? false : (itemData.available !== false),
+    status: itemData.status || (itemData.available === false ? 'sold_out' : 'available'),
+    prepTime: itemData.prepTime || 'Ready in 20–30 min'
+  };
+
+  db.menuItems.push(newItem);
+  saveDatabase(db);
+  logAction("MENU_ITEM_CREATED", req.auth.admin.username, newItem.id, { name: newItem.name, price: newItem.price, status: newItem.status }, req);
+  res.json({ success: true, item: newItem, menuItems: db.menuItems });
+});
+
 app.put('/api/menu/:id', requireRole('admin'), (req, res) => {
   const { id } = req.params;
   const updates = req.body || {};
@@ -2858,7 +2900,23 @@ app.put('/api/menu/:id', requireRole('admin'), (req, res) => {
   db.menuItems[idx] = { ...db.menuItems[idx], ...updates };
   saveDatabase(db);
   logAction("MENU_ITEM_UPDATED", req.auth.admin.username, id, updates, req);
-  res.json({ success: true, item: db.menuItems[idx] });
+  res.json({ success: true, item: db.menuItems[idx], menuItems: db.menuItems });
+});
+
+app.delete('/api/menu/:id', requireRole('admin'), (req, res) => {
+  const { id } = req.params;
+  const db = loadDatabase();
+  if (!db.menuItems || !Array.isArray(db.menuItems)) {
+    return res.status(404).json({ success: false, message: "Menu is empty." });
+  }
+  const prevCount = db.menuItems.length;
+  db.menuItems = db.menuItems.filter(m => m.id !== id);
+  if (db.menuItems.length === prevCount) {
+    return res.status(404).json({ success: false, message: "Dish not found." });
+  }
+  saveDatabase(db);
+  logAction("MENU_ITEM_DELETED", req.auth.admin.username, id, { deletedId: id }, req);
+  res.json({ success: true, message: "Dish deleted successfully.", menuItems: db.menuItems });
 });
 
 app.post('/api/menu/reset', requireRole('admin'), (req, res) => {

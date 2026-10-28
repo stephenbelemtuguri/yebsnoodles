@@ -559,6 +559,97 @@
       border-color: var(--orange);
     }
 
+    /* Food Card Customizer & Coming Soon Styles */
+    .badge-preset-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .badge-preset-chip:hover {
+      background: #e2e8f0;
+      border-color: var(--orange);
+      color: var(--forest);
+      transform: translateY(-1px);
+    }
+    .badge-preset-chip.active-chip {
+      background: var(--forest);
+      color: var(--gold);
+      border-color: var(--gold);
+    }
+
+    .admin-create-dish-card {
+      background: #ffffff;
+      border: 2px solid var(--gold);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 30px rgba(23,61,48,0.08);
+      position: relative;
+    }
+
+    .admin-filter-pill {
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--forest);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .admin-filter-pill:hover, .admin-filter-pill.active {
+      background: var(--forest);
+      color: #ffffff;
+      border-color: var(--forest);
+    }
+
+    .status-pill-coming-soon {
+      background: #fef3c7;
+      color: #b45309;
+      border: 1px solid #f59e0b;
+    }
+    .status-pill-available {
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #10b981;
+    }
+    .status-pill-sold-out {
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #ef4444;
+    }
+
+    /* Docket Print Slip Styles */
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #kitchenDocketPrintArea, #kitchenDocketPrintArea * {
+        visibility: visible;
+      }
+      #kitchenDocketPrintArea {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 10px;
+        background: white;
+        color: black;
+      }
+    }
+
     /* Auth Modal Overlay */
     .auth-overlay {
       position: fixed;
@@ -698,6 +789,7 @@
         <a href="admin.html" class="nav-btn active">Admin Dashboard</a>
         <a href="public/admin-analytics.html" class="nav-btn">📊 Analytics</a>
         <a href="public/admin-management.html" class="nav-btn">⚙️ Management</a>
+        <button id="adminSoundToggleBtn" type="button" title="Toggle Kitchen Audio Chime for incoming orders" style="background:rgba(255,255,255,0.15); color:white; border:1px solid rgba(255,255,255,0.3); padding:6px 12px; border-radius:6px; font-weight:700; font-size:0.8rem; cursor:pointer;">🔔 Sound: ON</button>
         <span id="adminUserBadge" style="display:none; font-size:0.75rem; color:var(--gold); background:rgba(255,255,255,0.12); padding:5px 10px; border-radius:6px; border:1px solid rgba(233,189,104,0.4); font-weight:700;">👤 Admin</span>
         <button id="adminLogoutBtn" type="button" style="display:none; background:#d26532; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:0.8rem; cursor:pointer;">Logout</button>
       </nav>
@@ -991,12 +1083,12 @@
           <div>
             <h2 class="card-title">🍜 Food Cards & Poster Template Manager (15 – 60 Cedis)</h2>
             <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">
-              Manage prices, images, ingredients formula, highlight tags, and card templates live on the website.
+              Manage prices, images, ingredients formula, highlight tags, and "Coming Soon" or active dishes live on the website.
             </div>
           </div>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <button type="button" id="adminAddMenuBtn" class="btn btn-forest btn-sm">
-              ➕ Add new dish
+            <button type="button" id="adminAddMenuBtn" class="btn btn-forest btn-sm" style="font-weight:800; box-shadow:0 2px 8px rgba(23,61,48,0.2);">
+              ✨ Create & Customize New Dish
             </button>
             <button type="button" id="adminResetMenuBtn" class="btn btn-outline btn-sm">
               🔄 Reset to Poster Defaults
@@ -1004,6 +1096,164 @@
             <button type="button" id="adminSaveAllMenuBtn" class="btn btn-orange btn-sm">
               💾 Save All Changes Live
             </button>
+          </div>
+        </div>
+
+        <!-- Create & Customize New Food Dish Card (Collapsible) -->
+        <div id="adminCreateDishBox" class="admin-create-dish-card" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; border-bottom:1px solid #ebdcb9; padding-bottom:12px;">
+            <div>
+              <h3 style="margin:0; font-size:1.15rem; color:var(--forest); display:flex; align-items:center; gap:8px;">
+                <span>✨</span> Create & Customize New Food Dish
+              </h3>
+              <p style="margin:4px 0 0; font-size:0.82rem; color:var(--muted);">
+                Set price, ingredients formula, photo, theme, and "Coming Soon" or active status live for customers.
+              </p>
+            </div>
+            <button type="button" id="adminCloseCreateDishBtn" class="btn btn-outline btn-sm" style="border-radius:999px;">✕ Close</button>
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1.2fr 1fr; gap:24px;">
+            <!-- Form Side -->
+            <div>
+              <div class="admin-field-row">
+                <div>
+                  <label class="admin-edit-label">Price (Cedis):</label>
+                  <input type="number" id="newDishPrice" class="admin-edit-input" value="25" min="1" step="0.5">
+                </div>
+                <div>
+                  <label class="admin-edit-label">Availability / Launch Status:</label>
+                  <select id="newDishStatus" class="admin-edit-select" style="font-weight:700;">
+                    <option value="available" selected>🟢 Available Live (Orderable)</option>
+                    <option value="coming_soon">🚀 Coming Soon (Hype Preview / Not Orderable)</option>
+                    <option value="sold_out">🔴 Sold Out Today</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="margin-top:12px;">
+                <label class="admin-edit-label">Dish Title / Category Name:</label>
+                <input type="text" id="newDishName" class="admin-edit-input" value="SPAGHETTI / INDOMIE" placeholder="e.g. JOLLOF SPAGHETTI SPECIAL">
+              </div>
+
+              <div style="margin-top:12px;">
+                <label class="admin-edit-label">Highlight Tag / Badge Preset:</label>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+                  <span class="badge-preset-chip" data-tag="🚀 COMING SOON" data-status="coming_soon">🚀 COMING SOON</span>
+                  <span class="badge-preset-chip" data-tag="⭐ Bestseller">⭐ Bestseller</span>
+                  <span class="badge-preset-chip" data-tag="🔥 Chef Special">🔥 Chef Special</span>
+                  <span class="badge-preset-chip" data-tag="🎁 Free Beta Malt">🎁 Free Beta Malt</span>
+                  <span class="badge-preset-chip" data-tag="🍗 Extra Chicken">🍗 Extra Chicken</span>
+                  <span class="badge-preset-chip" data-tag="🌶 Spicy Street Blend">🌶 Spicy</span>
+                  <span class="badge-preset-chip" data-tag="⚡ Quick Bite">⚡ Quick Bite</span>
+                </div>
+                <input type="text" id="newDishTag" class="admin-edit-input" value="New Special" placeholder="e.g. Free Beta Malt or Coming Soon">
+              </div>
+
+              <div style="margin-top:12px;">
+                <label class="admin-edit-label">Recipe Formula (Kitchen Preparation Guide):</label>
+                <textarea id="newDishFormula" class="admin-edit-textarea" rows="2" placeholder="e.g. Add scrambled egg + Cut full sausage + Put one egg on top...">Add scrambled egg + Cut full sausage + Put one egg on top</textarea>
+              </div>
+
+              <div style="margin-top:12px;">
+                <label class="admin-edit-label">Customer Description (Menu Card text):</label>
+                <textarea id="newDishDesc" class="admin-edit-textarea" rows="2" placeholder="Describe the flavors, texture, and delicious toppings...">Fresh Ghanaian street-style noodles, cooked to order with savory egg and sausage.</textarea>
+              </div>
+
+              <div class="admin-field-row" style="margin-top:12px;">
+                <div>
+                  <label class="admin-edit-label">Preparation Time:</label>
+                  <input type="text" id="newDishPrep" class="admin-edit-input" value="Ready in 20–30 min">
+                </div>
+                <div>
+                  <label class="admin-edit-label">Card Template Theme:</label>
+                  <select id="newDishTemplate" class="admin-edit-select">
+                    <option value="poster-capsule" selected>Poster Capsule (Yellow Brush + Forest Pill)</option>
+                    <option value="modern-glass">Modern Glassmorphism Theme</option>
+                    <option value="street-classic">Street Food Classic Theme</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="margin-top:12px;">
+                <label class="admin-edit-label">Choose Food Image:</label>
+                <select id="newDishImageSelect" class="admin-edit-select">
+                  <option value="img_food_1.jpg">img_food_1.jpg — Chicken Drumstick & Egg Bowl (30 Cedis default)</option>
+                  <option value="img_food_2.jpg">img_food_2.jpg — Sunny Fried Egg on Noodles (20 Cedis default)</option>
+                  <option value="img_food_3.jpg">img_food_3.jpg — Sliced Sausage & Veggies (15 Cedis default)</option>
+                  <option value="ghana_spag_chicken.jpg">ghana_spag_chicken.jpg — Golden Chicken Feast (40 Cedis default)</option>
+                  <option value="img_food_4.jpg">img_food_4.jpg — Multi-Plate Big Feast (60 Cedis default)</option>
+                  <option value="img_menu_poster.jpg">img_menu_poster.jpg — Official Poster Graphic</option>
+                </select>
+                <input type="text" id="newDishCustomImage" class="admin-edit-input" placeholder="Or paste an image URL..." style="margin-top:6px; font-size:0.8rem;">
+                <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                  <label class="btn btn-outline btn-sm" style="cursor:pointer; margin:0; border-color:var(--orange); color:var(--forest);">
+                    📁 Upload photo from phone / folder
+                    <input type="file" id="newDishImageFile" accept="image/*" style="display:none;">
+                  </label>
+                  <span id="newDishImageFileName" style="font-size:0.75rem; color:var(--muted);">JPG, PNG or WEBP</span>
+                </div>
+              </div>
+
+              <div style="margin-top:18px; display:flex; gap:10px;">
+                <button type="button" id="adminSubmitCreateDishBtn" class="btn btn-forest" style="padding:10px 24px; font-weight:800;">
+                  🚀 Save & Publish New Dish Live
+                </button>
+              </div>
+            </div>
+
+            <!-- Live Card Preview Side -->
+            <div>
+              <label class="admin-edit-label" style="margin-bottom:8px;">Live Storefront Card Preview:</label>
+              <div style="background:#ffffff; border:1.5px solid var(--line); border-radius:16px; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,0.08);">
+                <div class="poster-capsule-bar" id="newPrevBar">
+                  <div class="poster-price-badge">
+                    <span class="poster-price-num" id="newPrevPrice">25</span>
+                    <span class="poster-price-unit">CEDIS</span>
+                  </div>
+                  <div class="poster-capsule-info">
+                    <div class="poster-capsule-title" id="newPrevTitle">SPAGHETTI / INDOMIE</div>
+                    <p class="poster-capsule-formula" id="newPrevFormula"><span class="eq">=</span> Add scrambled egg + Cut full sausage + Put one egg on top</p>
+                  </div>
+                </div>
+
+                <div style="position:relative; height:190px; width:100%; overflow:hidden; background:#eee;">
+                  <img src="img_food_1.jpg" alt="Preview" id="newPrevImg" style="width:100%; height:100%; object-fit:cover;">
+                  <span id="newPrevAvailabilityBadge" class="status-pill-available" style="position:absolute; top:10px; left:10px; font-size:0.72rem; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;">
+                    🟢 Available Live
+                  </span>
+                  <span id="newPrevTag" style="position:absolute; bottom:10px; right:10px; background:rgba(17,43,33,0.9); color:var(--gold); border:1px solid var(--gold); font-size:0.72rem; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;">
+                    New Special
+                  </span>
+                </div>
+
+                <div style="padding:16px;">
+                  <p id="newPrevDesc" style="font-size:0.84rem; color:#475569; margin:0 0 12px; line-height:1.4;">
+                    Fresh Ghanaian street-style noodles, cooked to order with savory egg and sausage.
+                  </p>
+                  <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--muted); font-weight:700; margin-bottom:12px;">
+                    <span id="newPrevRating">★ Kitchen favourite</span>
+                    <span id="newPrevPrep">Ready in 20–30 min</span>
+                  </div>
+                  <button type="button" id="newPrevBtn" class="btn btn-orange" style="width:100%; font-weight:800;" disabled>
+                    Add to order · GH₵25.00
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter & Search Toolbar -->
+        <div style="background:#f8fafc; border:1px solid var(--line); border-radius:12px; padding:12px 16px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:240px;">
+            <input type="text" id="adminMenuFilterInput" class="admin-edit-input" placeholder="🔍 Filter dishes by name, price or tag (e.g. 20, indomie, coming soon)..." style="background:#ffffff;">
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button type="button" class="admin-filter-pill active" data-filter="all">All Dishes (<span id="countAllDishes">0</span>)</button>
+            <button type="button" class="admin-filter-pill" data-filter="available">🟢 Available Live</button>
+            <button type="button" class="admin-filter-pill" data-filter="coming_soon">🚀 Coming Soon</button>
+            <button type="button" class="admin-filter-pill" data-filter="sold_out">🔴 Sold Out</button>
           </div>
         </div>
 
@@ -1566,6 +1816,8 @@
       saveMenuItems,
       apiFetchMenu,
       apiSaveMenu,
+      apiCreateMenuItem,
+      apiDeleteMenuItem,
       apiResetMenu,
       DEFAULT_POSTER_MENU
     } from './shared.js';
@@ -1708,9 +1960,16 @@
       });
     }
 
+    let knownOrdersCount = -1;
+
     // Render Real Dashboard
     function renderDashboard() {
       const orders = getOrders();
+
+      if (knownOrdersCount >= 0 && orders.length > knownOrdersCount) {
+        playKitchenOrderChime();
+      }
+      knownOrdersCount = orders.length;
 
       kpiTotalOrders.textContent = orders.length;
       const ongoing = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled');
@@ -1821,6 +2080,7 @@
                 ${driverTel
                   ? `<a class="btn btn-orange btn-sm" href="${driverTel}" title="Call ${driverName} on ${driverPhone}">📞 Rider</a>`
                   : `<span style="font-size:0.75rem;color:var(--muted);">No rider phone</span>`}
+                <button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation(); openKitchenDocket('${o.id}')" title="Print Kitchen Docket / Slip" style="margin-top:2px; font-size:0.75rem; padding:3px 6px;">🖨️ Slip</button>
               </div>
             </td>
           </tr>
@@ -2557,14 +2817,55 @@
       }, 4000);
     }
 
+    let adminMenuFilterStatus = 'all';
+    let adminMenuSearchQuery = '';
+
     function renderFoodMenuTab() {
       if (!adminMenuCardsContainer) return;
-      const items = getMenuItems();
+      const allItems = getMenuItems();
+
+      const countEl = document.getElementById('countAllDishes');
+      if (countEl) countEl.textContent = allItems.length;
+
+      let items = allItems.filter(item => {
+        const isComingSoon = item.status === 'coming_soon' || item.comingSoon === true || String(item.tag || '').toLowerCase().includes('coming soon');
+        const isSoldOut = !isComingSoon && (item.available === false || item.status === 'sold_out');
+        const isAvailable = !isComingSoon && !isSoldOut;
+
+        if (adminMenuFilterStatus === 'available' && !isAvailable) return false;
+        if (adminMenuFilterStatus === 'coming_soon' && !isComingSoon) return false;
+        if (adminMenuFilterStatus === 'sold_out' && !isSoldOut) return false;
+
+        if (adminMenuSearchQuery) {
+          const q = adminMenuSearchQuery.toLowerCase();
+          const matchName = String(item.name || '').toLowerCase().includes(q);
+          const matchPrice = String(item.price || '').includes(q);
+          const matchTag = String(item.tag || item.badge || '').toLowerCase().includes(q);
+          const matchFormula = String(item.formula || item.desc || '').toLowerCase().includes(q);
+          if (!matchName && !matchPrice && !matchTag && !matchFormula) return false;
+        }
+        return true;
+      });
+
+      if (items.length === 0) {
+        adminMenuCardsContainer.innerHTML = `
+          <div style="grid-column: 1 / -1; text-align:center; padding:40px 20px; background:#f8fafc; border-radius:16px; border:1px dashed var(--line);">
+            <div style="font-size:2rem; margin-bottom:8px;">🔍</div>
+            <strong style="color:var(--forest); font-size:1.05rem;">No dishes match your filter</strong>
+            <p style="color:var(--muted); font-size:0.85rem; margin:6px 0 16px;">Try clearing your search query or selecting "All Dishes".</p>
+            <button type="button" class="btn btn-outline btn-sm" onclick="clearAdminMenuFilter()">Reset Filter</button>
+          </div>
+        `;
+        return;
+      }
 
       adminMenuCardsContainer.innerHTML = items.map((item, idx) => {
         const formulaClean = (item.formula || item.desc || "").replace(/^=\s*/, '');
         const templateStyle = item.template || "poster-capsule";
         const pickedImage = pickedMenuImages.get(item.id) || '';
+        const isComingSoon = item.status === 'coming_soon' || item.comingSoon === true || String(item.tag || '').toLowerCase().includes('coming soon');
+        const isSoldOut = !isComingSoon && (item.available === false || item.status === 'sold_out');
+        const itemStatus = isComingSoon ? 'coming_soon' : (isSoldOut ? 'sold_out' : 'available');
 
         const imageOptions = LOCAL_IMAGES_LIST.map(img => `
           <option value="${img.file}" ${item.image === img.file ? 'selected' : ''}>${img.label}</option>
@@ -2587,6 +2888,9 @@
 
               <div style="position:relative; height:180px; width:100%; overflow:hidden; background:#eee;">
                 <img src="${pickedImage || item.image}" alt="${item.name}" id="prev-img-${item.id}" style="width:100%; height:100%; object-fit:cover;">
+                <span id="prev-status-badge-${item.id}" class="${isComingSoon ? 'status-pill-coming-soon' : (isSoldOut ? 'status-pill-sold-out' : 'status-pill-available')}" style="position:absolute; top:10px; left:10px; font-size:0.72rem; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;">
+                  ${isComingSoon ? '🚀 Coming Soon' : (isSoldOut ? '🔴 Sold Out' : '🟢 Available Live')}
+                </span>
                 <span style="position:absolute; bottom:10px; right:10px; background:rgba(17,43,33,0.9); color:var(--gold); border:1px solid var(--gold); font-size:0.7rem; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;" id="prev-tag-${item.id}">
                   ${item.tag || item.badge || `${item.price} CEDIS`}
                 </span>
@@ -2598,44 +2902,62 @@
               <div class="admin-field-row">
                 <div>
                   <label class="admin-edit-label">Price (Cedis):</label>
-                  <input type="number" class="admin-edit-input edit-price" data-id="${item.id}" value="${item.price}" min="1">
+                  <input type="number" class="admin-edit-input edit-price" data-id="${item.id}" value="${item.price}" min="1" step="0.5">
                 </div>
                 <div>
-                  <label class="admin-edit-label">Highlight Tag / Badge:</label>
-                  <input type="text" class="admin-edit-input edit-tag" data-id="${item.id}" value="${item.tag || item.badge || ''}" placeholder="e.g. Free Beta Malt">
+                  <label class="admin-edit-label">Status & Availability:</label>
+                  <select class="admin-edit-select edit-status" data-id="${item.id}" style="font-weight:700;">
+                    <option value="available" ${itemStatus === 'available' ? 'selected' : ''}>🟢 Available Live</option>
+                    <option value="coming_soon" ${itemStatus === 'coming_soon' ? 'selected' : ''}>🚀 Coming Soon (Not Orderable)</option>
+                    <option value="sold_out" ${itemStatus === 'sold_out' ? 'selected' : ''}>🔴 Sold Out Today</option>
+                  </select>
                 </div>
               </div>
 
-              <div>
+              <div style="margin-top:10px;">
                 <label class="admin-edit-label">Food Category / Title:</label>
                 <input type="text" class="admin-edit-input edit-name" data-id="${item.id}" value="${item.name}" placeholder="e.g. SPAGHETTI / INDOMIE">
               </div>
 
-              <div>
+              <div style="margin-top:10px;">
+                <label class="admin-edit-label">Highlight Tag / Badge:</label>
+                <div class="card-tag-presets" style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:6px;">
+                  <span class="badge-preset-chip" data-id="${item.id}" data-tag="🚀 COMING SOON" data-status="coming_soon">🚀 COMING SOON</span>
+                  <span class="badge-preset-chip" data-id="${item.id}" data-tag="⭐ Bestseller">⭐ Bestseller</span>
+                  <span class="badge-preset-chip" data-id="${item.id}" data-tag="🔥 Chef Special">🔥 Chef Special</span>
+                  <span class="badge-preset-chip" data-id="${item.id}" data-tag="🎁 Free Beta Malt">🎁 Free Beta Malt</span>
+                  <span class="badge-preset-chip" data-id="${item.id}" data-tag="🍗 Extra Chicken">🍗 Extra Chicken</span>
+                  <span class="badge-preset-chip" data-id="${item.id}" data-tag="⚡ Quick Bite">⚡ Quick Bite</span>
+                </div>
+                <input type="text" class="admin-edit-input edit-tag" data-id="${item.id}" value="${item.tag || item.badge || ''}" placeholder="e.g. Free Beta Malt or Coming Soon">
+              </div>
+
+              <div style="margin-top:10px;">
                 <label class="admin-edit-label">Customer description (shown on the food card):</label>
                 <textarea class="admin-edit-textarea edit-description" data-id="${item.id}" rows="2" placeholder="e.g. Spaghetti tossed with egg and sausage, cooked fresh to order.">${item.description || ''}</textarea>
               </div>
 
-              <div class="admin-field-row">
+              <div class="admin-field-row" style="margin-top:10px;">
                 <div>
                   <label class="admin-edit-label">Preparation time:</label>
-                  <input type="text" class="admin-edit-input edit-prep" data-id="${item.id}" value="${item.prepTime || ''}" placeholder="e.g. Ready in 20–30 min">
+                  <input type="text" class="admin-edit-input edit-prep" data-id="${item.id}" value="${item.prepTime || 'Ready in 20–30 min'}" placeholder="e.g. Ready in 20–30 min">
                 </div>
                 <div>
-                  <label class="admin-edit-label">Availability:</label>
-                  <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; font-weight:600; color:var(--forest); min-height:42px;">
-                    <input type="checkbox" class="edit-available" data-id="${item.id}" ${item.available === false ? '' : 'checked'} style="width:18px; height:18px;">
-                    Available on the storefront
-                  </label>
+                  <label class="admin-edit-label">Card Template Theme:</label>
+                  <select class="admin-edit-select edit-template" data-id="${item.id}">
+                    <option value="poster-capsule" ${templateStyle === 'poster-capsule' ? 'selected' : ''}>Poster Capsule Theme</option>
+                    <option value="modern-glass" ${templateStyle === 'modern-glass' ? 'selected' : ''}>Modern Glass Theme</option>
+                    <option value="street-classic" ${templateStyle === 'street-classic' ? 'selected' : ''}>Street Food Theme</option>
+                  </select>
                 </div>
               </div>
 
-              <div>
-                <label class="admin-edit-label">Recipe Formula (Poster text):</label>
+              <div style="margin-top:10px;">
+                <label class="admin-edit-label">Recipe Formula (Cook's guide):</label>
                 <textarea class="admin-edit-textarea edit-formula" data-id="${item.id}" rows="2" placeholder="e.g. Add scrambled egg + Cut half sausage...">${formulaClean}</textarea>
               </div>
 
-              <div>
+              <div style="margin-top:10px;">
                 <label class="admin-edit-label">Choose Food Image:</label>
                 <select class="admin-edit-select edit-image-select" data-id="${item.id}">
                   ${imageOptions}
@@ -2643,27 +2965,21 @@
                 <input type="text" class="admin-edit-input edit-image-custom" data-id="${item.id}" placeholder="Or paste an image URL..." value="${!LOCAL_IMAGES_LIST.some(i => i.file === item.image) && !String(item.image || '').startsWith('data:') ? item.image : ''}" style="margin-top:6px; font-size:0.8rem;">
                 <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                   <label class="btn btn-outline btn-sm" style="cursor:pointer; margin:0; border-color:var(--orange); color:var(--forest);">
-                    &#128193; Choose image from folder
+                    📁 Upload photo from folder
                     <input type="file" class="edit-image-file" accept="image/*" style="display:none;">
                   </label>
-                  <span class="edit-image-file-name" style="font-size:0.72rem; color:var(--muted);">${String(item.image || '').startsWith('data:') ? 'Uploaded image stored in database' : 'JPG, PNG or WEBP'}</span>
+                  <span class="edit-image-file-name" style="font-size:0.72rem; color:var(--muted);">${String(item.image || '').startsWith('data:') ? 'Uploaded photo stored in DB' : 'JPG, PNG or WEBP'}</span>
                 </div>
               </div>
 
-              <div>
-                <label class="admin-edit-label">Card Template Theme:</label>
-                <select class="admin-edit-select edit-template" data-id="${item.id}">
-                  <option value="poster-capsule" ${templateStyle === 'poster-capsule' ? 'selected' : ''}>Poster Capsule Theme (Yellow Brush + Forest Pill)</option>
-                  <option value="modern-glass" ${templateStyle === 'modern-glass' ? 'selected' : ''}>Modern Glassmorphism Theme</option>
-                  <option value="street-classic" ${templateStyle === 'street-classic' ? 'selected' : ''}>Street Food Classic Theme</option>
-                </select>
-              </div>
-
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; gap:10px; flex-wrap:wrap;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; gap:8px; flex-wrap:wrap; border-top:1px solid #f1f5f9; padding-top:10px;">
                 <span style="font-size:0.75rem; color:var(--muted); font-family:monospace;">ID: ${item.id}</span>
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
                   <button type="button" class="btn btn-outline btn-sm delete-card-btn" data-id="${item.id}" style="border-color:#fca5a5; color:#b91c1c;">
                     🗑 Delete
+                  </button>
+                  <button type="button" class="btn btn-outline btn-sm duplicate-card-btn" data-id="${item.id}" style="border-color:#bae6fd; color:#0369a1;">
+                    📋 Duplicate
                   </button>
                   <button type="button" class="btn btn-forest btn-sm save-single-card-btn" data-id="${item.id}">
                     💾 Update Card
@@ -2675,10 +2991,11 @@
         `;
       }).join('');
 
-      // Wire live preview typing listeners
+      // Wire live preview typing listeners & status changes
       adminMenuCardsContainer.querySelectorAll('.admin-menu-card-item').forEach(cardEl => {
         const id = cardEl.dataset.id;
         const priceInput = cardEl.querySelector('.edit-price');
+        const statusSelect = cardEl.querySelector('.edit-status');
         const nameInput = cardEl.querySelector('.edit-name');
         const formulaInput = cardEl.querySelector('.edit-formula');
         const tagInput = cardEl.querySelector('.edit-tag');
@@ -2690,11 +3007,32 @@
         const prevFormula = document.getElementById(`prev-formula-${id}`);
         const prevTag = document.getElementById(`prev-tag-${id}`);
         const prevImg = document.getElementById(`prev-img-${id}`);
+        const prevStatusBadge = document.getElementById(`prev-status-badge-${id}`);
 
         priceInput.addEventListener('input', () => { if (prevPrice) prevPrice.textContent = priceInput.value; });
         nameInput.addEventListener('input', () => { if (prevTitle) prevTitle.textContent = nameInput.value; });
         formulaInput.addEventListener('input', () => { if (prevFormula) prevFormula.innerHTML = `<span class="eq">=</span> ${formulaInput.value}`; });
         tagInput.addEventListener('input', () => { if (prevTag) prevTag.textContent = tagInput.value || `${priceInput.value} CEDIS`; });
+
+        statusSelect.addEventListener('change', () => {
+          const val = statusSelect.value;
+          if (prevStatusBadge) {
+            prevStatusBadge.className = val === 'coming_soon' ? 'status-pill-coming-soon' : (val === 'sold_out' ? 'status-pill-sold-out' : 'status-pill-available');
+            prevStatusBadge.textContent = val === 'coming_soon' ? '🚀 Coming Soon' : (val === 'sold_out' ? '🔴 Sold Out' : '🟢 Available Live');
+          }
+        });
+
+        // Tag preset chips for this card
+        cardEl.querySelectorAll('.badge-preset-chip').forEach(chip => {
+          chip.addEventListener('click', () => {
+            tagInput.value = chip.dataset.tag;
+            if (chip.dataset.status) {
+              statusSelect.value = chip.dataset.status;
+              statusSelect.dispatchEvent(new Event('change'));
+            }
+            tagInput.dispatchEvent(new Event('input'));
+          });
+        });
 
         const imgFile = cardEl.querySelector('.edit-image-file');
         const imgFileName = cardEl.querySelector('.edit-image-file-name');
@@ -2732,7 +3070,6 @@
             reader.onload = () => {
               const image = new Image();
               image.onload = () => {
-                // Fit inside 1000x1000 and compress so the DB row stays small.
                 const MAX = 1000;
                 const scale = Math.min(1, MAX / Math.max(image.width, image.height));
                 const canvas = document.createElement('canvas');
@@ -2772,7 +3109,10 @@
           target.badge = target.tag || `${target.price} CEDIS`;
           target.description = (cardEl.querySelector('.edit-description').value || '').trim();
           target.prepTime = (cardEl.querySelector('.edit-prep').value || '').trim();
-          target.available = !!cardEl.querySelector('.edit-available').checked;
+          const st = statusSelect.value;
+          target.status = st;
+          target.available = st === 'available';
+          target.comingSoon = st === 'coming_soon';
           target.image = pickedMenuImages.get(id) || cardEl.__pickedImage || imgCustom.value.trim() || imgSelect.value;
           target.template = cardEl.querySelector('.edit-template').value;
 
@@ -2785,12 +3125,43 @@
             showMenuFeedback(result.message || 'Could not save this card.', false);
             return;
           }
-          showMenuFeedback(`Card "${target.name} (${target.price} Cedis)" saved to the database and live on the site.`);
+          showMenuFeedback(`Card "${target.name} (${target.price} Cedis)" updated live.`);
           pickedMenuImages.delete(id);
           renderFoodMenuTab();
         });
 
-        // Delete this dish completely (asks first, then saves the new menu).
+        // Duplicate Card
+        const dupBtn = cardEl.querySelector('.duplicate-card-btn');
+        if (dupBtn) {
+          dupBtn.addEventListener('click', async () => {
+            const items = getMenuItems().slice();
+            const src = items.find(m => m.id === id);
+            if (!src) return;
+            const newId = 'dish_' + Date.now().toString(36);
+            const cloned = JSON.parse(JSON.stringify(src));
+            cloned.id = newId;
+            cloned.name = cloned.name + ' (COPY)';
+            cloned.tag = 'Copy / Variant';
+            items.push(cloned);
+            dupBtn.disabled = true;
+            dupBtn.textContent = 'Cloning...';
+            const res = await apiSaveMenu(items);
+            dupBtn.disabled = false;
+            dupBtn.textContent = '📋 Duplicate';
+            if (res.success) {
+              showMenuFeedback(`Cloned "${src.name}" into a new card. You can now customize it.`);
+              renderFoodMenuTab();
+              setTimeout(() => {
+                const el = document.getElementById('admin-card-item-' + newId);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 150);
+            } else {
+              showMenuFeedback(res.message || 'Could not duplicate card.', false);
+            }
+          });
+        }
+
+        // Delete Card
         const deleteBtn = cardEl.querySelector('.delete-card-btn');
         if (deleteBtn) {
           deleteBtn.addEventListener('click', async () => {
@@ -2819,37 +3190,241 @@
       });
     }
 
+    window.clearAdminMenuFilter = function() {
+      adminMenuFilterStatus = 'all';
+      adminMenuSearchQuery = '';
+      const inp = document.getElementById('adminMenuFilterInput');
+      if (inp) inp.value = '';
+      document.querySelectorAll('.admin-filter-pill').forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
+      renderFoodMenuTab();
+    };
+
+    // Filter toolbar listeners
+    const adminMenuFilterInput = document.getElementById('adminMenuFilterInput');
+    if (adminMenuFilterInput) {
+      adminMenuFilterInput.addEventListener('input', (e) => {
+        adminMenuSearchQuery = e.target.value.trim();
+        renderFoodMenuTab();
+      });
+    }
+
+    document.querySelectorAll('.admin-filter-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        adminMenuFilterStatus = btn.dataset.filter;
+        document.querySelectorAll('.admin-filter-pill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderFoodMenuTab();
+      });
+    });
+
+    // Toggle and wire up Create New Dish Box
     const adminAddMenuBtn = document.getElementById('adminAddMenuBtn');
-    if (adminAddMenuBtn) {
-      adminAddMenuBtn.addEventListener('click', async () => {
-        const items = getMenuItems().slice();
-        const id = 'dish' + Date.now().toString(36);
-        items.push({
-          id,
-          name: 'NEW DISH',
-          price: 20,
-          noodles: ['Spaghetti', 'Indomie'],
-          formula: 'Describe what comes with this dish',
-          desc: '= Describe what comes with this dish',
-          description: 'Freshly cooked YEBS noodles, made to order.',
-          image: 'img_food_3.jpg',
-          badge: '20 CEDIS',
-          tag: 'New',
-          prepTime: 'Ready in 20–30 min',
-          available: true,
-          template: 'poster-capsule'
+    const adminCreateDishBox = document.getElementById('adminCreateDishBox');
+    const adminCloseCreateDishBtn = document.getElementById('adminCloseCreateDishBtn');
+
+    if (adminAddMenuBtn && adminCreateDishBox) {
+      adminAddMenuBtn.addEventListener('click', () => {
+        const isClosed = adminCreateDishBox.style.display === 'none';
+        adminCreateDishBox.style.display = isClosed ? 'block' : 'none';
+        if (isClosed) {
+          adminCreateDishBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    }
+
+    if (adminCloseCreateDishBtn && adminCreateDishBox) {
+      adminCloseCreateDishBtn.addEventListener('click', () => {
+        adminCreateDishBox.style.display = 'none';
+      });
+    }
+
+    // New Dish Form live preview updates
+    let newDishPickedImageData = '';
+    const newDishPrice = document.getElementById('newDishPrice');
+    const newDishStatus = document.getElementById('newDishStatus');
+    const newDishName = document.getElementById('newDishName');
+    const newDishTag = document.getElementById('newDishTag');
+    const newDishFormula = document.getElementById('newDishFormula');
+    const newDishDesc = document.getElementById('newDishDesc');
+    const newDishPrep = document.getElementById('newDishPrep');
+    const newDishImageSelect = document.getElementById('newDishImageSelect');
+    const newDishCustomImage = document.getElementById('newDishCustomImage');
+    const newDishImageFile = document.getElementById('newDishImageFile');
+    const newDishImageFileName = document.getElementById('newDishImageFileName');
+
+    const newPrevPrice = document.getElementById('newPrevPrice');
+    const newPrevTitle = document.getElementById('newPrevTitle');
+    const newPrevFormula = document.getElementById('newPrevFormula');
+    const newPrevImg = document.getElementById('newPrevImg');
+    const newPrevAvailabilityBadge = document.getElementById('newPrevAvailabilityBadge');
+    const newPrevTag = document.getElementById('newPrevTag');
+    const newPrevDesc = document.getElementById('newPrevDesc');
+    const newPrevPrep = document.getElementById('newPrevPrep');
+    const newPrevBtn = document.getElementById('newPrevBtn');
+
+    function updateNewDishPreview() {
+      if (newPrevPrice) newPrevPrice.textContent = newDishPrice ? newDishPrice.value : '25';
+      if (newPrevTitle) newPrevTitle.textContent = (newDishName && newDishName.value.trim()) || 'SPAGHETTI / INDOMIE';
+      if (newPrevFormula) newPrevFormula.innerHTML = `<span class="eq">=</span> ${(newDishFormula && newDishFormula.value.trim()) || 'Cooked fresh'}`;
+      if (newPrevTag) newPrevTag.textContent = (newDishTag && newDishTag.value.trim()) || `${newDishPrice ? newDishPrice.value : 25} CEDIS`;
+      if (newPrevDesc) newPrevDesc.textContent = (newDishDesc && newDishDesc.value.trim()) || 'Fresh Ghanaian noodles cooked to order.';
+      if (newPrevPrep) newPrevPrep.textContent = (newDishPrep && newDishPrep.value.trim()) || 'Ready in 20–30 min';
+
+      const st = newDishStatus ? newDishStatus.value : 'available';
+      if (newPrevAvailabilityBadge) {
+        newPrevAvailabilityBadge.className = st === 'coming_soon' ? 'status-pill-coming-soon' : (st === 'sold_out' ? 'status-pill-sold-out' : 'status-pill-available');
+        newPrevAvailabilityBadge.textContent = st === 'coming_soon' ? '🚀 Coming Soon' : (st === 'sold_out' ? '🔴 Sold Out' : '🟢 Available Live');
+      }
+      if (newPrevBtn) {
+        if (st === 'coming_soon') {
+          newPrevBtn.textContent = `🚀 Coming Soon · GH₵${newDishPrice ? newDishPrice.value : 25}`;
+          newPrevBtn.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
+        } else if (st === 'sold_out') {
+          newPrevBtn.textContent = 'Sold Out Today';
+          newPrevBtn.style.background = '#94a3b8';
+        } else {
+          newPrevBtn.textContent = `Add to order · GH₵${newDishPrice ? newDishPrice.value : 25}`;
+          newPrevBtn.style.background = 'var(--orange)';
+        }
+      }
+
+      if (newPrevImg) {
+        if (newDishPickedImageData) {
+          newPrevImg.src = newDishPickedImageData;
+        } else if (newDishCustomImage && newDishCustomImage.value.trim()) {
+          newPrevImg.src = newDishCustomImage.value.trim();
+        } else if (newDishImageSelect) {
+          newPrevImg.src = newDishImageSelect.value;
+        }
+      }
+    }
+
+    if (newDishPrice) newDishPrice.addEventListener('input', updateNewDishPreview);
+    if (newDishStatus) newDishStatus.addEventListener('change', updateNewDishPreview);
+    if (newDishName) newDishName.addEventListener('input', updateNewDishPreview);
+    if (newDishTag) newDishTag.addEventListener('input', updateNewDishPreview);
+    if (newDishFormula) newDishFormula.addEventListener('input', updateNewDishPreview);
+    if (newDishDesc) newDishDesc.addEventListener('input', updateNewDishPreview);
+    if (newDishPrep) newDishPrep.addEventListener('input', updateNewDishPreview);
+    if (newDishImageSelect) newDishImageSelect.addEventListener('change', () => {
+      newDishPickedImageData = '';
+      if (newDishImageFileName) newDishImageFileName.textContent = 'Using a built-in photo';
+      updateNewDishPreview();
+    });
+    if (newDishCustomImage) newDishCustomImage.addEventListener('input', () => {
+      newDishPickedImageData = '';
+      if (newDishImageFileName) newDishImageFileName.textContent = 'Using custom URL';
+      updateNewDishPreview();
+    });
+
+    // Tag preset chips in Create box
+    if (adminCreateDishBox) {
+      adminCreateDishBox.querySelectorAll('.badge-preset-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          if (newDishTag) newDishTag.value = chip.dataset.tag;
+          if (chip.dataset.status && newDishStatus) {
+            newDishStatus.value = chip.dataset.status;
+          }
+          updateNewDishPreview();
         });
-        adminAddMenuBtn.disabled = true;
-        const result = await apiSaveMenu(items);
-        adminAddMenuBtn.disabled = false;
-        if (!result.success) {
-          showMenuFeedback(result.message || 'Could not add a new dish.', false);
+      });
+    }
+
+    // Image compression for new dish upload
+    if (newDishImageFile) {
+      newDishImageFile.addEventListener('change', () => {
+        const file = newDishImageFile.files && newDishImageFile.files[0];
+        if (!file) return;
+        if (!/^image\//.test(file.type)) {
+          showMenuFeedback('Please choose an image file (JPG, PNG or WEBP).', false);
           return;
         }
-        showMenuFeedback('New dish added at the bottom. Edit its name, price and photo, then tap “Update Card”.');
+        const reader = new FileReader();
+        reader.onload = () => {
+          const image = new Image();
+          image.onload = () => {
+            const MAX = 1000;
+            const scale = Math.min(1, MAX / Math.max(image.width, image.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(image.width * scale));
+            canvas.height = Math.max(1, Math.round(image.height * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+            newDishPickedImageData = canvas.toDataURL('image/jpeg', 0.82);
+            if (newDishImageFileName) newDishImageFileName.textContent = file.name + ' (ready)';
+            updateNewDishPreview();
+          };
+          image.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Submit Create New Dish
+    const adminSubmitCreateDishBtn = document.getElementById('adminSubmitCreateDishBtn');
+    if (adminSubmitCreateDishBtn) {
+      adminSubmitCreateDishBtn.addEventListener('click', async () => {
+        const name = newDishName ? newDishName.value.trim() : '';
+        if (!name) {
+          showMenuFeedback('Please provide a dish title or category name.', false);
+          return;
+        }
+        const price = parseFloat(newDishPrice ? newDishPrice.value : 0);
+        if (!price || price <= 0) {
+          showMenuFeedback('Please enter a valid price in Cedis.', false);
+          return;
+        }
+
+        const st = newDishStatus ? newDishStatus.value : 'available';
+        const newId = 'dish_' + Date.now().toString(36);
+        const formula = (newDishFormula ? newDishFormula.value.trim() : '') || 'Cooked fresh to order';
+        const tag = (newDishTag ? newDishTag.value.trim() : '') || (st === 'coming_soon' ? '🚀 COMING SOON' : `${price} CEDIS`);
+        const desc = (newDishDesc ? newDishDesc.value.trim() : '') || 'Fresh Ghanaian noodles cooked to order.';
+        const prep = (newDishPrep ? newDishPrep.value.trim() : '') || 'Ready in 20–30 min';
+        const template = (document.getElementById('newDishTemplate') ? document.getElementById('newDishTemplate').value : 'poster-capsule');
+        const img = newDishPickedImageData || (newDishCustomImage && newDishCustomImage.value.trim()) || (newDishImageSelect ? newDishImageSelect.value : 'img_food_1.jpg');
+
+        const newDishObj = {
+          id: newId,
+          name,
+          price,
+          badge: tag,
+          tag,
+          formula,
+          desc: `= ${formula}`,
+          description: desc,
+          prepTime: prep,
+          template,
+          image: img,
+          noodles: ['Spaghetti', 'Indomie'],
+          status: st,
+          available: st === 'available',
+          comingSoon: st === 'coming_soon'
+        };
+
+        adminSubmitCreateDishBtn.disabled = true;
+        adminSubmitCreateDishBtn.textContent = 'Publishing...';
+
+        const items = getMenuItems().slice();
+        items.push(newDishObj);
+        const res = await apiSaveMenu(items);
+
+        adminSubmitCreateDishBtn.disabled = false;
+        adminSubmitCreateDishBtn.textContent = '🚀 Save & Publish New Dish Live';
+
+        if (!res.success) {
+          showMenuFeedback(res.message || 'Could not create dish.', false);
+          return;
+        }
+
+        showMenuFeedback(`🎉 "${name} (GH₵${price})" created and live on storefront!`);
+        if (adminCreateDishBox) adminCreateDishBox.style.display = 'none';
+        newDishPickedImageData = '';
         renderFoodMenuTab();
         setTimeout(() => {
-          const el = document.getElementById('admin-card-item-' + id);
+          const el = document.getElementById('admin-card-item-' + newId);
           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 150);
       });
@@ -2870,7 +3445,11 @@
             target.badge = target.tag || `${target.price} CEDIS`;
             target.description = (cardEl.querySelector('.edit-description').value || '').trim();
             target.prepTime = (cardEl.querySelector('.edit-prep').value || '').trim();
-            target.available = !!cardEl.querySelector('.edit-available').checked;
+            const statusSel = cardEl.querySelector('.edit-status');
+            const st = statusSel ? statusSel.value : (target.status || 'available');
+            target.status = st;
+            target.available = st === 'available';
+            target.comingSoon = st === 'coming_soon';
             target.image = pickedMenuImages.get(id) || cardEl.__pickedImage || cardEl.querySelector('.edit-image-custom').value.trim() || cardEl.querySelector('.edit-image-select').value;
             target.template = cardEl.querySelector('.edit-template').value;
           }
@@ -3553,6 +4132,144 @@
         if (tab === 'settingsTab') { loadMomoSettings(); }
       });
     });
+
+    // Audio synthesizer chime for kitchen order alert
+    function playKitchenOrderChime() {
+      if (localStorage.getItem('yebs_admin_sound') === 'false') return;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const now = ctx.currentTime;
+
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(587.33, now); // D5
+        osc1.frequency.setValueAtTime(880, now + 0.16); // A5
+
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(293.66, now); // D4
+        osc2.frequency.setValueAtTime(440, now + 0.16); // A4
+
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + 0.9);
+        osc2.stop(now + 0.9);
+      } catch (e) {
+        console.warn("Could not play audio chime:", e);
+      }
+    }
+
+    const adminSoundToggleBtn = document.getElementById('adminSoundToggleBtn');
+    if (adminSoundToggleBtn) {
+      const isSoundOn = localStorage.getItem('yebs_admin_sound') !== 'false';
+      adminSoundToggleBtn.textContent = isSoundOn ? '🔔 Sound: ON' : '🔕 Sound: OFF';
+      adminSoundToggleBtn.style.opacity = isSoundOn ? '1' : '0.6';
+
+      adminSoundToggleBtn.addEventListener('click', () => {
+        const cur = localStorage.getItem('yebs_admin_sound') !== 'false';
+        const next = !cur;
+        localStorage.setItem('yebs_admin_sound', next ? 'true' : 'false');
+        adminSoundToggleBtn.textContent = next ? '🔔 Sound: ON' : '🔕 Sound: OFF';
+        adminSoundToggleBtn.style.opacity = next ? '1' : '0.6';
+        if (next) playKitchenOrderChime();
+      });
+    }
+
+    window.openKitchenDocket = function(orderId) {
+      const order = getOrderById(orderId);
+      if (!order) return;
+      const modal = document.getElementById('kitchenDocketModal');
+      const area = document.getElementById('kitchenDocketPrintArea');
+      if (!modal || !area) return;
+
+      const dateStr = order.createdAt ? new Date(order.createdAt).toLocaleString('en-GB') : new Date().toLocaleString('en-GB');
+      const itemsList = (order.items || []).map(i => `
+        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+          <span>${i.quantity || 1}x ${i.name || 'Noodles'} [${i.noodle || 'Spaghetti'}]</span>
+          <span>GH₵${(Number(i.price || 0) * Number(i.quantity || 1)).toFixed(2)}</span>
+        </div>
+      `).join('');
+
+      area.innerHTML = `
+        <div style="text-align:center; border-bottom:1.5px dashed #000; padding-bottom:10px; margin-bottom:12px;">
+          <h2 style="margin:0; font-size:1.3rem; letter-spacing:1px; text-transform:uppercase;">YEBS NOODLES</h2>
+          <div style="font-size:0.8rem; margin-top:2px;">KITCHEN ORDER DOCKET</div>
+          <div style="font-size:0.75rem; margin-top:4px;">${dateStr}</div>
+        </div>
+
+        <div style="border-bottom:1px solid #000; padding-bottom:8px; margin-bottom:10px; font-size:0.85rem;">
+          <div style="display:flex; justify-content:space-between;">
+            <strong>ORDER: ${order.id}</strong>
+            <strong style="border:1px solid #000; padding:1px 6px;">PIN: ${order.pickupPin || '—'}</strong>
+          </div>
+          <div style="margin-top:4px;">Customer: <strong>${order.customer || 'Guest'}</strong></div>
+          <div>Phone: <strong>${order.phone || '—'}</strong></div>
+          <div>Fulfilment: <strong>${String(order.fulfilment || 'Direct Delivery').toUpperCase()}</strong></div>
+          <div style="margin-top:2px; font-size:0.8rem; color:#333;">Destination: ${order.location || 'Adabraka / Circle'}</div>
+        </div>
+
+        <div style="border-bottom:1.5px dashed #000; padding-bottom:10px; margin-bottom:10px;">
+          <div style="font-size:0.8rem; font-weight:bold; margin-bottom:6px; text-transform:uppercase;">ITEMS TO COOK:</div>
+          ${itemsList || '<div>1x Fresh Ghanaian Noodles</div>'}
+          ${order.notes ? `<div style="margin-top:8px; padding:6px; background:#eee; font-size:0.8rem;"><strong>CUSTOMER NOTE:</strong> ${order.notes}</div>` : ''}
+        </div>
+
+        <div style="border-bottom:1.5px dashed #000; padding-bottom:8px; margin-bottom:10px; font-size:0.88rem;">
+          <div style="display:flex; justify-content:space-between;">
+            <span>Subtotal:</span>
+            <span>GH₵${Number(order.subtotal || 0).toFixed(2)}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between;">
+            <span>Delivery Fee:</span>
+            <span>GH₵${Number(order.deliveryFee || 0).toFixed(2)}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:1rem; margin-top:4px;">
+            <span>TOTAL:</span>
+            <span>GH₵${Number(order.total || 0).toFixed(2)}</span>
+          </div>
+          <div style="font-size:0.78rem; margin-top:4px;">Payment: <strong>${order.paymentMode || order.payment || 'MoMo'} (${(order.paymentStatus || 'unpaid').toUpperCase()})</strong></div>
+        </div>
+
+        <div style="text-align:center; font-size:0.75rem; color:#444; margin-top:12px;">
+          * COOK WITH LOVE & PASSION *<br>
+          YEBS NOODLES GHANA
+        </div>
+      `;
+
+      modal.style.display = 'flex';
+    };
+
+    window.closeKitchenDocket = function() {
+      const modal = document.getElementById('kitchenDocketModal');
+      if (modal) modal.style.display = 'none';
+    };
   </script>
+
+  <!-- Kitchen Order Slip / Docket Modal -->
+  <div id="kitchenDocketModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:99999; align-items:center; justify-content:center; padding:20px;">
+    <div style="background:#ffffff; max-width:440px; width:100%; border-radius:12px; box-shadow:0 12px 36px rgba(0,0,0,0.3); overflow:hidden; display:flex; flex-direction:column; max-height:90vh;">
+      <div style="background:var(--forest); color:white; padding:16px 20px; display:flex; justify-content:space-between; align-items:center;">
+        <strong style="font-size:1.05rem;">🖨️ Kitchen Order Slip / Docket</strong>
+        <button type="button" onclick="closeKitchenDocket()" style="background:none; border:none; color:white; font-size:1.3rem; cursor:pointer;">✕</button>
+      </div>
+      <div id="kitchenDocketPrintArea" style="padding:24px; font-family:'Courier New', monospace; font-size:0.9rem; line-height:1.4; color:#000; overflow-y:auto;">
+      </div>
+      <div style="padding:16px 20px; background:#f8fafc; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeKitchenDocket()">Close</button>
+        <button type="button" class="btn btn-forest btn-sm" onclick="window.print()">🖨️ Print Slip</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
