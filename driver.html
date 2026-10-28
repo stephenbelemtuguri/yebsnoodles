@@ -335,9 +335,10 @@
       border-style: solid;
     }
     .webcam-preview {
-      width: 120px;
-      height: 120px;
-      border-radius: 50%;
+      width: 100%;
+      max-width: 240px;
+      height: 220px;
+      border-radius: 14px;
       object-fit: cover;
       border: 3px solid var(--gold);
       box-shadow: 0 4px 14px rgba(0,0,0,0.15);
@@ -345,14 +346,49 @@
       display: block;
       background: var(--forest);
     }
+    .webcam-stage {
+      position: relative;
+      width: 100%;
+      max-width: 260px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
     #webcamVideo {
-      width: 200px;
-      height: 200px;
-      border-radius: 50%;
+      width: 100%;
+      max-width: 240px;
+      height: 220px;
+      border-radius: 14px;
       object-fit: cover;
       border: 3px solid var(--orange);
       box-shadow: 0 4px 18px rgba(229,122,69,0.3);
+      background: #0f2b20;
       display: none;
+    }
+    .webcam-placeholder {
+      width: 100%;
+      max-width: 240px;
+      height: 220px;
+      border-radius: 14px;
+      border: 2px dashed #c9d3c1;
+      background: #eef3e8;
+      color: #4b5a4c;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 2rem;
+      font-weight: 700;
+    }
+    .webcam-placeholder span { font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+    .live-camera-note {
+      display: inline-flex; align-items: center; gap: 7px;
+      margin: 0 auto 10px; padding: 6px 12px;
+      border-radius: 999px; background: #ecfdf3; color: #166534;
+      border: 1px solid #bbf7d0; font-size: 0.68rem; font-weight: 900;
+      letter-spacing: 0.05em; text-transform: uppercase;
     }
     .webcam-controls {
       display: flex;
@@ -454,9 +490,14 @@
       align-items: flex-start;
       justify-content: center;
       padding: 16px;
+      padding-bottom: calc(24px + env(safe-area-inset-bottom));
       overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
+    }
+    @media (max-width: 560px) {
+      .auth-overlay { padding: 8px; padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+      .auth-modal { max-height: calc(100dvh - 16px); border-radius: 14px; }
     }
     .auth-modal {
       background: #ffffff;
@@ -875,21 +916,21 @@
               <input type="password" id="driverSignupPassword" class="auth-input" placeholder="••••••••" required minlength="6" autocomplete="new-password">
             </div>
             <div class="webcam-capture-box" id="webcamCaptureBox">
-              <div style="font-weight:700; color:var(--forest); font-size:0.88rem; margin-bottom:8px;">Profile photo (customers see this)</div>
-              <div style="font-size:0.76rem; color:var(--muted); margin-bottom:10px;">Choose a clear face photo from your folder, or take one with your camera. Good light helps customers recognise you.</div>
-              <label class="photo-file-btn" for="driverPhotoFile">
-                <span>&#128193; Choose photo from your folder</span>
-                <input type="file" id="driverPhotoFile" accept="image/*">
-              </label>
-              <video id="webcamVideo" autoplay playsinline muted></video>
-              <canvas id="webcamCanvas" style="display:none;"></canvas>
-              <img id="webcamPreview" class="webcam-preview" src="" alt="Driver profile photo" style="display:none;">
-              <div id="webcamPlaceholder" style="width:100px; height:100px; border-radius:50%; background:var(--forest); color:white; display:grid; place-items:center; font-size:2.5rem; margin:0 auto 8px; border:3px solid var(--gold);">🛵</div>
-              <div class="webcam-controls">
-                <button type="button" id="startCameraBtn" class="btn btn-outline btn-sm" style="border-color:var(--orange); color:var(--orange);">&#128247; Use camera instead</button>
-                <button type="button" id="capturePhotoBtn" class="btn btn-orange btn-sm" style="display:none;">📸 Take Photo</button>
-                <button type="button" id="retakePhotoBtn" class="btn btn-outline btn-sm" style="display:none;">🔄 Retake</button>
+              <div style="font-weight:700; color:var(--forest); font-size:0.88rem; margin-bottom:6px;">Live face photo (customers see this)</div>
+              <div class="live-camera-note">🔒 Live camera only &mdash; gallery uploads disabled</div>
+              <div style="font-size:0.76rem; color:var(--muted); margin-bottom:10px;">Look straight at the camera in good light. The photo is taken live so customers know exactly who is delivering their food.</div>
+              <div class="webcam-stage">
+                <video id="webcamVideo" autoplay playsinline muted></video>
+                <canvas id="webcamCanvas" style="display:none;"></canvas>
+                <img id="webcamPreview" class="webcam-preview" src="" alt="Driver live face photo" style="display:none;">
+                <div id="webcamPlaceholder" class="webcam-placeholder">📷<span>Starting camera…</span></div>
               </div>
+              <div class="webcam-controls">
+                <button type="button" id="startCameraBtn" class="btn btn-outline btn-sm" style="border-color:var(--orange); color:var(--orange);">&#128247; Start live camera</button>
+                <button type="button" id="capturePhotoBtn" class="btn btn-orange btn-sm" style="display:none;">📸 Capture my face</button>
+                <button type="button" id="retakePhotoBtn" class="btn btn-outline btn-sm" style="display:none;">🔄 Retake live photo</button>
+              </div>
+              <div id="webcamStatus" style="font-size:0.72rem; color:var(--muted); margin-top:8px;">Camera starts automatically when you open this tab.</div>
             </div>
             <div class="photo-helper">Applications are reviewed by the YEBS admin. Your login unlocks automatically once approved.</div>
             <button type="submit" id="driverSignupSubmitBtn" class="btn btn-forest" style="width:100%; padding:12px; font-size:0.95rem; margin-top:8px;">
@@ -1867,6 +1908,7 @@
       driverLoginFormWrap.style.display = 'block';
       driverSignupFormWrap.style.display = 'none';
       driverAuthError.style.display = 'none';
+      stopCameraStream();
     });
 
     driverAuthTabSignup.addEventListener('click', () => {
@@ -1876,6 +1918,8 @@
       driverLoginFormWrap.style.display = 'none';
       driverAuthError.style.display = 'none';
       if (driverAuthModal) driverAuthModal.scrollTop = 0;
+      // A live face photo is mandatory, so open the webcam immediately.
+      if (!capturedPhotoData) startLiveCamera(true);
     });
 
     // Handle Driver Login
@@ -1920,89 +1964,85 @@
     const retakePhotoBtn = document.getElementById('retakePhotoBtn');
     const webcamCaptureBox = document.getElementById('webcamCaptureBox');
 
-    // Photo from the user's folder: downscale to a small square JPEG so the
-    // upload stays fast on mobile data and the DB stays lean.
-    const driverPhotoFile = document.getElementById('driverPhotoFile');
-    if (driverPhotoFile) {
-      driverPhotoFile.addEventListener('change', () => {
-        const file = driverPhotoFile.files && driverPhotoFile.files[0];
-        if (!file) return;
-        if (!/^image\//.test(file.type)) {
-          alert('Please choose an image file (JPG, PNG or WEBP).');
-          driverPhotoFile.value = '';
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const img = new Image();
-          img.onload = () => {
-            const SIZE = 480;
-            const canvas = document.createElement('canvas');
-            canvas.width = SIZE;
-            canvas.height = SIZE;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#f3f4f6';
-            ctx.fillRect(0, 0, SIZE, SIZE);
-            const scale = Math.max(SIZE / img.width, SIZE / img.height);
-            const w = img.width * scale;
-            const h = img.height * scale;
-            ctx.drawImage(img, (SIZE - w) / 2, (SIZE - h) / 2, w, h);
-            capturedPhotoData = canvas.toDataURL('image/jpeg', 0.82);
-            webcamPreview.src = capturedPhotoData;
-            webcamPreview.style.display = 'block';
-            webcamPlaceholder.style.display = 'none';
-            webcamVideo.style.display = 'none';
-            webcamCaptureBox.classList.add('has-photo');
-            retakePhotoBtn.style.display = 'inline-flex';
-            startCameraBtn.style.display = 'none';
-            capturePhotoBtn.style.display = 'none';
-          };
-          img.onerror = () => alert('That image could not be read. Please choose another photo.');
-          img.src = reader.result;
-        };
-        reader.onerror = () => alert('Could not read that file. Please try again.');
-        reader.readAsDataURL(file);
-      });
+    const webcamStatus = document.getElementById('webcamStatus');
+    const setWebcamStatus = (text, tone) => {
+      if (!webcamStatus) return;
+      webcamStatus.textContent = text;
+      webcamStatus.style.color = tone === 'error' ? '#b91c1c' : (tone === 'ok' ? '#15803d' : '');
+    };
+
+    function stopCameraStream() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+        cameraStream = null;
+      }
+      if (webcamVideo) webcamVideo.srcObject = null;
     }
 
-    startCameraBtn.addEventListener('click', async () => {
+    // Live camera only — there is deliberately no file/gallery input.
+    async function startLiveCamera(auto) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setWebcamStatus('This browser cannot open a live camera. Use Chrome or Safari on your phone.', 'error');
+        return;
+      }
+      if (!window.isSecureContext && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+        setWebcamStatus('The live camera needs a secure https:// connection. Open the site on https:// and tap again.', 'error');
+        return;
+      }
+      stopCameraStream();
+      setWebcamStatus('Requesting camera permission…', '');
+      if (startCameraBtn) startCameraBtn.disabled = true;
       try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { width: 320, height: 320, facingMode: 'user' }, 
-          audio: false 
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
+          audio: false
         });
         webcamVideo.srcObject = cameraStream;
+        try { await webcamVideo.play(); } catch (e) {}
         webcamVideo.style.display = 'block';
-        webcamPlaceholder.style.display = 'none';
         webcamPreview.style.display = 'none';
+        if (webcamPlaceholder) webcamPlaceholder.style.display = 'none';
         startCameraBtn.style.display = 'none';
         capturePhotoBtn.style.display = 'inline-flex';
         retakePhotoBtn.style.display = 'none';
+        webcamCaptureBox.classList.remove('has-photo');
+        setWebcamStatus('Live camera ready — centre your face and tap “Capture my face”.', 'ok');
       } catch (err) {
-        const insecure = location.protocol === 'file:';
-        alert(insecure
-          ? 'The camera only works when the site is opened through the server.\n\nOpen http://localhost:3000/driver.html and try again.'
-          : 'Could not access camera. Please allow camera permission in your browser, then try again.');
         console.warn('Camera error:', err);
+        webcamVideo.style.display = 'none';
+        if (webcamPlaceholder) webcamPlaceholder.style.display = 'flex';
+        startCameraBtn.style.display = 'inline-flex';
+        capturePhotoBtn.style.display = 'none';
+        const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError' || err.name === 'NotFoundError');
+        setWebcamStatus(denied
+          ? 'Camera blocked or missing. Tap the padlock in your address bar → Camera → Allow, then tap Start live camera.'
+          : 'Could not open the live camera. Close other apps using it, then tap Start live camera.', 'error');
+      } finally {
+        if (startCameraBtn) startCameraBtn.disabled = false;
       }
-    });
+    }
+
+    startCameraBtn.addEventListener('click', () => startLiveCamera(false));
 
     capturePhotoBtn.addEventListener('click', () => {
-      if (!webcamVideo.srcObject) return;
+      if (!webcamVideo.srcObject) {
+        setWebcamStatus('The camera is not running yet. Tap Start live camera first.', 'error');
+        return;
+      }
       const SIZE = 480;
       webcamCanvas.width = SIZE;
       webcamCanvas.height = SIZE;
       const ctx = webcamCanvas.getContext('2d');
-      // Neutral backdrop so the circular cut-out does not turn black in JPEG.
+      // Neutral backdrop so transparent corners never turn black in JPEG.
       ctx.fillStyle = '#f3f4f6';
       ctx.fillRect(0, 0, SIZE, SIZE);
-      // Draw circular crop
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.drawImage(webcamVideo, 0, 0, SIZE, SIZE);
-      ctx.restore();
+      // Cover-crop the video to a square so the face is never stretched.
+      const vw = webcamVideo.videoWidth || 640;
+      const vh = webcamVideo.videoHeight || 480;
+      const side = Math.min(vw, vh);
+      const sx = Math.max(0, (vw - side) / 2);
+      const sy = Math.max(0, (vh - side) / 2);
+      ctx.drawImage(webcamVideo, sx, sy, side, side, 0, 0, SIZE, SIZE);
 
       capturedPhotoData = webcamCanvas.toDataURL('image/jpeg', 0.82);
       webcamPreview.src = capturedPhotoData;
@@ -2011,12 +2051,9 @@
       capturePhotoBtn.style.display = 'none';
       retakePhotoBtn.style.display = 'inline-flex';
       webcamCaptureBox.classList.add('has-photo');
+      setWebcamStatus('Live face photo captured. Retake it if you are not clearly visible.', 'ok');
 
-      // Stop camera stream
-      if (cameraStream) {
-        cameraStream.getTracks().forEach(t => t.stop());
-        cameraStream = null;
-      }
+      stopCameraStream();
     });
 
     retakePhotoBtn.addEventListener('click', async () => {
@@ -2024,9 +2061,13 @@
       webcamPreview.style.display = 'none';
       webcamCaptureBox.classList.remove('has-photo');
       retakePhotoBtn.style.display = 'none';
-      // Re-open camera
-      startCameraBtn.click();
+      await startLiveCamera(true);
     });
+
+    // Open the live camera as soon as the signup tab is visible on page load.
+    if (driverSignupFormWrap && driverSignupFormWrap.style.display !== 'none') {
+      setTimeout(() => { if (!capturedPhotoData) startLiveCamera(true); }, 600);
+    }
 
     // Vehicle type: reveal free-text field for "Other"
     const driverSignupVehicleSelect = document.getElementById('driverSignupVehicle');
@@ -2065,7 +2106,7 @@
         vehicleType = otherVehicle;
       }
       if (!capturedPhotoData) {
-        driverAuthError.textContent = 'Add a profile photo before submitting. Choose a photo from your folder or use the camera.';
+        driverAuthError.textContent = 'Take a live face photo first — gallery uploads are disabled. Tap “Capture my face”.';
         driverAuthError.style.display = 'block';
         return;
       }
@@ -2116,9 +2157,10 @@
 
     driverLogoutBtn.addEventListener('click', () => {
       if (confirm('Log out from Driver Portal?')) {
-        sessionStorage.removeItem('yebs_driver_token');
-        sessionStorage.removeItem('yebs_driver_user');
-        checkDriverAuth();
+        stopCameraStream();
+        ['yebs_driver_token', 'yebs_driver_user', 'yebs_driver_login_at', 'yebs_driver_photo'].forEach(k => sessionStorage.removeItem(k));
+        ['yebs_driver_token_persist', 'yebs_driver_user_persist', 'yebs_driver_login_at_persist'].forEach(k => localStorage.removeItem(k));
+        window.location.href = 'driver.html';
       }
     });
 

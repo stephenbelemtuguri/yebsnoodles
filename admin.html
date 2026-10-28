@@ -827,25 +827,22 @@
               </div>
               <span class="badge" id="adminPickupSavedBadge" style="background:#ecfdf5; color:#166534; border:1px solid #bbf7d0;">Shared live</span>
             </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-              <select id="adminPickupPreset" style="flex:1; min-width:210px; padding:9px; border:1px solid var(--line); border-radius:6px; font-size:0.82rem;">
-                <option value="">Choose a known Accra landmark…</option>
-                <option value="Circle Odo Rice Junction / VIP Station">Circle Odo Rice Junction / VIP Station</option>
-                <option value="Adabraka Police Station Bus Stop">Adabraka Police Station Bus Stop</option>
-                <option value="Accra Ridge Hospital Main Gate">Accra Ridge Hospital Main Gate</option>
-                <option value="Efex Hotel, Adabraka (YEBS Kitchen)">Efex Hotel, Adabraka (YEBS Kitchen)</option>
-                <option value="Osu Danquah Circle">Osu Danquah Circle</option>
-                <option value="Kaneshie Market">Kaneshie Market</option>
-              </select>
-              <input id="adminPickupName" type="text" placeholder="Or type the exact pickup point name" style="flex:1.4; min-width:220px; padding:9px; border:1px solid var(--line); border-radius:6px; font-size:0.82rem;">
+            <div style="position:relative; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+              <input id="adminPickupSearch" type="text" placeholder="Search any area or landmark online, e.g. ATU, Circle, Madina…" autocomplete="off" style="flex:1.2; min-width:220px; padding:9px; border:1px solid var(--line); border-radius:6px; font-size:0.82rem;">
+              <div id="adminPickupSuggest" style="display:none; position:absolute; top:48px; left:0; right:0; z-index:60; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 18px 40px rgba(18,44,34,.18); max-height:280px; overflow-y:auto;"></div>
+              <input id="adminPickupName" type="text" placeholder="Pickup point name customers will see" style="flex:1.4; min-width:220px; padding:9px; border:1px solid var(--line); border-radius:6px; font-size:0.82rem;">
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:9px;">
               <input id="adminPickupLat" type="number" step="any" placeholder="Latitude" style="width:130px; padding:8px; border:1px solid var(--line); border-radius:6px; font-size:0.8rem;">
               <input id="adminPickupLng" type="number" step="any" placeholder="Longitude" style="width:130px; padding:8px; border:1px solid var(--line); border-radius:6px; font-size:0.8rem;">
+              <label style="font-size:0.78rem; font-weight:700; color:var(--forest); display:flex; align-items:center; gap:6px;">
+                Delivery fee (GH₵)
+                <input id="adminDeliveryFee" type="number" min="0" max="200" step="1" value="15" style="width:88px; padding:8px; border:1px solid var(--line); border-radius:6px; font-size:0.8rem;">
+              </label>
               <button id="adminPickupUseGpsBtn" type="button" class="btn btn-outline btn-sm">⌖ Use my GPS</button>
               <button id="adminPickupSaveBtn" type="button" class="btn btn-orange btn-sm">💾 Save &amp; sync to all maps</button>
-              <span style="font-size:0.75rem; color:var(--muted);">…or click the map below to drop the pin.</span>
             </div>
+            <div style="font-size:0.75rem; color:var(--muted); margin-top:7px; line-height:1.5;">Search any landmark online, click the map, or drag the pin. Collection is free at this point — the delivery fee only applies when a customer asks a rider to bring the food to their own address.</div>
             <div id="adminPickupStatus" style="font-size:0.78rem; color:var(--muted); margin-top:6px;"></div>
           </div>
 
@@ -982,6 +979,9 @@
             </div>
           </div>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button type="button" id="adminAddMenuBtn" class="btn btn-forest btn-sm">
+              ➕ Add new dish
+            </button>
             <button type="button" id="adminResetMenuBtn" class="btn btn-outline btn-sm">
               🔄 Reset to Poster Defaults
             </button>
@@ -1353,7 +1353,8 @@
       apiVerifyMomoSms,
       apiReviewPayment,
       apiPayCash,
-      apiSetPickupPoint,
+      apiSavePickupSettings,
+      apiFetchPublicSettings,
       apiFetchSession,
       getPickupPoint,
       applyServerSession,
@@ -1400,7 +1401,9 @@
     const momoSmsInput = document.getElementById('momoSmsInput');
     const momoSmsVerifyBtn = document.getElementById('momoSmsVerifyBtn');
     const momoSmsStatus = document.getElementById('momoSmsStatus');
-    const adminPickupPreset = document.getElementById('adminPickupPreset');
+    const adminPickupSearch = document.getElementById('adminPickupSearch');
+    const adminPickupSuggest = document.getElementById('adminPickupSuggest');
+    const adminDeliveryFee = document.getElementById('adminDeliveryFee');
     const adminPickupName = document.getElementById('adminPickupName');
     const adminPickupLat = document.getElementById('adminPickupLat');
     const adminPickupLng = document.getElementById('adminPickupLng');
@@ -2040,14 +2043,6 @@
     // ----------------------------------------------------
     // Shared pickup point (reflects on every portal's map)
     // ----------------------------------------------------
-    const PICKUP_PRESETS = {
-      "Circle Odo Rice Junction / VIP Station": { lat: 5.5612, lng: -0.2155 },
-      "Adabraka Police Station Bus Stop": { lat: 5.5580, lng: -0.2105 },
-      "Accra Ridge Hospital Main Gate": { lat: 5.5628, lng: -0.2035 },
-      "Efex Hotel, Adabraka (YEBS Kitchen)": { lat: 5.56246, lng: -0.21289 },
-      "Osu Danquah Circle": { lat: 5.5600, lng: -0.1820 },
-      "Kaneshie Market": { lat: 5.5690, lng: -0.2450 }
-    };
     let pickupDraftMarker = null;
     let pickupDraft = null;
 
@@ -2086,27 +2081,86 @@
     }
 
     async function loadSharedPickupPoint() {
-      const session = await apiFetchSession();
-      if (session && session.pickupPoint) {
-        fillPickupForm(session.pickupPoint);
-        placePickupMarker(session.pickupPoint.lat, session.pickupPoint.lng, session.pickupPoint.name);
+      const [session, settings] = await Promise.all([apiFetchSession(), apiFetchPublicSettings()]);
+      const point = (session && session.pickupPoint) || (settings && settings.pickupPoint);
+      if (point) {
+        fillPickupForm(point);
+        placePickupMarker(point.lat, point.lng, point.name);
+      }
+      if (settings && Number.isFinite(Number(settings.deliveryFee)) && adminDeliveryFee) {
+        adminDeliveryFee.value = Number(settings.deliveryFee);
       }
     }
 
-    if (adminPickupPreset) {
-      adminPickupPreset.addEventListener('change', () => {
-        const name = adminPickupPreset.value;
-        if (!name) return;
-        const coords = PICKUP_PRESETS[name];
-        if (adminPickupName) adminPickupName.value = name;
-        if (coords) {
-          pickupDraft = coords;
-          if (adminPickupLat) adminPickupLat.value = coords.lat.toFixed(6);
-          if (adminPickupLng) adminPickupLng.value = coords.lng.toFixed(6);
-          placePickupMarker(coords.lat, coords.lng, name);
-          if (map) map.setView([coords.lat, coords.lng], Math.max(map.getZoom(), 14));
+    // Online landmark autocomplete for the shared pickup point.
+    let pickupSearchTimer = null;
+    function hidePickupSuggest() {
+      if (!adminPickupSuggest) return;
+      adminPickupSuggest.style.display = 'none';
+      adminPickupSuggest.innerHTML = '';
+    }
+
+    function applyPickupLandmark(result) {
+      if (!result) return;
+      const label = [result.label, result.area].filter(Boolean).join(', ').slice(0, 160);
+      pickupDraft = { lat: Number(result.lat), lng: Number(result.lng) };
+      if (adminPickupName) adminPickupName.value = label;
+      if (adminPickupLat) adminPickupLat.value = pickupDraft.lat.toFixed(6);
+      if (adminPickupLng) adminPickupLng.value = pickupDraft.lng.toFixed(6);
+      if (adminPickupSearch) adminPickupSearch.value = label;
+      placePickupMarker(pickupDraft.lat, pickupDraft.lng, label);
+      if (map) map.setView([pickupDraft.lat, pickupDraft.lng], Math.max(map.getZoom(), 15));
+      if (adminPickupStatus) {
+        adminPickupStatus.textContent = `📍 ${label} selected. Press "Save & sync to all maps" to publish it.`;
+        adminPickupStatus.style.color = 'var(--muted)';
+      }
+      hidePickupSuggest();
+    }
+
+    async function searchPickupLandmarks(query) {
+      if (!adminPickupSuggest) return;
+      if (!query || query.trim().length < 2) { hidePickupSuggest(); return; }
+      adminPickupSuggest.style.display = 'block';
+      adminPickupSuggest.innerHTML = '<div style="padding:12px 14px; font-size:0.78rem; color:#6b7280;">Searching online landmarks…</div>';
+      try {
+        const res = await fetch('/api/geo/search?q=' + encodeURIComponent(query.trim()), { headers: { Accept: 'application/json' } });
+        const data = await res.json();
+        const results = Array.isArray(data.results) ? data.results : [];
+        if (!results.length) {
+          adminPickupSuggest.innerHTML = '<div style="padding:12px 14px; font-size:0.78rem; color:#6b7280;">No landmark found. You can still click the map to drop the pin.</div>';
+          return;
         }
-        if (adminPickupStatus) adminPickupStatus.textContent = 'Press "Save & sync to all maps" to publish this point.';
+        adminPickupSuggest.innerHTML = results.map((r, i) =>
+          '<button type="button" data-index="' + i + '" style="display:block; width:100%; text-align:left; padding:11px 14px; border:0; border-bottom:1px solid #f0f2ea; background:#fff; cursor:pointer;">' +
+            '<strong style="display:block; font-size:0.84rem; color:#173d30;">📍 ' + String(r.label || '').replace(/[<>&]/g, '') + '</strong>' +
+            '<small style="display:block; font-size:0.72rem; color:#6b7280; margin-top:2px;">' + String(r.area || '').replace(/[<>&]/g, '') + '</small>' +
+          '</button>'
+        ).join('');
+        adminPickupSuggest.querySelectorAll('button').forEach(btn => {
+          btn.addEventListener('click', () => applyPickupLandmark(results[Number(btn.dataset.index)]));
+        });
+      } catch (e) {
+        adminPickupSuggest.innerHTML = '<div style="padding:12px 14px; font-size:0.78rem; color:#b91c1c;">Landmark search is offline. Click the map or type coordinates instead.</div>';
+      }
+    }
+
+    if (adminPickupSearch) {
+      adminPickupSearch.addEventListener('input', () => {
+        if (pickupSearchTimer) clearTimeout(pickupSearchTimer);
+        const value = adminPickupSearch.value;
+        pickupSearchTimer = setTimeout(() => searchPickupLandmarks(value), 320);
+      });
+      adminPickupSearch.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') hidePickupSuggest();
+        if (e.key === 'Enter' && adminPickupSuggest && adminPickupSuggest.style.display !== 'none') {
+          const first = adminPickupSuggest.querySelector('button');
+          if (first) { e.preventDefault(); first.click(); }
+        }
+      });
+      document.addEventListener('click', (e) => {
+        if (!adminPickupSuggest || adminPickupSuggest.style.display === 'none') return;
+        if (adminPickupSuggest.contains(e.target) || e.target === adminPickupSearch) return;
+        hidePickupSuggest();
       });
     }
 
@@ -2146,13 +2200,23 @@
         adminPickupSaveBtn.disabled = true;
         adminPickupSaveBtn.textContent = 'Saving…';
         try {
-          const res = await apiSetPickupPoint(name, { lat, lng }, name);
+          const feeInput = adminDeliveryFee && adminDeliveryFee.value !== '' ? Number(adminDeliveryFee.value) : null;
+          const res = await apiSavePickupSettings({
+            name,
+            address: name,
+            lat,
+            lng,
+            deliveryFee: Number.isFinite(feeInput) ? feeInput : undefined
+          });
           if (res && res.success) {
             fillPickupForm(res.pickupPoint);
             placePickupMarker(res.pickupPoint.lat, res.pickupPoint.lng, res.pickupPoint.name);
             if (map) map.setView([res.pickupPoint.lat, res.pickupPoint.lng], Math.max(map.getZoom(), 14));
+            if (adminDeliveryFee && Number.isFinite(Number(res.deliveryFee))) {
+              adminDeliveryFee.value = Number(res.deliveryFee);
+            }
             if (adminPickupStatus) {
-              adminPickupStatus.textContent = `✅ Saved and synced: ${res.pickupPoint.name}. Customer and rider maps update automatically.`;
+              adminPickupStatus.textContent = `✅ Saved and synced: ${res.pickupPoint.name}. Delivery fee GH₵${Number(res.deliveryFee || 0).toFixed(2)} applies only to paid delivery.`;
               adminPickupStatus.style.color = '#166534';
             }
             loadAuditLogs();
@@ -2344,6 +2408,25 @@
               </div>
 
               <div>
+                <label class="admin-edit-label">Customer description (shown on the food card):</label>
+                <textarea class="admin-edit-textarea edit-description" data-id="${item.id}" rows="2" placeholder="e.g. Spaghetti tossed with egg and sausage, cooked fresh to order.">${item.description || ''}</textarea>
+              </div>
+
+              <div class="admin-field-row">
+                <div>
+                  <label class="admin-edit-label">Preparation time:</label>
+                  <input type="text" class="admin-edit-input edit-prep" data-id="${item.id}" value="${item.prepTime || ''}" placeholder="e.g. Ready in 20–30 min">
+                </div>
+                <div>
+                  <label class="admin-edit-label">Availability:</label>
+                  <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; font-weight:600; color:var(--forest); min-height:42px;">
+                    <input type="checkbox" class="edit-available" data-id="${item.id}" ${item.available === false ? '' : 'checked'} style="width:18px; height:18px;">
+                    Available on the storefront
+                  </label>
+                </div>
+              </div>
+
+              <div>
                 <label class="admin-edit-label">Recipe Formula (Poster text):</label>
                 <textarea class="admin-edit-textarea edit-formula" data-id="${item.id}" rows="2" placeholder="e.g. Add scrambled egg + Cut half sausage...">${formulaClean}</textarea>
               </div>
@@ -2372,11 +2455,16 @@
                 </select>
               </div>
 
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; gap:10px; flex-wrap:wrap;">
                 <span style="font-size:0.75rem; color:var(--muted); font-family:monospace;">ID: ${item.id}</span>
-                <button type="button" class="btn btn-forest btn-sm save-single-card-btn" data-id="${item.id}">
-                  💾 Update Card
-                </button>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <button type="button" class="btn btn-outline btn-sm delete-card-btn" data-id="${item.id}" style="border-color:#fca5a5; color:#b91c1c;">
+                    🗑 Delete
+                  </button>
+                  <button type="button" class="btn btn-forest btn-sm save-single-card-btn" data-id="${item.id}">
+                    💾 Update Card
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -2478,6 +2566,9 @@
           target.desc = `= ${target.formula}`;
           target.tag = tagInput.value.trim();
           target.badge = target.tag || `${target.price} CEDIS`;
+          target.description = (cardEl.querySelector('.edit-description').value || '').trim();
+          target.prepTime = (cardEl.querySelector('.edit-prep').value || '').trim();
+          target.available = !!cardEl.querySelector('.edit-available').checked;
           target.image = pickedMenuImages.get(id) || cardEl.__pickedImage || imgCustom.value.trim() || imgSelect.value;
           target.template = cardEl.querySelector('.edit-template').value;
 
@@ -2494,6 +2585,69 @@
           pickedMenuImages.delete(id);
           renderFoodMenuTab();
         });
+
+        // Delete this dish completely (asks first, then saves the new menu).
+        const deleteBtn = cardEl.querySelector('.delete-card-btn');
+        if (deleteBtn) {
+          deleteBtn.addEventListener('click', async () => {
+            const current = getMenuItems();
+            const dish = current.find(m => m.id === id);
+            if (!dish) return;
+            if (!confirm(`Delete "${dish.name}" from the menu? Customers will no longer see or order it.`)) return;
+            const remaining = current.filter(m => m.id !== id);
+            if (!remaining.length) {
+              showMenuFeedback('You must keep at least one dish on the menu.', false);
+              return;
+            }
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = 'Deleting…';
+            const result = await apiSaveMenu(remaining);
+            if (!result.success) {
+              deleteBtn.disabled = false;
+              deleteBtn.textContent = '🗑 Delete';
+              showMenuFeedback(result.message || 'Could not delete this dish.', false);
+              return;
+            }
+            showMenuFeedback(`"${dish.name}" was deleted from the live menu.`);
+            renderFoodMenuTab();
+          });
+        }
+      });
+    }
+
+    const adminAddMenuBtn = document.getElementById('adminAddMenuBtn');
+    if (adminAddMenuBtn) {
+      adminAddMenuBtn.addEventListener('click', async () => {
+        const items = getMenuItems().slice();
+        const id = 'dish' + Date.now().toString(36);
+        items.push({
+          id,
+          name: 'NEW DISH',
+          price: 20,
+          noodles: ['Spaghetti', 'Indomie'],
+          formula: 'Describe what comes with this dish',
+          desc: '= Describe what comes with this dish',
+          description: 'Freshly cooked YEBS noodles, made to order.',
+          image: 'img_food_3.jpg',
+          badge: '20 CEDIS',
+          tag: 'New',
+          prepTime: 'Ready in 20–30 min',
+          available: true,
+          template: 'poster-capsule'
+        });
+        adminAddMenuBtn.disabled = true;
+        const result = await apiSaveMenu(items);
+        adminAddMenuBtn.disabled = false;
+        if (!result.success) {
+          showMenuFeedback(result.message || 'Could not add a new dish.', false);
+          return;
+        }
+        showMenuFeedback('New dish added at the bottom. Edit its name, price and photo, then tap “Update Card”.');
+        renderFoodMenuTab();
+        setTimeout(() => {
+          const el = document.getElementById('admin-card-item-' + id);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 150);
       });
     }
 
@@ -2510,6 +2664,9 @@
             target.desc = `= ${target.formula}`;
             target.tag = cardEl.querySelector('.edit-tag').value.trim();
             target.badge = target.tag || `${target.price} CEDIS`;
+            target.description = (cardEl.querySelector('.edit-description').value || '').trim();
+            target.prepTime = (cardEl.querySelector('.edit-prep').value || '').trim();
+            target.available = !!cardEl.querySelector('.edit-available').checked;
             target.image = pickedMenuImages.get(id) || cardEl.__pickedImage || cardEl.querySelector('.edit-image-custom').value.trim() || cardEl.querySelector('.edit-image-select').value;
             target.template = cardEl.querySelector('.edit-template').value;
           }
@@ -2668,8 +2825,9 @@
     adminLogoutBtn.addEventListener('click', () => {
       if (confirm('Log out of YEBS Admin Dashboard?')) {
         clearAdminSession();
+        try { sessionStorage.removeItem('yebs_admin_photo'); } catch (e) {}
         if (map) { try { map.remove(); } catch (e) {} map = null; markersLayer = null; }
-        checkAdminAuth();
+        window.location.href = 'admin.html';
       }
     });
 

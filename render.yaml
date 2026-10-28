@@ -1,0 +1,55 @@
+# Render Blueprint for the YEBS Noodles Express app (site + API in one service).
+# 1. Push this repo to GitHub.
+# 2. Render Dashboard -> New -> Blueprint -> pick this repo.
+# 3. Fill the environment variables Render asks for. WHATSAPP_* and SUPABASE_*
+#    are optional; without them the site still runs and orders are saved.
+services:
+  - type: web
+    name: yebs-noodles
+    runtime: node
+    plan: starter
+    region: frankfurt
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Persistent disk keeps orders across deploys/restarts.
+      - key: DB_PATH
+        value: /var/data/database.json
+      - key: WHATSAPP_TO
+        value: "233559103452"
+      - key: WHATSAPP_API_VERSION
+        value: v20.0
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      # Optional: hosted database shared with the Netlify deployment.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STATE_TABLE
+        value: yebs_state
+      # Optional: automatic MTN MoMo collection (sandbox or production).
+      - key: MOMO_SUBSCRIPTION_KEY
+        sync: false
+      - key: MOMO_API_USER
+        sync: false
+      - key: MOMO_API_KEY
+        sync: false
+      - key: MOMO_CALLBACK_HOST
+        sync: false
+      - key: MOMO_TARGET_ENV
+        value: mtnghana
+      - key: MOMO_PAY_TO
+        value: "0559103452"
+      - key: MOMO_MERCHANT_NAME
+        value: MATHEW TIA
+    disk:
+      name: yebs-data
+      mountPath: /var/data
+      sizeGB: 1

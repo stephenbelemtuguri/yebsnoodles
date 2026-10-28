@@ -12,7 +12,9 @@ const store = require('./src/data/store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DB_FILE = path.join(__dirname, 'database.json');
+const DB_FILE = process.env.DB_PATH
+  ? path.resolve(process.env.DB_PATH)
+  : path.join(__dirname, 'database.json');
 const SECRET_FILE = path.join(__dirname, '.auth-secret');
 
 app.use(cors());
@@ -51,6 +53,334 @@ app.get(['/driver', '/driver-panel', '/rider', '/dispatch'], (req, res) => {
 
 app.get(['/store', '/menu', '/order', '/track', '/customer'], (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// ==========================================================
+// GEOCODING — online landmark search (OpenStreetMap/Nominatim)
+// ==========================================================
+// The checkout and the admin pickup picker both query this proxy so a typed
+// area like "ATU" resolves to real popular landmarks and coordinates instead
+// of a hard-coded shortlist. Results are cached for a day to respect the
+// public Nominatim usage policy, and a small offline list keeps the UI usable
+// when the network is down.
+
+const GEOCODE_TTL_MS = 24 * 60 * 60 * 1000;
+const GEOCODE_MIN_INTERVAL_MS = 1100;
+const geoCache = new Map();
+let lastGeoRequestAt = 0;
+
+const LOCAL_LANDMARKS = [
+  { name: 'Accra Technical University (ATU)', area: 'Barnes Road, Accra Central', lat: 5.5560, lng: -0.2075, aliases: ['atu', 'accra technical', 'polytechnic'] },
+  { name: 'Kwame Nkrumah Circle (Odo Rice Junction)', area: 'Circle, Accra', lat: 5.5612, lng: -0.2155, aliases: ['circle', 'odo rice', 'nkrumah circle', 'vip'] },
+  { name: 'VIP Station / Circle VIP', area: 'Kwame Nkrumah Circle', lat: 5.5605, lng: -0.2160, aliases: ['vip', 'vip station'] },
+  { name: 'Adabraka Market', area: 'Adabraka, Accra', lat: 5.5580, lng: -0.2105, aliases: ['adabraka'] },
+  { name: 'Ridge Hospital', area: 'Castle Road, Ridge', lat: 5.5628, lng: -0.2035, aliases: ['ridge', 'ridge hospital'] },
+  { name: 'Osu Oxford Street', area: 'Osu, Accra', lat: 5.5560, lng: -0.1830, aliases: ['osu', 'oxford street'] },
+  { name: 'Danquah Circle', area: 'Osu / Labone', lat: 5.5600, lng: -0.1820, aliases: ['danquah', 'danquah circle'] },
+  { name: 'Cantonments City Mall', area: 'Cantonments, Accra', lat: 5.5780, lng: -0.1790, aliases: ['cantonments', 'city mall'] },
+  { name: 'Kaneshie Market', area: 'Kaneshie, Accra', lat: 5.5690, lng: -0.2450, aliases: ['kaneshie'] },
+  { name: 'Achimota Mall', area: 'Achimota, Accra', lat: 5.6160, lng: -0.2250, aliases: ['achimota', 'achimota mall'] },
+  { name: 'Madina Market', area: 'Madina, Accra', lat: 5.6830, lng: -0.1660, aliases: ['madina'] },
+  { name: 'East Legon (American House)', area: 'East Legon, Accra', lat: 5.6350, lng: -0.1570, aliases: ['east legon', 'american house'] },
+  { name: '37 Military Hospital', area: 'Liberation Road, Accra', lat: 5.5860, lng: -0.1900, aliases: ['37', '37 hospital', 'military hospital'] },
+  { name: 'Lapaz Market', area: 'Lapaz, Accra', lat: 5.6060, lng: -0.2440, aliases: ['lapaz'] },
+  { name: 'Tesano Police Station', area: 'Tesano, Accra', lat: 5.6030, lng: -0.2330, aliases: ['tesano'] },
+  { name: 'Dzorwulu Total Station', area: 'Dzorwulu, Accra', lat: 5.6020, lng: -0.1960, aliases: ['dzorwulu'] },
+  { name: 'Kotoka International Airport', area: 'Airport, Accra', lat: 5.6052, lng: -0.1668, aliases: ['airport', 'kotoka'] },
+  { name: 'Accra Mall', area: 'Spintex Road, Accra', lat: 5.6230, lng: -0.1730, aliases: ['accra mall'] },
+  { name: 'Makola Market', area: 'Accra Central', lat: 5.5460, lng: -0.2060, aliases: ['makola'] },
+  { name: 'Tema Station', area: 'Accra Central', lat: 5.5500, lng: -0.2080, aliases: ['tema station'] },
+  { name: 'Arts Centre', area: 'High Street, Accra', lat: 5.5410, lng: -0.2090, aliases: ['arts centre', 'art centre'] },
+  { name: 'Korle Bu Teaching Hospital', area: 'Korle Bu, Accra', lat: 5.5360, lng: -0.2260, aliases: ['korle bu', 'korle-bu'] },
+  { name: 'Dansoman Last Stop', area: 'Dansoman, Accra', lat: 5.5450, lng: -0.2620, aliases: ['dansoman'] },
+  { name: 'Kasoa Toll Booth', area: 'Kasoa, Central Region', lat: 5.5330, lng: -0.4160, aliases: ['kasoa'] },
+  { name: 'Spintex Road (Papaye)', area: 'Spintex, Accra', lat: 5.6260, lng: -0.1150, aliases: ['spintex'] },
+  { name: 'Teshie Nungua Estate', area: 'Teshie, Accra', lat: 5.5830, lng: -0.0850, aliases: ['teshie', 'nungua'] },
+  { name: 'Tema Community 1 Market', area: 'Tema, Greater Accra', lat: 5.6690, lng: -0.0170, aliases: ['tema'] },
+  { name: 'Ashaiman Roundabout', area: 'Ashaiman, Greater Accra', lat: 5.6930, lng: -0.0410, aliases: ['ashaiman'] },
+  { name: 'GIMPA Main Gate', area: 'Greenhill, Accra', lat: 5.6180, lng: -0.2040, aliases: ['gimpa'] },
+  { name: 'University of Ghana (Legon)', area: 'Legon, Accra', lat: 5.6510, lng: -0.1870, aliases: ['legon', 'university of ghana', 'ug'] },
+  { name: 'UPSA Main Entrance', area: 'Madina, Accra', lat: 5.6470, lng: -0.1740, aliases: ['upsa'] },
+  { name: 'Accra Institute of Technology (AIT)', area: 'Tesano, Accra', lat: 5.6040, lng: -0.2290, aliases: ['ait'] },
+  { name: 'Takoradi Market Circle', area: 'Takoradi, Western Region', lat: 4.8990, lng: -1.7590, aliases: ['takoradi', 'market circle'] },
+  { name: 'Cape Coast Castle', area: 'Cape Coast, Central Region', lat: 5.1040, lng: -1.2420, aliases: ['cape coast'] },
+  { name: 'KNUST Main Gate', area: 'Kumasi, Ashanti Region', lat: 6.6740, lng: -1.5710, aliases: ['knust'] },
+  { name: 'Tamale Central Market', area: 'Tamale, Northern Region', lat: 9.4040, lng: -0.8390, aliases: ['tamale'] }
+];
+
+function geoCacheGet(key) {
+  const hit = geoCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > GEOCODE_TTL_MS) { geoCache.delete(key); return null; }
+  return hit.value;
+}
+
+function geoCacheSet(key, value) {
+  geoCache.set(key, { at: Date.now(), value });
+  if (geoCache.size > 300) {
+    const oldest = geoCache.keys().next().value;
+    geoCache.delete(oldest);
+  }
+}
+
+function localLandmarkSearch(query) {
+  const q = String(query || '').toLowerCase().trim();
+  if (!q) return [];
+  return LOCAL_LANDMARKS.filter(l =>
+    l.name.toLowerCase().includes(q) ||
+    l.area.toLowerCase().includes(q) ||
+    (l.aliases || []).some(a => a.includes(q) || q.includes(a))
+  ).slice(0, 6).map(l => ({
+    label: l.name,
+    area: l.area,
+    lat: l.lat,
+    lng: l.lng,
+    source: 'local'
+  }));
+}
+
+async function nominatimFetch(pathname, params) {
+  const wait = Math.max(0, GEOCODE_MIN_INTERVAL_MS - (Date.now() - lastGeoRequestAt));
+  if (wait) await new Promise(r => setTimeout(r, wait));
+  lastGeoRequestAt = Date.now();
+
+  const url = new URL('https://nominatim.openstreetmap.org/' + pathname);
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v); });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7000);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'YEBS-Noodles/1.0 (contact: stephenbelemtuguri@gmail.com)',
+        'Accept': 'application/json',
+        'Accept-Language': 'en'
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error('Geocoder responded ' + response.status);
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+app.get('/api/geo/search', async (req, res) => {
+  const query = cleanString(req.query.q || req.query.query, 120);
+  if (query.length < 2) return res.json({ success: true, source: 'local', results: [] });
+
+  const key = 'search:' + query.toLowerCase();
+  const cached = geoCacheGet(key);
+  if (cached) return res.json({ success: true, ...cached });
+
+  let results = [];
+  let source = 'osm';
+  try {
+    const rows = await nominatimFetch('search', {
+      q: query,
+      format: 'jsonv2',
+      addressdetails: 1,
+      limit: 7,
+      countrycodes: 'gh',
+      'accept-language': 'en'
+    });
+    results = (Array.isArray(rows) ? rows : []).map(row => ({
+      label: row.name || row.display_name.split(',')[0],
+      area: String(row.display_name || '').split(',').slice(1, 3).join(',').trim(),
+      lat: Number(row.lat),
+      lng: Number(row.lon),
+      type: row.type || row.class || 'place',
+      source: 'osm'
+    })).filter(r => Number.isFinite(r.lat) && Number.isFinite(r.lng));
+  } catch (err) {
+    console.warn('[geo] online search failed, using local landmarks:', err.message);
+    source = 'local';
+    results = localLandmarkSearch(query);
+  }
+
+  if (!results.length) {
+    source = source === 'osm' ? 'local' : source;
+    results = localLandmarkSearch(query);
+  }
+
+  const payload = { results: results.slice(0, 7) };
+  geoCacheSet(key, payload);
+  res.json({ success: true, source, ...payload });
+});
+
+app.get('/api/geo/reverse', async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return res.status(400).json({ success: false, message: 'Valid lat and lng are required.' });
+  }
+  const key = 'reverse:' + lat.toFixed(4) + ':' + lng.toFixed(4);
+  const cached = geoCacheGet(key);
+  if (cached) return res.json({ success: true, ...cached });
+
+  try {
+    const row = await nominatimFetch('reverse', { lat, lon: lng, format: 'jsonv2', zoom: 18, addressdetails: 1 });
+    const address = row && row.address ? row.address : {};
+    const parts = [
+      address.road || address.pedestrian || address.neighbourhood || address.suburb,
+      address.suburb && address.suburb !== address.road ? address.suburb : null,
+      address.city || address.town || address.village || 'Accra'
+    ].filter(Boolean);
+    const label = row && row.display_name ? String(row.display_name).split(',').slice(0, 3).join(', ') : parts.join(', ');
+    const payload = { label: label || 'Your current location', area: parts.join(', ') };
+    geoCacheSet(key, payload);
+    res.json({ success: true, ...payload });
+  } catch (err) {
+    console.warn('[geo] reverse failed:', err.message);
+    res.json({ success: true, label: 'Your current location', area: 'GPS pin captured', degraded: true });
+  }
+});
+
+// Public delivery settings: the shared pickup point and the delivery fee.
+app.get('/api/settings/public', (req, res) => {
+  const db = loadDatabase();
+  const session = (db.sessions && db.sessions[0]) || {};
+  const pickup = session.pickupPoint || (db.settings && db.settings.pickup) || {
+    name: 'Circle Odo Rice Junction / VIP Station',
+    lat: 5.5612,
+    lng: -0.2155
+  };
+  res.json({
+    success: true,
+    pickupPoint: pickup,
+    deliveryFee: Number(db.settings && db.settings.deliveryFee) || 15,
+    momo: {
+      payTo: (db.settings && db.settings.momo && db.settings.momo.payTo) || DEFAULT_MOMO_SETTINGS.payTo,
+      accountName: (db.settings && db.settings.momo && db.settings.momo.accountName) || DEFAULT_MOMO_SETTINGS.accountName
+    }
+  });
+});
+
+app.put('/api/admin/settings/pickup', requireRole('admin'), (req, res) => {
+  const body = req.body || {};
+  const lat = Number(body.lat);
+  const lng = Number(body.lng);
+  const name = cleanString(body.name || body.pickupPointName, 160);
+  if (lat === null || lng === null || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return res.status(400).json({ success: false, message: 'Set the pickup point on the map or pick a landmark first.' });
+  }
+  if (!name) {
+    return res.status(400).json({ success: false, message: 'Give the shared pickup point a name customers will recognise.' });
+  }
+  const db = loadDatabase();
+  db.settings = db.settings || {};
+  const pickup = {
+    name,
+    address: cleanString(body.address, 220) || name,
+    lat,
+    lng,
+    updatedAt: new Date().toISOString(),
+    setBy: (req.auth.admin && (req.auth.admin.name || req.auth.admin.username)) || 'Admin',
+    setByRole: 'admin'
+  };
+  db.settings.pickup = pickup;
+  if (body.deliveryFee !== undefined) {
+    const fee = toAmount(body.deliveryFee);
+    if (fee !== null && fee >= 0 && fee <= 200) db.settings.deliveryFee = fee;
+  }
+  db.sessions = db.sessions && db.sessions.length ? db.sessions : [{ sessionNumber: 1, status: 'ACTIVE' }];
+  db.sessions[0].pickupPoint = pickup;
+  db.orders.forEach(o => {
+    if (o.status !== 'delivered' && o.status !== 'cancelled') {
+      o.pickupPoint = pickup;
+      o.pickupPointName = pickup.name;
+    }
+  });
+  saveDatabase(db);
+  logAction('PICKUP_POINT_UPDATED', pickup.setBy, pickup.name, { lat, lng, deliveryFee: db.settings.deliveryFee }, req);
+  res.json({ success: true, pickupPoint: pickup, deliveryFee: db.settings.deliveryFee });
+});
+
+// ==========================================================
+// WHATSAPP ORDER NOTIFICATIONS (server-side, no redirect)
+// ==========================================================
+// WhatsApp Cloud API credentials are optional. When they are present the
+// kitchen gets the order automatically in the background; when they are not,
+// the attempt is stored in the database so the admin can see exactly what is
+// missing instead of the customer being bounced to wa.me.
+function whatsappConfig() {
+  return {
+    token: process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_CLOUD_TOKEN || '',
+    phoneId: process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID || '',
+    to: String(process.env.WHATSAPP_TO || process.env.YEBS_WHATSAPP_TO || '233559103452').replace(/[^\d]/g, ''),
+    version: process.env.WHATSAPP_API_VERSION || 'v20.0'
+  };
+}
+
+function orderWhatsAppText(order) {
+  const lines = [
+    'NEW YEBS NOODLES ORDER #' + order.id,
+    'Customer: ' + order.customer,
+    'Phone: ' + (order.phone || '-'),
+    'Fulfilment: ' + order.fulfilment,
+    'Location: ' + (order.location || '-'),
+    'Items: ' + (order.items || []).map(i => (i.quantity || 1) + ' x ' + i.name).join(', '),
+    'Total: GH' + Number(order.total || 0).toFixed(2),
+    'Payment: ' + order.payment + ' (' + order.paymentStatus + ')',
+    'Order ID / PIN: ' + order.id + ' / ' + order.pickupPin
+  ];
+  if (order.notes) lines.push('Notes: ' + order.notes);
+  return lines.join('\n');
+}
+
+async function notifyOrderCreated(db, order) {
+  db.notifications = db.notifications || [];
+  const cfg = whatsappConfig();
+  const entry = {
+    id: 'ntf-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+    orderId: order.id,
+    channel: 'whatsapp',
+    to: cfg.to,
+    createdAt: new Date().toISOString(),
+    status: 'queued',
+    message: orderWhatsAppText(order)
+  };
+
+  if (!cfg.token || !cfg.phoneId) {
+    entry.status = 'not-configured';
+    entry.reason = 'Set WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID to send kitchen alerts automatically.';
+  } else {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch('https://graph.facebook.com/' + cfg.version + '/' + cfg.phoneId + '/messages', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + cfg.token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: cfg.to,
+          type: 'text',
+          text: { preview_url: false, body: entry.message }
+        }),
+        signal: controller.signal
+      }).finally(() => clearTimeout(timer));
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error((payload.error && payload.error.message) || ('WhatsApp API ' + response.status));
+      entry.status = 'sent';
+      entry.providerId = payload.messages && payload.messages[0] ? payload.messages[0].id : null;
+      entry.sentAt = new Date().toISOString();
+    } catch (err) {
+      entry.status = 'failed';
+      entry.reason = err.message;
+      console.warn('[whatsapp] order notification failed:', err.message);
+    }
+  }
+
+  order.notificationStatus = entry.status;
+  db.notifications.unshift(entry);
+  if (db.notifications.length > 500) db.notifications.length = 500;
+  saveDatabase(db);
+  return entry;
+}
+
+app.get('/api/admin/notifications', requireRole('admin'), (req, res) => {
+  const db = loadDatabase();
+  res.json({ success: true, notifications: (db.notifications || []).slice(0, 100) });
 });
 
 // ==========================================================
@@ -222,9 +552,15 @@ function rateSuccess(req, role, identity) {
 // superadmin. Without this, a database.json that predates the accounts (or was
 // committed empty) leaves the platform with no way to sign in or approve drivers.
 const DEFAULT_MOMO_SETTINGS = { payTo: '0559103452', accountName: 'MATHEW TIA' };
+const DEFAULT_PICKUP_POINT = {
+  name: 'Circle Odo Rice Junction / VIP Station',
+  address: 'Kwame Nkrumah Circle, Accra',
+  lat: 5.5612,
+  lng: -0.2155
+};
 
 function ensureSystemAccounts(db) {
-  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems', 'payouts', 'reviews'];
+  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'notifications'];
   let changed = false;
 
   collections.forEach(key => {
@@ -237,6 +573,14 @@ function ensureSystemAccounts(db) {
   }
   if (!db.settings.momo || typeof db.settings.momo !== 'object') {
     db.settings.momo = { ...DEFAULT_MOMO_SETTINGS };
+    changed = true;
+  }
+  if (!db.settings.pickup || typeof db.settings.pickup !== 'object') {
+    db.settings.pickup = { ...DEFAULT_PICKUP_POINT };
+    changed = true;
+  }
+  if (!Number.isFinite(Number(db.settings.deliveryFee))) {
+    db.settings.deliveryFee = 15;
     changed = true;
   } else {
     if (!db.settings.momo.payTo) { db.settings.momo.payTo = DEFAULT_MOMO_SETTINGS.payTo; changed = true; }
@@ -293,7 +637,9 @@ function loadDatabase() {
         }
       ],
       settings: {
-        momo: { ...DEFAULT_MOMO_SETTINGS }
+        momo: { ...DEFAULT_MOMO_SETTINGS },
+        pickup: { ...DEFAULT_PICKUP_POINT },
+        deliveryFee: 15
       },
       auditLogs: [
         {
@@ -319,8 +665,8 @@ function loadDatabase() {
   } catch (e) {
     console.error("Database read error, restoring default", e);
     const fallback = {
-      admins: [], drivers: [], orders: [], sessions: [], auditLogs: [], menuItems: [], payouts: [], reviews: [],
-      settings: { momo: { ...DEFAULT_MOMO_SETTINGS } }
+      admins: [], drivers: [], orders: [], sessions: [], auditLogs: [], menuItems: [], payouts: [], reviews: [], notifications: [],
+      settings: { momo: { ...DEFAULT_MOMO_SETTINGS }, pickup: { ...DEFAULT_PICKUP_POINT }, deliveryFee: 15 }
     };
     ensureSystemAccounts(fallback);
     return fallback;
@@ -332,6 +678,7 @@ function saveDatabase(data) {
   // `npm start` behaves exactly as before.
   store.set(data);
   try {
+    fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
     // Read-only filesystem on Netlify Functions — Supabase already has it.
@@ -515,6 +862,7 @@ function projectOrder(order, viewer = 'public') {
     meetingPoint: order.meetingPoint || null,
     pickupPointName: order.pickupPointName || null,
     pickupPoint: order.pickupPoint || null,
+    notificationStatus: order.notificationStatus || null,
     driver: order.driver ? {
       id: order.driver.id || null,
       name: order.driver.name || null,
@@ -1664,7 +2012,7 @@ app.get('/api/orders/:id', (req, res) => {
 // ORDER SUBMISSION & MANAGEMENT
 // ========================================
 
-app.post('/api/orders', (req, res) => {
+app.post('/api/orders', async (req, res) => {
   const body = req.body || {};
   const db = loadDatabase();
 
@@ -1700,7 +2048,9 @@ app.post('/api/orders', (req, res) => {
   }
 
   const subtotal = Math.round(items.reduce((sum, i) => sum + (i.price * i.quantity), 0) * 100) / 100;
-  const deliveryFee = String(body.fulfilment || '').toLowerCase() === 'delivery' ? 15 : 0;
+  const requestedFulfilment = cleanString(body.fulfilment || 'Delivery', 40);
+  const isDelivery = /deliver/i.test(requestedFulfilment);
+  const deliveryFee = isDelivery ? (Number(db.settings && db.settings.deliveryFee) || 15) : 0;
   const total = Math.round((subtotal + deliveryFee) * 100) / 100;
 
   let id = requested;
@@ -1721,11 +2071,20 @@ app.post('/api/orders', (req, res) => {
 
   // Prefer an explicit pin, then any coordinates embedded in the address
   // (pasted Google/Apple Maps link), then the Adabraka kitchen default.
+  const sharedPickup = currentSession.pickupPoint || (db.settings && db.settings.pickup) || null;
   const pinFromAddress = extractCoordinates(body.location);
   const hasPin = body.mapPin && Number.isFinite(Number(body.mapPin.lat)) && Number.isFinite(Number(body.mapPin.lng));
-  const orderPin = hasPin
+  const customerPin = hasPin
     ? { lat: Number(body.mapPin.lat), lng: Number(body.mapPin.lng) }
     : (pinFromAddress || { lat: 5.5650, lng: -0.2100 });
+  // Customers who choose free collection meet the rider at the shared pickup
+  // point. Only a paid delivery is routed to the customer's own address.
+  const orderPin = (!isDelivery && sharedPickup)
+    ? { lat: Number(sharedPickup.lat), lng: Number(sharedPickup.lng) }
+    : customerPin;
+  const orderLocation = (!isDelivery && sharedPickup)
+    ? sharedPickup.name
+    : cleanString(body.location || 'Adabraka, Accra', 200);
 
   const newOrder = {
     id,
@@ -1736,10 +2095,12 @@ app.post('/api/orders', (req, res) => {
     createdAt: body.createdAt || new Date().toISOString(),
     customer,
     phone,
-    fulfilment: cleanString(body.fulfilment || "Delivery", 40),
-    location: cleanString(body.location || "Adabraka, Accra", 200),
+    fulfilment: isDelivery ? 'Delivery' : 'Collection',
+    location: orderLocation,
     mapPin: orderPin,
-    pinSource: hasPin ? 'shared-gps' : (pinFromAddress ? 'map-link' : 'default'),
+    pinSource: isDelivery
+      ? (hasPin ? 'shared-gps' : (pinFromAddress ? 'map-link' : 'default'))
+      : 'shared-pickup',
     timing: cleanString(body.timing || "As soon as possible", 60),
     items,
     subtotal,
@@ -1764,8 +2125,8 @@ app.post('/api/orders', (req, res) => {
     notes: cleanString(body.notes, 500),
     status: body.status || "pending",
     verifiedByDriver: false,
-    pickupPoint: currentSession.pickupPoint || null,
-    pickupPointName: currentSession.pickupPoint ? currentSession.pickupPoint.name : null,
+    pickupPoint: sharedPickup,
+    pickupPointName: sharedPickup ? sharedPickup.name : null,
     orderSession: body.orderSession || {
       isActive: true,
       sessionNumber: body.sessionNumber || currentSession.sessionNumber,
@@ -1783,6 +2144,13 @@ app.post('/api/orders', (req, res) => {
     pin: newOrder.pickupPin,
     paymentMode: newOrder.paymentMode
   }, req);
+
+  // Notify the kitchen automatically. No WhatsApp redirect for the customer.
+  try {
+    await notifyOrderCreated(db, newOrder);
+  } catch (err) {
+    console.warn('[whatsapp] notification skipped:', err.message);
+  }
 
   res.status(201).json(projectOrder(newOrder, 'public'));
 });
@@ -1873,8 +2241,10 @@ app.post('/api/session/pickup-point', requireRole('admin', 'driver'), (req, res)
     "kaneshie": { lat: 5.5690, lng: -0.2450 }
   };
 
-  let lat = toAmount(latRaw);
-  let lng = toAmount(lngRaw);
+  let lat = Number(latRaw);
+  let lng = Number(lngRaw);
+  if (!Number.isFinite(lat)) lat = null;
+  if (!Number.isFinite(lng)) lng = null;
   const validLat = lat !== null && lat >= -90 && lat <= 90;
   const validLng = lng !== null && lng >= -180 && lng <= 180;
 
@@ -2706,6 +3076,7 @@ function analyticsBuckets(bounds) {
 }
 
 app.get('/api/analytics/dashboard', requireRole('admin'), (req, res) => {
+  try {
   const db = loadDatabase();
   const bounds = analyticsRangeBounds(req.query.range);
   const orders = analyticsInRange(db.orders, bounds.start, bounds.end);
@@ -2888,6 +3259,26 @@ app.get('/api/analytics/dashboard', requireRole('admin'), (req, res) => {
     recentOrders,
     insights
   });
+  } catch (err) {
+    console.error('[analytics] dashboard failed:', err);
+    res.status(200).json({
+      success: true,
+      degraded: true,
+      message: 'Live analytics are temporarily unavailable. The store and orders are unaffected.',
+      generatedAt: new Date().toISOString(),
+      range: (req.query && req.query.range) || 'week',
+      kpis: { revenue: 0, collected: 0, orders: 0, customers: 0, aov: 0, delivered: 0, cancelled: 0, pending: 0, paidOrders: 0, unpaidOrders: 0, completionRate: 0 },
+      changes: { revenue: 0, orders: 0, customers: 0, aov: 0 },
+      previous: { revenue: 0, orders: 0, customers: 0, aov: 0 },
+      series: [],
+      statusBreakdown: [],
+      topItems: [],
+      peakHours: [],
+      driverPerformance: [],
+      recentOrders: [],
+      insights: []
+    });
+  }
 });
 
 // Close-of-day: auto-trigger audit when shop closes (called by admin or cron)
@@ -3007,14 +3398,29 @@ app.post('/api/admin/payouts/:id/pay', requireRole('admin'), (req, res) => {
 
 // Health check used by the portals to detect a live API server
 app.get('/api/health', (req, res) => {
+  const db = loadDatabase();
+  const pickup = (db.sessions && db.sessions[0] && db.sessions[0].pickupPoint) || (db.settings && db.settings.pickup) || null;
+  const wa = whatsappConfig();
   res.json({
     success: true,
     service: "YEBS Noodles API",
     time: new Date().toISOString(),
     storage: store.status(),
+    database: {
+      engine: "json-file",
+      path: DB_FILE,
+      persistent: Boolean(process.env.DB_PATH)
+    },
+    pickupPoint: pickup,
+    deliveryFee: Number(db.settings && db.settings.deliveryFee) || 15,
+    whatsapp: {
+      configured: Boolean(wa.token && wa.phoneId),
+      to: wa.to ? wa.to.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1 $2 $3") : null,
+      apiVersion: wa.version
+    },
     momo: {
-      payTo: getMomoSettings(loadDatabase()).payTo,
-      accountName: getMomoSettings(loadDatabase()).accountName,
+      payTo: getMomoSettings(db).payTo,
+      accountName: getMomoSettings(db).accountName,
       apiConfigured: momoApiConfig().configured,
       networks: listMomoNetworks().map(n => ({ id: n.id, ussd: n.ussd, apiReady: n.apiReady }))
     }

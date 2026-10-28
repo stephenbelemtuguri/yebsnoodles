@@ -84,8 +84,16 @@
     "momo": {
       "payTo": "0559103452",
       "accountName": "MATHEW TIA"
-    }
+    },
+    "pickup": {
+      "name": "Circle Odo Rice Junction / VIP Station",
+      "address": "Kwame Nkrumah Circle, Accra",
+      "lat": 5.5612,
+      "lng": -0.2155
+    },
+    "deliveryFee": 15
   },
   "payouts": [],
-  "reviews": []
+  "reviews": [],
+  "notifications": []
 }

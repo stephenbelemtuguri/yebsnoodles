@@ -39,7 +39,9 @@ function headers(extra = {}) {
 
 async function readRemote() {
   const url = `${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${encodeURIComponent(ROW_ID)}&select=data`;
-  const res = await fetch(url, { headers: headers() });
+  // A paused/misconfigured Supabase project must fail fast, not hang until the
+  // serverless function times out (which surfaces as a 502 in the browser).
+  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(5000) });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`Supabase read failed (${res.status}): ${body.slice(0, 300)}`);
@@ -53,7 +55,8 @@ async function writeRemote(data) {
   const res = await fetch(url, {
     method: 'POST',
     headers: headers({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
-    body: JSON.stringify({ id: ROW_ID, data, updated_at: new Date().toISOString() })
+    body: JSON.stringify({ id: ROW_ID, data, updated_at: new Date().toISOString() }),
+    signal: AbortSignal.timeout(5000)
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');

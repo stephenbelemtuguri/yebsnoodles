@@ -388,6 +388,92 @@
     .order-submit { width: 100%; margin-top: 10px; font-size: 1rem; padding: 14px; }
     .clear-cart { border: 0; background: transparent; color: #9a5441; font-size: .76rem; font-weight: 700; }
 
+    /* ========================================================= */
+    /* FOOD CARDS 2.0                                            */
+    /* ========================================================= */
+    .poster-food-img-wrap { height: 212px; }
+    .poster-food-img-wrap::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(9,32,23,0) 45%, rgba(9,32,23,0.66) 100%);
+      pointer-events: none;
+    }
+    .poster-tag-pill { z-index: 2; }
+    .poster-availability {
+      position: absolute; top: 12px; left: 12px; z-index: 2;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 11px; border-radius: 999px;
+      background: rgba(255,255,255,0.95); color: #14532d;
+      font-size: .68rem; font-weight: 900; letter-spacing: .05em; text-transform: uppercase;
+      box-shadow: 0 2px 8px rgba(0,0,0,.16);
+    }
+    .poster-availability::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #16a34a; }
+    .poster-availability.sold-out { color: #991b1b; }
+    .poster-availability.sold-out::before { background: #dc2626; }
+    .poster-card.sold-out .poster-food-img { filter: grayscale(.75); }
+    .poster-card-footer { gap: 10px; }
+    .poster-desc { margin: 0; font-size: .82rem; line-height: 1.5; color: #5b675c; }
+    .poster-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .72rem; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    .poster-meta-row .poster-rating { color: #b45309; }
+    .menu-add-btn:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+
+    /* ========================================================= */
+    /* LOCATION AUTOCOMPLETE + PICKUP SUMMARY                    */
+    /* ========================================================= */
+    .location-wrap { position: relative; }
+    .location-suggest {
+      position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+      z-index: 60; background: #fff; border: 1px solid #d8ddcf; border-radius: 12px;
+      box-shadow: 0 18px 40px rgba(18,44,34,.18);
+      max-height: 292px; overflow-y: auto;
+    }
+    .location-suggest[hidden] { display: none; }
+    .location-suggest-item { display: flex; gap: 10px; width: 100%; padding: 11px 13px; border: 0; border-bottom: 1px solid #f0f2ea; background: #fff; text-align: left; cursor: pointer; }
+    .location-suggest-item:last-child { border-bottom: 0; }
+    .location-suggest-item:hover, .location-suggest-item.active { background: #f2f8ef; }
+    .location-suggest-item .ls-icon { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; background: #e8f2e4; color: #14532d; display: grid; place-items: center; font-size: .72rem; }
+    .location-suggest-item strong { display: block; font-size: .84rem; color: #173d30; font-weight: 800; line-height: 1.3; }
+    .location-suggest-item small { display: block; font-size: .72rem; color: #6b7280; margin-top: 2px; line-height: 1.35; }
+    .location-suggest-note { padding: 9px 13px; font-size: .68rem; color: #6b7280; background: #fafbf7; }
+    .location-suggest-empty { padding: 12px 13px; font-size: .78rem; color: #6b7280; }
+    .location-loading { font-size: .72rem; color: #6b7280; margin-top: 6px; }
+
+    .pickup-info { display: flex; gap: 12px; padding: 13px 15px; border: 1.5px solid #dbe7d4; border-radius: 12px; background: #f6faf2; align-items: flex-start; }
+    .pickup-info-icon { font-size: 1.2rem; line-height: 1; }
+    .pickup-info strong { display: block; color: #173d30; font-size: .88rem; }
+    .pickup-info small { display: block; color: #5b675c; font-size: .74rem; line-height: 1.5; margin-top: 3px; }
+    .pickup-summary { margin-top: 14px; padding: 12px 14px; border: 1px dashed #cfdcc6; border-radius: 10px; background: #f7faf3; font-size: .78rem; color: #3f4a3f; line-height: 1.55; }
+    .pickup-summary strong { color: #173d30; }
+    .fee-row { font-size: .9rem !important; font-weight: 600 !important; color: var(--muted) !important; margin-top: 8px !important; }
+    .fee-row.fee-free { color: #15803d !important; }
+    .grand-total { padding-top: 12px; border-top: 1px solid #eceade; margin-top: 12px; }
+    .customer-pin-map { height: 170px; width: 100%; margin-top: 10px; border-radius: 10px; border: 1px solid #d8ddcf; }
+    .customer-pin-map[hidden] { display: none; }
+
+    /* ========================================================= */
+    /* MOBILE SCROLL / SAFE-AREA FIXES (no overlapping)          */
+    /* ========================================================= */
+    html { scroll-padding-top: 92px; }
+    img, video, canvas { max-width: 100%; }
+    #order, #menu, .order-section, .menu-section { scroll-margin-top: 92px; }
+    .site-footer { padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
+    @media (max-width: 650px) {
+      .order-panel { padding: 18px; }
+      .poster-food-img-wrap { height: 190px; }
+      .poster-capsule-title { font-size: 1.02rem; }
+      .poster-capsule-bar { margin: 10px; }
+      .location-tools { flex-direction: column; align-items: stretch; }
+      .location-button { width: 100%; min-height: 42px; }
+      .track-overlay, .edu-modal-backdrop, .arrival-popup-backdrop {
+        align-items: flex-start;
+        padding: 10px 10px calc(14px + env(safe-area-inset-bottom));
+      }
+      .track-modal { max-height: calc(100dvh - 20px); border-radius: 14px; }
+      .edu-modal-box { max-height: calc(100dvh - 24px); overflow-y: auto; padding: 22px 18px; }
+      .total-row { font-size: 1rem; }
+    }
+
     /* Payment chooser (Pay now vs Pay on delivery) */
     .pay-chooser { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     @media (max-width: 600px) { .pay-chooser { grid-template-columns: 1fr; } }
@@ -874,11 +960,18 @@
               <span>Meal subtotal</span>
               <span id="total">GH₵0</span>
             </div>
-            <div class="total-row" style="font-size:0.9rem; color:var(--muted); font-weight:normal; margin-top:8px;">
-              <span>Delivery fee (Accra)</span>
-              <span>GH₵15.00</span>
+            <div class="total-row fee-row" id="deliveryFeeRow">
+              <span id="deliveryFeeLabel">Collection at shared pickup</span>
+              <span id="deliveryFeeValue">Free</span>
             </div>
-            <p class="fine-print">Delivery riders share their live GPS coordinates with you once departure begins.</p>
+            <div class="pickup-summary" id="pickupSummary">
+              <strong>📍 Shared pickup point:</strong> <span id="pickupSummaryText">Loading the pickup point set by the kitchen…</span>
+            </div>
+            <div class="total-row grand-total">
+              <span>Total</span>
+              <span id="grandTotal">GH₵0</span>
+            </div>
+            <p class="fine-print" id="cartFinePrint">Collection is free at the shared pickup point. Choose delivery only if you want the rider to bring it to your own address — the delivery fee is added to your total.</p>
           </section>
 
           <!-- Checkout Form -->
@@ -899,8 +992,8 @@
               <div class="field">
                 <label for="fulfilment">How would you like it? <span class="required">*</span></label>
                 <select id="fulfilment" name="fulfilment">
-                  <option value="Delivery">Delivery (with Live GPS Tracking)</option>
-                  <option value="Collection">Pickup / collection at Kitchen</option>
+                  <option value="Collection" selected>Collection — free at the shared pickup point</option>
+                  <option value="Delivery">Delivery to my own location (delivery fee applies)</option>
                 </select>
               </div>
               <div class="field">
@@ -910,14 +1003,27 @@
                   <option value="Schedule for later">Schedule for later</option>
                 </select>
               </div>
+              <div class="field field-full" id="pickupInfoBox">
+                <div class="pickup-info">
+                  <span class="pickup-info-icon" aria-hidden="true">📍</span>
+                  <div>
+                    <strong id="pickupInfoName">Shared pickup point</strong>
+                    <small id="pickupInfoHint">Everyone collects at this point set by the kitchen on the map. It is free.</small>
+                  </div>
+                </div>
+              </div>
               <div class="field field-full" id="addressField">
-                <label for="location">Delivery address / area in Accra <span class="required">*</span></label>
-                <input id="location" name="location" autocomplete="street-address" placeholder="Area, street, landmark (e.g. Ring Road, Ridge, Circle)" required>
+                <label for="location" id="addressLabel">Your area / nearest landmark <span class="required" id="addressRequired">*</span></label>
+                <div class="location-wrap">
+                  <input id="location" name="location" autocomplete="off" placeholder="Type any area or landmark, e.g. ATU, Circle, Madina, Osu" required>
+                  <div id="locationSuggest" class="location-suggest" role="listbox" aria-label="Landmark suggestions" hidden></div>
+                </div>
                 <div id="gpsPinPreview" class="gps-preview" hidden></div>
+                <div id="customerPinMap" class="customer-pin-map" hidden></div>
                 <div class="location-tools">
-                  <button class="location-button" id="locateButton" type="button">⌖ Share my GPS pin</button>
+                  <button class="location-button" id="locateButton" type="button">⌖ Use my live GPS location</button>
                   <button class="location-button" id="pasteMapLinkBtn" type="button">Paste Google/Apple Maps link</button>
-                  <span class="location-status" id="locationStatus">Share exact pin for instant driver navigation.</span>
+                  <span class="location-status" id="locationStatus">Search any area online — real landmarks appear as you type.</span>
                 </div>
               </div>
               <div class="field field-full">
@@ -1338,9 +1444,17 @@
 
     initStore();
 
-    const WHATSAPP_NUMBER = "233559103452";
     const cart = {};
     let customerGpsPin = null;
+
+    // Live settings fetched from the kitchen: the shared pickup point every
+    // customer collects at, and the fee charged only when a rider has to bring
+    // the food to the customer's own address.
+    let sharedPickupPoint = { name: "Circle Odo Rice Junction / VIP Station", lat: 5.5612, lng: -0.2155 };
+    let deliveryFeeAmount = 15;
+    let settingsLoaded = false;
+    let customerPinMap = null;
+    let customerPinMarker = null;
 
     // Map instances for tracking modal
     let trackMap = null;
@@ -1412,7 +1526,6 @@
     const copyOrderIdStatus = document.getElementById("copyOrderIdStatus");
     const orderIdModalTrackBtn = document.getElementById("orderIdModalTrackBtn");    const orderIdModalCloseBtn = document.getElementById("orderIdModalCloseBtn");
     let pendingOrderIdForModal = null;
-    let pendingOrderWaUrl = "";
 
     // Stepper node elements
     const stepNode1 = document.getElementById("stepNode1");
@@ -1590,8 +1703,10 @@
       menuGrid.innerHTML = items.map(item => {
         const formulaText = item.formula || item.desc || "";
         const cleanFormula = formulaText.replace(/^=\s*/, '');
+        const soldOut = item.available === false;
+        const description = item.description || cleanFormula || 'Fresh Ghanaian street-style noodles, cooked to order.';
         return `
-        <article class="poster-card" id="card-${item.id}">
+        <article class="poster-card${soldOut ? ' sold-out' : ''}" id="card-${item.id}">
           <!-- Poster Capsule Bar matching Image 1 -->
           <div class="poster-capsule-bar">
             <div class="poster-price-badge">
@@ -1606,12 +1721,18 @@
 
           <!-- Realistic Food Photo -->
           <div class="poster-food-img-wrap">
-            <img src="${item.image}" alt="${item.name} - ${item.price} Cedis" class="poster-food-img" loading="lazy">
-            <span class="poster-tag-pill">${item.tag || item.badge || `${item.price} CEDIS`}</span>
+            <img src="${item.image}" alt="${item.name} - ${item.price} Cedis" class="poster-food-img" loading="lazy" decoding="async">
+            <span class="poster-availability${soldOut ? ' sold-out' : ''}">${soldOut ? 'Sold out today' : 'Available today'}</span>
+            <span class="poster-tag-pill">${item.tag || item.badge || 'Freshly cooked'}</span>
           </div>
 
           <!-- Noodle Customization & Add CTA -->
           <div class="poster-card-footer">
+            <p class="poster-desc">${description}</p>
+            <div class="poster-meta-row">
+              <span class="poster-rating">★ Kitchen favourite</span>
+              <span>${item.prepTime || 'Ready in 20–30 min'}</span>
+            </div>
             ${item.noodles && item.noodles.length > 1
               ? `<div>
                   <label class="field-label" for="noodle-${item.id}" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; color:var(--forest); margin-bottom:4px; display:block;">Select Noodles:</label>
@@ -1619,10 +1740,10 @@
                     ${item.noodles.map(t => `<option value="${t}">${t}</option>`).join('')}
                   </select>
                 </div>`
-              : `<div style="font-size:0.8rem; color:var(--muted); font-weight:600;">🍝 Fresh Ghanaian street-style spaghetti</div>`
+              : `<div style="font-size:0.8rem; color:var(--muted); font-weight:600;">🍝 Served with your choice of freshly boiled noodles</div>`
             }
-            <button class="button button-orange menu-add-btn" type="button" data-id="${item.id}" style="width:100%; font-weight:800; font-size:0.95rem; border-radius:10px; box-shadow:0 4px 12px rgba(229,122,69,0.3);">
-              Add to order (${item.price} Cedis) +
+            <button class="button button-orange menu-add-btn" type="button" data-id="${item.id}" ${soldOut ? 'disabled' : ''} style="width:100%; font-weight:800; font-size:0.95rem; border-radius:10px; box-shadow:0 4px 12px rgba(229,122,69,0.3);">
+              ${soldOut ? 'Sold out — check back soon' : `Add to order · GH₵${item.price}`}
             </button>
           </div>
         </article>
@@ -1648,6 +1769,227 @@
       }
     }
 
+    // ── Shared pickup point, delivery fee and landmark search ────────────
+    function isDeliverySelected() {
+      const sel = document.getElementById("fulfilment");
+      return !!sel && /deliver/i.test(sel.value || "");
+    }
+
+    function cartSubtotal() {
+      const items = getMenuItems();
+      return Object.entries(cart).reduce((sum, [key, qty]) => {
+        const id = key.split(':')[0];
+        const item = items.find(m => m.id === id);
+        return sum + (item ? item.price * qty : 0);
+      }, 0);
+    }
+
+    function updateTotals(subtotal) {
+      const amount = Number(subtotal);
+      const delivery = isDeliverySelected();
+      const fee = delivery ? (Number(deliveryFeeAmount) || 0) : 0;
+      const feeLabel = document.getElementById("deliveryFeeLabel");
+      const feeValue = document.getElementById("deliveryFeeValue");
+      const feeRow = document.getElementById("deliveryFeeRow");
+      const grand = document.getElementById("grandTotal");
+      if (feeLabel) feeLabel.textContent = delivery ? "Delivery fee (rider to your address)" : "Collection at shared pickup";
+      if (feeValue) feeValue.textContent = delivery ? money(fee) : "Free";
+      if (feeRow) feeRow.classList.toggle("fee-free", !delivery);
+      if (grand) grand.textContent = money((Number.isFinite(amount) ? amount : 0) + fee);
+    }
+
+    function renderPickupDetails() {
+      const name = sharedPickupPoint.name || "Shared pickup point";
+      const summary = document.getElementById("pickupSummaryText");
+      const infoName = document.getElementById("pickupInfoName");
+      const hint = document.getElementById("pickupInfoHint");
+      const finePrint = document.getElementById("cartFinePrint");
+      if (summary) summary.textContent = name + (sharedPickupPoint.address ? " — " + sharedPickupPoint.address : "");
+      if (infoName) infoName.textContent = name;
+      if (hint) {
+        hint.textContent = isDeliverySelected()
+          ? `You chose delivery: the rider brings the food to your own address and the ${money(deliveryFeeAmount)} delivery fee is added.`
+          : "Everyone collects at this free point set by the kitchen on the map. Choose delivery only if you want it brought to your own address.";
+      }
+      if (finePrint) {
+        finePrint.textContent = isDeliverySelected()
+          ? `Delivery fee ${money(deliveryFeeAmount)} is included in your total. Pay it once and the rider brings the food to your own location.`
+          : "Collection is free at the shared pickup point above. Choose delivery only if you want the rider to bring it to your own address.";
+      }
+    }
+
+    function updateFulfilmentUI() {
+      const delivery = isDeliverySelected();
+      const label = document.getElementById("addressLabel");
+      const input = document.getElementById("location");
+      const pickupBox = document.getElementById("pickupInfoBox");
+      if (label) {
+        label.innerHTML = delivery
+          ? 'Delivery address / nearest landmark <span class="required">*</span>'
+          : 'Your area / landmark <span style="font-weight:500; color:var(--muted);">(optional for collection)</span>';
+      }
+      if (input) {
+        input.required = delivery;
+        input.placeholder = delivery
+          ? "Type any area or landmark, e.g. ATU, Circle, Madina, Osu"
+          : "Optional — you are collecting at the shared pickup point";
+      }
+      if (pickupBox) pickupBox.style.display = delivery ? "none" : "block";
+      renderPickupDetails();
+      updateTotals(cartSubtotal());
+    }
+
+    async function loadPublicSettings() {
+      try {
+        const res = await fetch("/api/settings/public", { headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error("settings " + res.status);
+        const data = await res.json();
+        const pickup = data && data.pickupPoint;
+        if (pickup && Number.isFinite(Number(pickup.lat)) && Number.isFinite(Number(pickup.lng))) {
+          sharedPickupPoint = {
+            name: pickup.name || sharedPickupPoint.name,
+            address: pickup.address || "",
+            lat: Number(pickup.lat),
+            lng: Number(pickup.lng)
+          };
+        }
+        if (data && Number.isFinite(Number(data.deliveryFee))) {
+          deliveryFeeAmount = Number(data.deliveryFee);
+        }
+        if (data && data.momo && data.momo.payTo) {
+          const numEl = document.getElementById("payWalletNumber");
+          const nameEl = document.getElementById("payWalletName");
+          const digits = String(data.momo.payTo).replace(/\D/g, "").replace(/^233/, "0");
+          if (numEl) numEl.textContent = digits.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1 $2 $3");
+          if (nameEl && data.momo.accountName) nameEl.textContent = data.momo.accountName;
+        }
+        settingsLoaded = true;
+      } catch (err) {
+        console.warn("Could not load pickup settings, using defaults", err);
+      }
+      renderPickupDetails();
+      updateFulfilmentUI();
+    }
+
+    // ── Online landmark autocomplete (OpenStreetMap through our API) ──────
+    let suggestTimer = null;
+    let suggestSeq = 0;
+
+    function hideLocationSuggest() {
+      const box = document.getElementById("locationSuggest");
+      if (box) { box.hidden = true; box.innerHTML = ""; }
+    }
+
+    function chooseLandmark(result) {
+      if (!result) return;
+      const label = [result.label, result.area].filter(Boolean).join(", ");
+      if (locationInput) {
+        locationInput.value = label.slice(0, 180);
+        locationInput.dataset.fromGps = "";
+        locationInput.dispatchEvent(new Event("change"));
+      }
+      if (Number.isFinite(Number(result.lat)) && Number.isFinite(Number(result.lng))) {
+        setDeliveryPin({ lat: Number(result.lat), lng: Number(result.lng) }, "landmark");
+        setLocationStatus(`📍 ${result.label} selected — the rider is pinned to this exact spot.`, "ok");
+      } else {
+        setLocationStatus(`📍 ${result.label} selected.`, "ok");
+      }
+      hideLocationSuggest();
+    }
+
+    async function showLandmarkSuggestions(query) {
+      const box = document.getElementById("locationSuggest");
+      if (!box) return;
+      if (!query || query.trim().length < 2) { hideLocationSuggest(); return; }
+      const seq = ++suggestSeq;
+      box.hidden = false;
+      box.innerHTML = '<div class="location-suggest-empty">Searching landmarks…</div>';
+      try {
+        const res = await fetch("/api/geo/search?q=" + encodeURIComponent(query.trim()), { headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error("search " + res.status);
+        const data = await res.json();
+        if (seq !== suggestSeq) return;
+        const results = Array.isArray(data.results) ? data.results : [];
+        if (!results.length) {
+          box.innerHTML = '<div class="location-suggest-empty">No landmark found for “' + query.replace(/[<>&]/g, "") + '”. You can still type the address and share your GPS pin.</div>';
+          return;
+        }
+        box.innerHTML = results.map((r, i) =>
+          '<button type="button" class="location-suggest-item" data-index="' + i + '">' +
+            '<span class="ls-icon">📍</span>' +
+            '<span><strong>' + String(r.label || 'Landmark').replace(/[<>&]/g, "") + '</strong>' +
+            '<small>' + String(r.area || 'Accra, Ghana').replace(/[<>&]/g, "") + '</small></span>' +
+          '</button>'
+        ).join("") + '<div class="location-suggest-note">Results from the online OpenStreetMap landmark database' + (data.source === "local" ? " (offline fallback)" : "") + '</div>';
+        box.querySelectorAll(".location-suggest-item").forEach(btn => {
+          btn.addEventListener("click", () => chooseLandmark(results[Number(btn.dataset.index)]));
+        });
+      } catch (err) {
+        if (seq !== suggestSeq) return;
+        box.innerHTML = '<div class="location-suggest-empty">Landmark search is offline right now. Type your address and tap “Use my live GPS location”.</div>';
+      }
+    }
+
+    function initLocationAutocomplete() {
+      if (!locationInput) return;
+      const box = document.getElementById("locationSuggest");
+      locationInput.addEventListener("input", () => {
+        locationInput.dataset.fromGps = "";
+        if (suggestTimer) clearTimeout(suggestTimer);
+        const value = locationInput.value;
+        suggestTimer = setTimeout(() => showLandmarkSuggestions(value), 320);
+      });
+      locationInput.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") hideLocationSuggest();
+        if (e.key === "Enter" && box && !box.hidden) {
+          const first = box.querySelector(".location-suggest-item");
+          if (first) { e.preventDefault(); first.click(); }
+        }
+      });
+      document.addEventListener("click", (e) => {
+        if (!box || box.hidden) return;
+        if (box.contains(e.target) || e.target === locationInput) return;
+        hideLocationSuggest();
+      });
+    }
+
+    async function reverseGeocodeInto(lat, lng) {
+      try {
+        const res = await fetch("/api/geo/reverse?lat=" + lat + "&lng=" + lng, { headers: { Accept: "application/json" } });
+        const data = await res.json();
+        const label = data && (data.label || data.area);
+        if (label && locationInput) {
+          const value = [data.label, data.area].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(", ").slice(0, 180);
+          locationInput.value = value;
+          locationInput.dataset.fromGps = "1";
+          setLocationStatus(value + " — live GPS pin saved for the rider.", "ok");
+        }
+      } catch (err) {
+        // Coordinates alone are still enough for the rider to navigate.
+      }
+    }
+
+    function renderPinMap() {
+      const el = document.getElementById("customerPinMap");
+      if (!el) return;
+      if (!customerGpsPin || typeof L === "undefined") { el.hidden = true; return; }
+      const lat = Number(customerGpsPin.lat);
+      const lng = Number(customerGpsPin.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) { el.hidden = true; return; }
+      el.hidden = false;
+      if (!customerPinMap) {
+        customerPinMap = L.map(el, { zoomControl: false, attributionControl: false, dragging: true }).setView([lat, lng], 16);
+        addReliableBasemap(customerPinMap);
+        customerPinMarker = L.circleMarker([lat, lng], {
+          radius: 9, color: "#173d30", weight: 3, fillColor: "#fbb017", fillOpacity: 1
+        }).addTo(customerPinMap);
+      } else {
+        customerPinMap.setView([lat, lng], 16);
+        if (customerPinMarker) customerPinMarker.setLatLng([lat, lng]);
+      }
+      setTimeout(() => { try { customerPinMap.invalidateSize(); } catch (e) {} }, 120);
+    }
+
     function renderCart() {
       const items = getMenuItems();
       const entries = Object.entries(cart).map(([key, qty]) => {
@@ -1661,6 +2003,7 @@
 
       itemCountEl.textContent = `${count} ${count === 1 ? 'item' : 'items'}`;
       totalEl.textContent = money(subtotal);
+      updateTotals(subtotal);
 
       if (entries.length === 0) {
         cartItems.innerHTML = '<p class="empty-cart">Your cart is currently empty. Add delicious noodles from the menu above.</p>';
@@ -1711,11 +2054,6 @@
           : `📱 To pay, send <strong>GH₵${order.total}</strong> to <strong>${MOMO_CONFIG.displayNumber}</strong>. Use <strong>${order.id}</strong> as the reference. Then submit proof on the tracking screen for instant verification.`;
       }
 
-      const waBtn = document.getElementById("orderIdWaBtn");
-      if (waBtn) {
-        if (pendingOrderWaUrl) { waBtn.href = pendingOrderWaUrl; waBtn.style.display = "inline-flex"; }
-        else waBtn.style.display = "none";
-      }
       orderIdModal.style.display = "flex";
       document.body.style.overflow = "hidden";
     }
@@ -1857,7 +2195,17 @@
       }
 
       const formData = new FormData(checkoutForm);
-      const fulfilment = formData.get("fulfilment") || "Delivery";
+      const isDelivery = String(formData.get("fulfilment") || "Collection").toLowerCase().indexOf("deliver") !== -1;
+      const fulfilment = isDelivery ? "Delivery" : "Collection";
+      const typedLocation = String(formData.get("location") || "").trim();
+
+      // Delivery needs a real address or a shared pin. Collection happens at
+      // the kitchen's shared pickup point, so the address is optional.
+      if (isDelivery && !typedLocation && !customerGpsPin) {
+        formFeedback.textContent = "Add your delivery area or tap “Use my live GPS location” so the rider knows where to bring the food.";
+        if (locationInput) locationInput.focus();
+        return;
+      }
 
       // "Pay now" needs a network and the wallet number that will pay.
       const payMode = currentPayMode();
@@ -1875,15 +2223,21 @@
       }
 
       const subtotal = entries.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const deliveryFee = fulfilment === "Delivery" ? 15 : 0;
+      const deliveryFee = isDelivery ? Number(deliveryFeeAmount) || 15 : 0;
       const total = subtotal + deliveryFee;
+
+      const orderLocation = isDelivery
+        ? (typedLocation || (customerGpsPin ? "GPS pin shared" : ""))
+        : (sharedPickupPoint.name || "Shared pickup point");
 
       const orderPayload = {
         customer: formData.get("customer"),
         phone: formData.get("phone"),
         fulfilment,
-        location: formData.get("location"),
-        mapPin: customerGpsPin || { lat: 5.5650, lng: -0.2100 },
+        location: orderLocation,
+        mapPin: isDelivery
+          ? (customerGpsPin || null)
+          : { lat: sharedPickupPoint.lat, lng: sharedPickupPoint.lng },
         timing: formData.get("timing"),
         payment: payMode === "now" ? payNetworkById(payNetwork).label : "Pay on Delivery (Cash)",
         paymentNetwork: payNetwork,
@@ -1918,37 +2272,21 @@
         return;
       }
 
-      const orderSummaryLines = entries.map(i => `• ${i.noodle} - ${i.name} x${i.quantity}: GH₵${i.price * i.quantity}`).join('\n');
-      const waMsg = [
-        `*NEW YEBS NOODLES ORDER #${newOrder.id}*`,
-        `Customer: ${newOrder.customer}`,
-        `Phone: ${newOrder.phone || orderPayload.phone}`,
-        `Delivery Address: ${newOrder.location}`,
-        `Fulfilment: ${newOrder.fulfilment}`,
-        "",
-        `*ITEMS:*`,
-        orderSummaryLines,
-        "",
-        `Subtotal: GH₵${newOrder.subtotal}`,
-        `Delivery Fee: GH₵${newOrder.deliveryFee}`,
-        `Total: GH₵${newOrder.total}`,
-        `Payment: ${newOrder.payment}`,
-        `Order ID / PIN: ${newOrder.id} / ${newOrder.pickupPin}`,
-        `Notes: ${newOrder.notes || 'None'}`
-      ].join('\n');
-
-      // The order is already saved on the server; WhatsApp is an optional
-      // notification the customer can send from the Order ID popup. We do not
-      // open it automatically, so the Order ID is never hidden behind a new tab.
-      const waUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(waMsg)}`;
-      pendingOrderWaUrl = waUrl;
+      // The backend has already sent the kitchen a WhatsApp alert in the
+      // background (no redirect, no "send" tap needed from the customer).
+      // Here we only tell the customer what happens next.
+      const notifyNote = newOrder.notificationStatus === 'sent'
+        ? 'The kitchen has been notified automatically.'
+        : 'The kitchen sees your order instantly in the dashboard.';
 
       // Clear the cart so the order is not accidentally submitted twice.
       Object.keys(cart).forEach(k => delete cart[k]);
       renderCart();
 
       formFeedback.style.color = "#166534";
-      formFeedback.textContent = `✅ Order ${newOrder.id} placed! Your Order ID is also your 4-digit collection PIN: ${newOrder.pickupPin}.`;
+      formFeedback.textContent = `✅ Order ${newOrder.id} placed! ${newOrder.fulfilment === 'Collection'
+        ? 'Collect it free at ' + (newOrder.pickupPointName || sharedPickupPoint.name) + '.'
+        : 'The rider will bring it to ' + (newOrder.location || 'your address') + '.'} ${notifyNote}`;
       showOrderIdModal(newOrder);
 
       // "Pay now" customers go straight to the MoMo panel so the order is
@@ -2158,21 +2496,27 @@
           : '';
       }
 
-      // Resolve target destination: prioritize Driver-Designated Session Pickup Point
-      const session = getSessionState();
-      let targetLat = order.mapPin ? order.mapPin.lat : RESTAURANT_COORDS.lat + 0.006;
-      let targetLng = order.mapPin ? order.mapPin.lng : RESTAURANT_COORDS.lng + 0.005;
-      let isDesignatedPickup = false;
-      let targetName = order.location || "Adabraka, Accra";
+      // Destination: delivery orders go to the customer's own pin, collection
+      // orders go to the shared pickup point the admin set on the map.
+      const isCollectionOrder = /collect|pickup/i.test(String(order.fulfilment || ""));
+      let targetLat = order.mapPin ? Number(order.mapPin.lat) : RESTAURANT_COORDS.lat + 0.006;
+      let targetLng = order.mapPin ? Number(order.mapPin.lng) : RESTAURANT_COORDS.lng + 0.005;
+      let targetName = order.location || "Delivery address";
+      if (!Number.isFinite(targetLat) || !Number.isFinite(targetLng)) {
+        targetLat = RESTAURANT_COORDS.lat + 0.006;
+        targetLng = RESTAURANT_COORDS.lng + 0.005;
+      }
 
-      if (session && session.pickupPoint && session.pickupPoint.lat && session.pickupPoint.lng) {
-        targetLat = session.pickupPoint.lat;
-        targetLng = session.pickupPoint.lng;
-        targetName = session.pickupPoint.name;
-        isDesignatedPickup = true;
-        trackDestAddress.innerHTML = `<strong>📍 Session Pickup Point:</strong> ${targetName}`;
-      } else {
-        trackDestAddress.textContent = targetName;
+      if (isCollectionOrder) {
+        const pickup = order.pickupPoint || sharedPickupPoint;
+        if (pickup && Number.isFinite(Number(pickup.lat)) && Number.isFinite(Number(pickup.lng))) {
+          targetLat = Number(pickup.lat);
+          targetLng = Number(pickup.lng);
+          targetName = pickup.name || targetName;
+        }
+        if (trackDestAddress) trackDestAddress.innerHTML = `<strong>📍 Shared pickup point:</strong> ${targetName}`;
+      } else if (trackDestAddress) {
+        trackDestAddress.innerHTML = `<strong>🏠 Delivering to:</strong> ${targetName}`;
       }
 
       let driverLat = RESTAURANT_COORDS.lat;
@@ -2278,9 +2622,11 @@
 
       if (trackMap && trackDriverMarker && trackCustMarker) {
         trackCustMarker.setLatLng([targetLat, targetLng]);
-        if (isDesignatedPickup) {
-          trackCustMarker.bindPopup(`<b>📍 Designated Session Pickup Point</b><br>${targetName}`);
-        }
+        trackCustMarker.bindPopup(
+          isCollectionOrder
+            ? `<b>📍 Shared pickup point</b><br>${targetName}`
+            : `<b>🏠 Delivery address</b><br>${targetName}`
+        );
         trackDriverMarker.setLatLng([driverLat, driverLng]);
 
         // Draw road-following route (falls back to dashed line offline)
@@ -2579,6 +2925,7 @@
       if (!customerGpsPin || !Number.isFinite(customerGpsPin.lat) || !Number.isFinite(customerGpsPin.lng)) {
         box.hidden = true;
         box.innerHTML = '';
+        renderPinMap();
         return;
       }
       const lat = customerGpsPin.lat.toFixed(5);
@@ -2599,6 +2946,7 @@
           '<a href="' + directions + '" target="_blank" rel="noopener">Rider directions</a>' +
         '</div>' +
         '<div class="gps-note">Your rider navigates to this exact coordinate — not just the typed address.</div>';
+      renderPinMap();
       const clearBtn = document.getElementById('clearGpsPinBtn');
       if (clearBtn) {
         clearBtn.addEventListener('click', () => {
@@ -2620,7 +2968,7 @@
         return 'GPS needs a secure https:// connection. Paste a Google/Apple Maps link instead.';
       }
       if (!err) return 'Could not read your location. Paste a Google/Apple Maps link or type your landmark.';
-      if (err.code === 1) return 'Location is blocked for this site. Tap the padlock in your address bar → Location → Allow, then tap Share my GPS pin again.';
+      if (err.code === 1) return 'Location is blocked for this site. Tap the padlock in your address bar → Location → Allow, then tap “Use my live GPS location” again.';
       if (err.code === 2) return 'Your phone could not get a GPS fix. Step outside or near a window, or paste a Maps link instead.';
       if (err.code === 3) return 'GPS timed out. Try again, or paste a Google/Apple Maps link instead.';
       return err.message || 'Could not read your location. Paste a Maps link or type your landmark.';
@@ -2644,51 +2992,78 @@
       input.addEventListener('input', readAddressForPin);
       input.addEventListener('blur', readAddressForPin);
 
+      // Live GPS: watchPosition streams real fixes from the device, keeps the
+      // most accurate one, reverse-geocodes it online and pins it to the map.
+      let gpsWatchId = null;
+      let gpsStopTimer = null;
+      const stopGpsWatch = () => {
+        if (gpsWatchId !== null && navigator.geolocation) {
+          try { navigator.geolocation.clearWatch(gpsWatchId); } catch (e) {}
+        }
+        gpsWatchId = null;
+        if (gpsStopTimer) { clearTimeout(gpsStopTimer); gpsStopTimer = null; }
+      };
+
       btn.addEventListener('click', () => {
         if (!navigator.geolocation) {
-          setLocationStatus('This browser has no GPS support. Paste a Google/Apple Maps link instead.', 'error');
+          setLocationStatus('This browser has no GPS support. Type your landmark or paste a Maps link instead.', 'error');
           return;
         }
+        if (!window.isSecureContext) {
+          setLocationStatus('Live GPS needs a secure https:// connection (or localhost). Open the site on https:// and tap again.', 'error');
+          return;
+        }
+
+        stopGpsWatch();
         const originalLabel = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = 'Getting your exact pin…';
-        setLocationStatus('Asking your phone for an exact GPS fix…', '');
+        let gotFix = false;
+        let bestAccuracy = Infinity;
 
-        let settled = false;
-        const finish = () => {
-          settled = true;
-          btn.disabled = false;
-          btn.textContent = originalLabel;
-        };
-        const guard = setTimeout(() => {
-          if (settled) return;
-          finish();
-          setLocationStatus('GPS is taking too long. Tap again, or paste a Google/Apple Maps link.', 'error');
-        }, 20000);
+        btn.disabled = false;
+        btn.textContent = 'Locating live…';
+        setLocationStatus('Getting a live GPS fix from your device — this can take a few seconds.', '');
 
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            if (settled) return;
-            clearTimeout(guard);
-            setDeliveryPin({ lat: pos.coords.latitude, lng: pos.coords.longitude }, 'gps');
-            const accuracy = Number(pos.coords.accuracy || 0);
+        const applyFix = (pos) => {
+          const lat = Number(pos.coords.latitude);
+          const lng = Number(pos.coords.longitude);
+          const accuracy = Number(pos.coords.accuracy || 0);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+          if (!gotFix || accuracy < bestAccuracy) {
+            bestAccuracy = accuracy;
+            gotFix = true;
+            setDeliveryPin({ lat, lng }, 'gps');
             setLocationStatus(
-              'Exact pin captured' + (accuracy ? ' (±' + Math.round(accuracy) + ' m)' : '') + '. Your rider will navigate straight to this spot.',
+              'Live pin captured' + (accuracy ? ' (±' + Math.round(accuracy) + ' m)' : '') + '. Your rider navigates straight to this spot.',
               'ok'
             );
-            btn.textContent = 'Pin saved';
-            setTimeout(() => { btn.textContent = originalLabel; }, 2200);
-            settled = true;
-            btn.disabled = false;
-          },
+            btn.textContent = 'Live pin saved';
+            if (input) {
+              input.dataset.fromGps = '1';
+              input.value = 'GPS pin: ' + lat.toFixed(5) + ', ' + lng.toFixed(5);
+              reverseGeocodeInto(lat, lng);
+            }
+          }
+          if (accuracy && accuracy <= 20) stopGpsWatch();
+        };
+
+        gpsWatchId = navigator.geolocation.watchPosition(
+          applyFix,
           (err) => {
-            if (settled) return;
-            clearTimeout(guard);
-            finish();
+            if (gotFix) return;
+            stopGpsWatch();
+            btn.textContent = originalLabel;
             setLocationStatus(geolocationFailureMessage(err), 'error');
           },
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
         );
+
+        gpsStopTimer = setTimeout(() => {
+          stopGpsWatch();
+          btn.textContent = gotFix ? 'Live pin saved' : originalLabel;
+          if (!gotFix) {
+            setLocationStatus('GPS is taking too long. Move near a window and tap again, or type your landmark above.', 'error');
+          }
+        }, 25000);
       });
 
       if (pasteBtn) {
@@ -2723,6 +3098,15 @@
     }
 
     initLocationPinTools();
+    initLocationAutocomplete();
+
+    // Collection is the default. Switching to delivery reveals the address
+    // requirement and adds the admin's delivery fee to the total.
+    const fulfilmentSelect = document.getElementById("fulfilment");
+    if (fulfilmentSelect) {
+      fulfilmentSelect.addEventListener("change", () => updateFulfilmentUI());
+    }
+    loadPublicSettings();
 
     // ── Payment preference + "Pay now" panel ────────────────────────────
     // The chosen network decides both the USSD code and (when MTN API
@@ -3227,9 +3611,6 @@
         <button type="button" id="orderIdModalEditBtn" class="button" style="min-height:42px; font-size:0.85rem; padding:0 16px; background:#e8f0ec; color:var(--forest); border:1px solid #c9decb;">
           ✏️ Edit order
         </button>
-        <a id="orderIdWaBtn" href="#" target="_blank" rel="noopener" class="button" style="display:none; min-height:42px; font-size:0.85rem; padding:0 16px; background:#25D366; color:#fff; text-decoration:none; align-items:center;">
-          💬 WhatsApp
-        </a>
         <button type="button" id="orderIdModalCloseBtn" class="button" style="min-height:42px; font-size:0.85rem; padding:0 16px; background:white; border:1px solid var(--line); color:var(--muted);">
           Close
         </button>

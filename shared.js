@@ -1475,6 +1475,49 @@ export async function apiSetPickupPoint(pickupPointName, coordinates = null, nam
   }
 }
 
+// Admin: save the shared pickup point plus the delivery fee in one call.
+export async function apiSavePickupSettings(payload = {}) {
+  try {
+    const token = authToken('admin');
+    if (!token) {
+      return { success: false, message: "Your admin session has expired. Sign in again to save the pickup point." };
+    }
+    const res = await fetch(`${API_BASE}/api/admin/settings/pickup`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name: payload.name,
+        address: payload.address,
+        lat: payload.lat,
+        lng: payload.lng,
+        deliveryFee: payload.deliveryFee
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      if (data.pickupPoint) {
+        setSessionPickupPoint(data.pickupPoint.name, { lat: data.pickupPoint.lat, lng: data.pickupPoint.lng });
+      }
+      broadcastEvent("SESSION_PICKUP_CHANGED", data.pickupPoint || null);
+      return data;
+    }
+    return { success: false, message: data.message || "Could not save the pickup settings." };
+  } catch (e) {
+    console.warn("Could not save pickup settings:", e);
+    return { success: false, message: "Could not reach the server to save the pickup settings." };
+  }
+}
+
+export async function apiFetchPublicSettings() {
+  try {
+    const res = await fetch(`${API_BASE}/api/settings/public`);
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.warn("Could not fetch public settings", e);
+  }
+  return null;
+}
+
 export async function apiFetchMenu() {
   try {
     const res = await fetch(`${API_BASE}/api/menu`);

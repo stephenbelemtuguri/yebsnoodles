@@ -90,6 +90,35 @@
     return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
+  function logout() {
+    const sessionKeys = ['yebs_admin_token', 'yebs_admin_user', 'yebs_admin_login_at', 'yebs_admin_photo',
+      'yebs_driver_token', 'yebs_driver_user', 'yebs_driver_login_at', 'yebs_driver_photo'];
+    const localKeys = ['yebs_admin_token_persist', 'yebs_admin_user_persist', 'yebs_admin_login_at_persist',
+      'yebs_driver_token_persist', 'yebs_driver_user_persist', 'yebs_driver_login_at_persist'];
+    sessionKeys.forEach(k => { try { sessionStorage.removeItem(k); } catch (e) {} });
+    localKeys.forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+    window.location.href = '../index.html';
+  }
+
+  function installLogoutButton() {
+    if (document.getElementById('yebsPortalLogout')) return;
+    const nav = document.querySelector('header nav') || document.querySelector('.header-wrap');
+    if (!nav) return;
+    const btn = document.createElement('button');
+    btn.id = 'yebsPortalLogout';
+    btn.type = 'button';
+    btn.textContent = 'Log out';
+    btn.style.cssText = 'color:#fff;background:#b91c1c;border:1px solid rgba(255,255,255,0.25);padding:6px 12px;border-radius:6px;font-size:0.82rem;font-weight:700;cursor:pointer;';
+    btn.addEventListener('click', () => { if (confirm('Log out of YEBS?')) logout(); });
+    nav.appendChild(btn);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', installLogoutButton);
+  } else {
+    installLogoutButton();
+  }
+
   window.YebsPortal = {
     API,
     escapeHtml,
@@ -103,6 +132,7 @@
     statusBadge,
     notice,
     clearNotice,
-    when
+    when,
+    logout
   };
 })();

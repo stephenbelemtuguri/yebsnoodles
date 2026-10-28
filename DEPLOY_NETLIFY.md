@@ -37,6 +37,23 @@ unless you want the value hidden after saving.
 | `LOG_FILE_ENABLED` | `false` |
 | `BASE_URL` | `https://your-site-name.netlify.app` |
 
+### Optional: automatic WhatsApp order alerts (no redirect)
+
+Every new order is sent to the kitchen in the background by the server. Without
+these variables the order is still saved and the admin dashboard shows it — the
+notification is recorded as `not-configured` and nothing is opened on the
+customer's phone. To switch on real WhatsApp messages, add:
+
+| Key | Value |
+|---|---|
+| `WHATSAPP_TOKEN` | permanent token from Meta → WhatsApp → API setup |
+| `WHATSAPP_PHONE_NUMBER_ID` | the WhatsApp business phone number ID |
+| `WHATSAPP_TO` | kitchen number, digits only — defaults to `233559103452` |
+| `WHATSAPP_API_VERSION` | `v20.0` (default) |
+
+`/api/health` reports `whatsapp.configured` so you can confirm it without
+placing an order. Recent attempts are visible at `/api/admin/notifications`.
+
 ### Optional: real MTN MoMo payment prompts
 
 The checkout always works with the USSD flow (dial `*170#` / `*110#`, pay,
@@ -117,11 +134,21 @@ instance keeps its own in-memory copy, so a sign-up handled by one instance is
 invisible to the admin handled by another — and approvals appear to "do nothing".
 Check `/api/health`: it must say `"storage": "supabase"` before testing the gate.
 
-## 7. Checkout, GPS pin and payment
+## 7. Checkout, location and payment
 
-- **Share my GPS pin** asks the phone for a high-accuracy fix and shows the exact
-  coordinate with Google Maps / Apple Maps links. Pasting a Google or Apple Maps
-  link (or `5.60, -0.18`) into the address field is also read as the pin.
+- **Collection is the default.** Every customer collects at the single shared
+  pickup point the admin sets in **Admin → Shared Pickup Point** (search any
+  landmark online or click/drag the pin on the map). Collection adds no fee.
+- **Delivery** is optional and adds the admin's delivery fee. Only then does the
+  rider navigate to the customer's own GPS pin or typed address.
+- **Use my live GPS location** starts a live `watchPosition` stream, keeps the
+  most accurate fix, reverse-geocodes it online and drops a pin on the map. It
+  needs `https://` (or `localhost`); a blocked permission shows a clear
+  instruction instead of doing nothing.
+- **Landmark search** queries OpenStreetMap (through `/api/geo/search`) as you
+  type, so any area — `ATU`, `Madina`, `Kaneshie`, `Tema`, `Kumasi` — returns
+  real nearby landmarks. Results are cached for a day. If the network is down a
+  built-in Ghana landmark list is used.
 - **Pay now** shows the network panel. The USSD codes are MTN `*170#`,
   Telecel Cash `*110#` and AT Money `*110#` (Telecel and AT share the code; the
   SIM decides which wallet opens).
@@ -130,6 +157,26 @@ Check `/api/health`: it must say `"storage": "supabase"` before testing the gate
   is verified instantly against the order total.
 - **Pay on delivery** skips all of that; the rider collects the cash and the
   order is marked paid at handover.
+- **No WhatsApp redirect.** The customer never leaves the site to send the
+  order; the backend delivers the alert itself.
+
+## 8. Managing the menu and the pickup point
+
+- **Admin → Noodles Menu & Photos** edits every detail of a food card: name,
+  price, highlight tag, customer description, preparation time, availability,
+  recipe text, photo (folder, URL or upload) and template. **Add new dish**
+  creates a new card; **Delete** removes one. Every change is saved to the
+  database and appears on the storefront immediately.
+- **Admin → Shared Pickup Point** stores the name, address, latitude/longitude
+  and the delivery fee in `settings.pickup` + `settings.deliveryFee`, and
+  mirrors it into the active session so every map and open order updates.
+- **Logout** on the admin, driver and portal pages clears both the session and
+  the persisted token, then returns to the sign-in screen.
+
+## Render hosting
+
+`render.yaml` deploys the same Express app as a normal Node web service with a
+persistent disk. See [`DEPLOY_RENDER.md`](DEPLOY_RENDER.md).
 
 ## Local development
 
