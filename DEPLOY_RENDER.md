@@ -26,8 +26,9 @@ Render deploys straight from GitHub, so the repo must be up to date.
 
 ## 2. Create the Blueprint
 
-1. Open <https://dashboard.render.com/blueprints> and choose **New Blueprint
-   Instance** (the same flow as <https://dashboard.render.com/web/new>).
+1. Open <https://render.com/deploy?repo=https://github.com/stephenbelemtuguri/yebsnoodles>
+   (one-click Blueprint) or <https://dashboard.render.com/blueprints> and choose
+   **New Blueprint Instance**.
 2. Connect GitHub and pick `stephenbelemtuguri/yebsnoodles`.
 3. Render reads `render.yaml` and shows the `yebs-noodles` service with a 1 GB
    disk mounted at `/var/data`.
