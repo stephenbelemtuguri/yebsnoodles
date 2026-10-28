@@ -64,11 +64,19 @@ begin
 end
 $$;
 
--- First row: menu, pickup point, MoMo wallet and settings. The admin array is
--- intentionally empty - the API fills it from ADMIN_USERNAME / ADMIN_PASSWORD.
+-- First row: menu, pickup point, MoMo wallet, settings and admin account.
 insert into public.yebs_state (id, data)
 values ('main', $yebs${
-  "admins": [],
+  "admins": [
+    {
+      "id": "adm-1",
+      "username": "goodfood",
+      "password": "$2b$10$Sdgu6IAuF7SS8redQCJ1sO65HB11C/o1sAKaVCZ8FgtmwOOv/ZSBC",
+      "name": "YEBS Administrator",
+      "role": "SUPERADMIN",
+      "createdAt": "2026-10-28T14:51:00.943Z"
+    }
+  ],
   "orders": [],
   "drivers": [],
   "payouts": [],
@@ -203,8 +211,22 @@ values ('main', $yebs${
 }$yebs$::jsonb)
 on conflict (id) do nothing;
 
--- Verification: expect menu_items = 5. admins is 0 until
--- the app has booted once with ADMIN_USERNAME / ADMIN_PASSWORD.
+-- If the row already exists, make sure the goodfood administrator is present.
+update public.yebs_state
+set data = jsonb_set(
+      data,
+      '{admins}',
+      coalesce(data->'admins', '[]'::jsonb) || $admin$[{"id":"adm-1","username":"goodfood","password":"$2b$10$Sdgu6IAuF7SS8redQCJ1sO65HB11C/o1sAKaVCZ8FgtmwOOv/ZSBC","name":"YEBS Administrator","role":"SUPERADMIN","createdAt":"2026-10-28T14:51:00.943Z"}]$admin$::jsonb
+    ),
+    updated_at = now()
+where id = 'main'
+  and not exists (
+    select 1
+    from jsonb_array_elements(coalesce(data->'admins', '[]'::jsonb)) as a
+    where lower(a->>'username') = lower('goodfood')
+  );
+
+-- Verification: expect menu_items = 5, admins >= 1.
 select id,
        updated_at,
        jsonb_array_length(coalesce(data->'menuItems', '[]'::jsonb)) as menu_items,

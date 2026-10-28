@@ -12,7 +12,7 @@
       "pickupPoint": {
         "lat": 5.5612,
         "lng": -0.2155,
-        "name": "Circle Odo Rice Junction / VIP Station",
+        "name": "Adabraka infront of Efex hotel",
         "address": "Kwame Nkrumah Circle, Accra",
         "updatedAt": "2026-10-28T11:24:04.828Z"
       },
@@ -130,5 +130,6 @@
       "message": "NEW YEBS NOODLES ORDER #YB-1460\nCustomer: Supabase Connection Test\nPhone: 0550000001\nFulfilment: Collection\nLocation: Circle Odo Rice Junction / VIP Station\nItems: 1 x SPAGHETTI\nTotal: GH15.00\nPayment: MTN Mobile Money (unpaid)\nOrder ID / PIN: YB-1460 / 1460",
       "reason": "Set WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID to send kitchen alerts automatically."
     }
-  ]
+  ],
+  "recoveryCodes": []
 }

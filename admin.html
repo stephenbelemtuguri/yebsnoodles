@@ -627,6 +627,21 @@
       margin-bottom: 16px;
       display: none;
     }
+    .auth-forgot-link {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 6px;
+      border: 0;
+      background: transparent;
+      color: #52785b;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .auth-forgot-link:hover { color: #173d30; }
     .auth-hint {
       background: #f0fdf4;
       border: 1px solid #bbf7d0;
@@ -655,6 +670,7 @@
       margin-top: auto;
     }
   </style>
+  <link rel="stylesheet" href="mobile.css">
 </head>
 <body class="admin-locked">
   <script>
@@ -1214,12 +1230,46 @@
 
     <!-- TAB: Settings -->
     <div id="settingsTab" class="tab-content" style="display:none;">
-      <div style="max-width:540px; margin:0 auto;">
+      <div style="max-width:620px; margin:0 auto; padding-bottom:40px;">
+
+        <!-- ── ADMIN PROFILE ── -->
         <div class="card" style="margin-bottom:20px;">
           <div class="card-header">
             <div>
-              <h2 class="card-title">⚙️ Admin Account Settings</h2>
-              <div class="action-meta">Change your admin username and/or password. Takes effect immediately.</div>
+              <h2 class="card-title">👤 Admin Profile</h2>
+              <div class="action-meta">Update your display name, contact email and phone number.</div>
+            </div>
+          </div>
+          <div id="profileFeedback" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:0.88rem; font-weight:600;"></div>
+          <form id="adminProfileForm">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;">
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Display Name</label>
+                <input type="text" id="profileName" class="auth-input" placeholder="e.g. YEBS Administrator" autocomplete="name">
+              </div>
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Admin Email</label>
+                <input type="email" id="profileEmail" class="auth-input" placeholder="yebsnoodles@gmail.com" autocomplete="email">
+              </div>
+            </div>
+            <div style="margin-bottom:14px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Contact Phone (WhatsApp)</label>
+              <input type="tel" id="profilePhone" class="auth-input" placeholder="e.g. 0559103452" autocomplete="tel">
+            </div>
+            <div style="margin-bottom:20px;">
+              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Profile Photo URL (optional)</label>
+              <input type="url" id="profilePhotoUrl" class="auth-input" placeholder="https://…/photo.jpg">
+            </div>
+            <button type="submit" class="btn btn-forest" style="width:100%; padding:12px; font-size:0.95rem;">💾 Save Profile</button>
+          </form>
+        </div>
+
+        <!-- ── ACCOUNT SECURITY ── -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">🔒 Account Security</h2>
+              <div class="action-meta">Change username or password. Your current password is required to make changes.</div>
             </div>
           </div>
           <div id="settingsFeedback" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:0.88rem; font-weight:600;"></div>
@@ -1235,12 +1285,17 @@
               <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">New Username (leave blank to keep current)</label>
               <input type="text" id="settingsNewUsername" class="auth-input" placeholder="Enter new username" autocomplete="username">
             </div>
-            <div style="margin-bottom:14px;">
+            <div style="margin-bottom:6px;">
               <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">New Password (leave blank to keep current)</label>
               <div style="position:relative;">
-                <input type="password" id="settingsNewPwd" class="auth-input" placeholder="Minimum 8 characters" autocomplete="new-password" style="padding-right:64px;">
+                <input type="password" id="settingsNewPwd" class="auth-input" placeholder="Minimum 8 characters" autocomplete="new-password" style="padding-right:64px;" oninput="updatePwdStrength(this.value)">
                 <button type="button" class="toggle-pwd-btn" data-target="settingsNewPwd" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;cursor:pointer;font-size:0.78rem;font-weight:700;color:var(--forest);padding:6px;">Show</button>
               </div>
+            </div>
+            <!-- Password strength meter -->
+            <div style="margin-bottom:14px;">
+              <div id="pwdStrengthBar" style="height:4px; border-radius:2px; background:#e5e7eb; margin-bottom:4px; transition:background .3s;"><div id="pwdStrengthFill" style="height:100%; border-radius:2px; width:0%; transition:width .3s, background .3s;"></div></div>
+              <div id="pwdStrengthLabel" style="font-size:0.75rem; color:var(--muted);"></div>
             </div>
             <div style="margin-bottom:20px;">
               <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Confirm New Password</label>
@@ -1248,36 +1303,173 @@
             </div>
             <button type="submit" class="btn btn-orange" style="width:100%; padding:12px; font-size:0.95rem;">🔑 Save Credential Changes</button>
           </form>
+          <script>
+            function updatePwdStrength(v) {
+              const fill = document.getElementById('pwdStrengthFill');
+              const label = document.getElementById('pwdStrengthLabel');
+              if (!fill || !label) return;
+              let score = 0;
+              if (v.length >= 8) score++;
+              if (v.length >= 12) score++;
+              if (/[A-Z]/.test(v)) score++;
+              if (/[0-9]/.test(v)) score++;
+              if (/[^A-Za-z0-9]/.test(v)) score++;
+              const pct = [0,20,40,65,85,100][score];
+              const col = ['#e5e7eb','#ef4444','#f97316','#eab308','#22c55e','#16a34a'][score];
+              const txt = ['','Too short','Weak','Fair','Good','Strong'][score];
+              fill.style.width = pct + '%'; fill.style.background = col;
+              label.textContent = txt; label.style.color = col;
+            }
+          </script>
         </div>
 
+        <!-- ── MOBILE MONEY WALLET ── -->
         <div class="card" style="margin-bottom:20px;">
           <div class="card-header">
             <div>
-              <h2 class="card-title">Mobile Money Wallet</h2>
-              <div class="action-meta">Every customer payment is sent to this wallet. Stored in the database and used by checkout, receipts and the driver app.</div>
+              <h2 class="card-title">📱 Mobile Money Wallet</h2>
+              <div class="action-meta">All customer payments are sent to this wallet. Stored in the database and synced to all checkouts.</div>
             </div>
           </div>
           <div id="momoSettingsFeedback" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:0.88rem; font-weight:600;"></div>
           <form id="momoSettingsForm">
-            <div style="margin-bottom:14px;">
-              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">MoMo Number <span style="color:#b91c1c;">*</span></label>
-              <input type="tel" id="momoPayTo" class="auth-input" placeholder="e.g. 0559103452" required autocomplete="off">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:20px;">
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">MoMo Number <span style="color:#b91c1c;">*</span></label>
+                <input type="tel" id="momoPayTo" class="auth-input" placeholder="e.g. 0559103452" required autocomplete="off">
+              </div>
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Account Name <span style="color:#b91c1c;">*</span></label>
+                <input type="text" id="momoAccountName" class="auth-input" placeholder="Name on MoMo account" required autocomplete="off">
+              </div>
             </div>
-            <div style="margin-bottom:20px;">
-              <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Account Name <span style="color:#b91c1c;">*</span></label>
-              <input type="text" id="momoAccountName" class="auth-input" placeholder="Name registered on the MoMo account" required autocomplete="off">
-            </div>
-            <button type="submit" class="btn btn-forest" style="width:100%; padding:12px; font-size:0.95rem;">Save MoMo Wallet</button>
+            <button type="submit" class="btn btn-forest" style="width:100%; padding:12px; font-size:0.95rem;">💾 Save MoMo Wallet</button>
           </form>
         </div>
+
+        <!-- ── BUSINESS HOURS & RULES ── -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">🕐 Business Hours &amp; Delivery Rules</h2>
+              <div class="action-meta">Control when the kitchen is open and delivery constraints.</div>
+            </div>
+          </div>
+          <div id="businessRulesFeedback" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:0.88rem; font-weight:600;"></div>
+          <form id="businessRulesForm">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px;">
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Kitchen Opens (hour, 24h)</label>
+                <input type="number" id="kitchenOpenHour" class="auth-input" min="0" max="23" value="18" placeholder="18">
+              </div>
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Kitchen Closes (hour, 24h)</label>
+                <input type="number" id="kitchenCloseHour" class="auth-input" min="0" max="23" value="21" placeholder="21">
+              </div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:14px;">
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Delivery Fee (GH₵)</label>
+                <input type="number" id="deliveryFeeInput" class="auth-input" min="0" step="0.5" value="15" placeholder="15">
+              </div>
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Max Radius (km)</label>
+                <input type="number" id="maxDeliveryRadius" class="auth-input" min="1" max="50" value="10" placeholder="10">
+              </div>
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.85rem; margin-bottom:6px; color:var(--forest);">Min Order (GH₵)</label>
+                <input type="number" id="minOrderAmount" class="auth-input" min="0" step="0.5" value="20" placeholder="20">
+              </div>
+            </div>
+            <div style="margin-bottom:20px; display:flex; align-items:center; gap:12px; background:#f0fdf4; padding:10px 14px; border-radius:8px; border:1px solid #bbf7d0;">
+              <input type="checkbox" id="kitchenOpenNow" style="width:18px;height:18px;">
+              <label for="kitchenOpenNow" style="font-weight:700; font-size:0.9rem; color:var(--forest); cursor:pointer;">Kitchen is currently open &amp; accepting orders</label>
+            </div>
+            <button type="submit" class="btn btn-orange" style="width:100%; padding:12px; font-size:0.95rem;">💾 Save Business Rules</button>
+          </form>
+        </div>
+
+        <!-- ── NOTIFICATION PREFERENCES ── -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">🔔 Notification Preferences</h2>
+              <div class="action-meta">Choose which events trigger a WhatsApp or email alert to the kitchen.</div>
+            </div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:12px; padding-bottom:16px;">
+            <label style="display:flex; align-items:center; gap:12px; cursor:pointer; font-size:0.9rem; font-weight:600;">
+              <input type="checkbox" id="notifyNewOrder" checked style="width:18px;height:18px;"> New order placed
+            </label>
+            <label style="display:flex; align-items:center; gap:12px; cursor:pointer; font-size:0.9rem; font-weight:600;">
+              <input type="checkbox" id="notifyPayment" checked style="width:18px;height:18px;"> Payment verified
+            </label>
+            <label style="display:flex; align-items:center; gap:12px; cursor:pointer; font-size:0.9rem; font-weight:600;">
+              <input type="checkbox" id="notifyDriverArrived" checked style="width:18px;height:18px;"> Driver arrived at drop-off
+            </label>
+            <label style="display:flex; align-items:center; gap:12px; cursor:pointer; font-size:0.9rem; font-weight:600;">
+              <input type="checkbox" id="notifySecurityAlert" checked style="width:18px;height:18px;"> Security alert (10 failed logins)
+            </label>
+            <label style="display:flex; align-items:center; gap:12px; cursor:pointer; font-size:0.9rem; font-weight:600;">
+              <input type="checkbox" id="notifyNewDriver" style="width:18px;height:18px;"> New driver registration
+            </label>
+          </div>
+          <button type="button" id="saveNotifPrefsBtn" class="btn btn-forest" style="width:100%; padding:12px; font-size:0.95rem;">💾 Save Notification Preferences</button>
+        </div>
+
+        <!-- ── SYSTEM STATUS ── -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">🖥️ System Status</h2>
+              <div class="action-meta">Live health check of all services used by YEBS Noodles.</div>
+            </div>
+          </div>
+          <div id="systemStatusPanel" style="font-size:0.88rem; line-height:1.7;">
+            <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);">
+              <span id="statusDot_server" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#d1d5db;"></span>
+              <span style="font-weight:700;">API Server</span>
+              <span id="statusMsg_server" style="color:var(--muted); margin-left:auto;">Checking…</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);">
+              <span id="statusDot_db" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#d1d5db;"></span>
+              <span style="font-weight:700;">Database</span>
+              <span id="statusMsg_db" style="color:var(--muted); margin-left:auto;">Checking…</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);">
+              <span id="statusDot_supabase" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#d1d5db;"></span>
+              <span style="font-weight:700;">Supabase Sync</span>
+              <span id="statusMsg_supabase" style="color:var(--muted); margin-left:auto;">Checking…</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; padding:8px 0;">
+              <span id="statusDot_whatsapp" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#d1d5db;"></span>
+              <span style="font-weight:700;">WhatsApp Alerts</span>
+              <span id="statusMsg_whatsapp" style="color:var(--muted); margin-left:auto;">Checking…</span>
+            </div>
+          </div>
+          <button type="button" id="refreshStatusBtn" class="btn" style="margin-top:14px; width:100%; padding:10px; font-size:0.88rem; background:var(--forest); color:white; border-radius:8px; border:0; cursor:pointer;">🔄 Refresh Status</button>
+        </div>
+
       </div>
     </div>
+
 
   </div>
 
   <footer>
-    YEBS Noodles · Admin Dashboard & Real Delivery Records · Adabraka, Accra
+    YEBS Noodles &middot; Admin Dashboard &amp; Real Delivery Records &middot; Adabraka, Accra
   </footer>
+
+  <!-- Dark / Light Mode Toggle -->
+  <button id="themeToggleBtnAdmin" aria-label="Toggle dark/light mode" title="Toggle dark/light mode" style="position:fixed;bottom:20px;right:16px;z-index:9999;width:48px;height:48px;border-radius:50%;border:2px solid rgba(255,255,255,0.15);background:#173d30;color:white;font-size:1.3rem;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;transition:transform .2s;">&#127769;</button>
+  <script>
+    (function(){
+      var THEME_KEY='yebs_theme'; var btn=document.getElementById('themeToggleBtnAdmin'); var html=document.documentElement;
+      function applyTheme(t){ html.setAttribute('data-theme',t); document.body.setAttribute('data-theme',t); if(btn) btn.textContent=t==='dark'?'\u2600\ufe0f':'\ud83c\udf19'; try{localStorage.setItem(THEME_KEY,t);}catch(e){} }
+      var saved=''; try{saved=localStorage.getItem(THEME_KEY)||'';}catch(e){} if(!saved) saved=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light'; applyTheme(saved);
+      if(btn) btn.addEventListener('click',function(){ var c=html.getAttribute('data-theme')||'light'; applyTheme(c==='dark'?'light':'dark'); });
+    })();
+  </script>
 
   <div id="adminAuthModal" class="auth-overlay" style="display:flex;">
     <div class="auth-modal">
@@ -1307,7 +1499,18 @@
           <button type="submit" id="adminLoginSubmitBtn" class="btn btn-orange" style="width:100%; padding:12px; font-size:0.95rem; margin-top:4px;">
             🔒 Sign In
           </button>
+          <button type="button" id="adminForgotBtn" class="auth-forgot-link">Forgot your password?</button>
         </form>
+        <!-- Lockout recovery: shown when login is rate-limited -->
+        <details style="margin-top:14px;">
+          <summary style="font-size:0.78rem; color:var(--muted); cursor:pointer; list-style:none; text-align:center;">&#128274; Too many failed attempts? Unlock here &rsaquo;</summary>
+          <div style="margin-top:10px; padding:12px; background:#fff7f0; border:1px solid #fde68a; border-radius:8px;">
+            <p style="font-size:0.78rem; color:#92400e; margin:0 0 8px;">Enter your original ADMIN_PASSWORD (from .env) to clear the lockout:</p>
+            <input type="password" id="unlockMasterKey" placeholder="Master key (your admin password)&hellip;" style="width:100%; padding:9px 12px; border:1.5px solid #fbbf24; border-radius:7px; font-size:0.88rem; margin-bottom:8px;">
+            <button type="button" id="adminUnlockBtn" class="btn" style="width:100%; padding:9px; background:#d97706; color:white; border:none; border-radius:7px; font-weight:700; font-size:0.85rem; cursor:pointer;">Clear Login Lockout</button>
+            <div id="adminUnlockMsg" style="display:none; margin-top:8px; font-size:0.8rem; font-weight:700; color:#166534;"></div>
+          </div>
+        </details>
         <div style="margin-top:14px; font-size:0.78rem; color:var(--muted); text-align:center; line-height:1.5;">
           Authorized YEBS staff only. All sign-in attempts are rate-limited and recorded.
         </div>
@@ -1366,6 +1569,7 @@
       apiResetMenu,
       DEFAULT_POSTER_MENU
     } from './shared.js';
+    import { openRecovery } from './recovery.js';
 
     initStore();
 
@@ -2817,10 +3021,77 @@
         adminPasswordInput.value = '';
         unlockDashboard();
       } else {
-        adminAuthError.textContent = res.error || 'Authentication failed. Check your admin credentials.';
-        adminAuthError.style.display = 'block';
+        // Check for rate-limit with countdown
+        const retryMs = res.retryAfterMs || 0;
+        if (retryMs > 0) {
+          startLoginCountdown(btn, adminAuthError, retryMs, res.error || 'Too many failed attempts.');
+        } else {
+          adminAuthError.textContent = res.error || 'Authentication failed. Check your admin credentials.';
+          adminAuthError.style.display = 'block';
+        }
       }
     });
+
+    let _loginCountdownTimer = null;
+    function startLoginCountdown(btn, errorEl, waitMs, baseMsg) {
+      if (_loginCountdownTimer) clearInterval(_loginCountdownTimer);
+      const endsAt = Date.now() + waitMs;
+      btn.disabled = true;
+      errorEl.style.display = 'block';
+      function tick() {
+        const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+        errorEl.innerHTML = `⏳ ${baseMsg}<br><strong style="font-size:1.1em;color:#b91c1c;">${left}s</strong> before you can try again.`;
+        btn.textContent = `Wait ${left}s…`;
+        if (left <= 0) {
+          clearInterval(_loginCountdownTimer);
+          _loginCountdownTimer = null;
+          btn.disabled = false;
+          btn.textContent = '🔒 Secure Admin Login';
+          errorEl.textContent = 'You can try again now.';
+        }
+      }
+      tick();
+      _loginCountdownTimer = setInterval(tick, 1000);
+    }
+
+    const adminForgotBtn = document.getElementById('adminForgotBtn');
+    if (adminForgotBtn) {
+      adminForgotBtn.addEventListener('click', () => openRecovery('admin'));
+    }
+
+    // Lockout unlock button — clears rate-limit via the /api/auth/admin/unlock endpoint
+    const adminUnlockBtn = document.getElementById('adminUnlockBtn');
+    if (adminUnlockBtn) {
+      adminUnlockBtn.addEventListener('click', async () => {
+        const masterKey = (document.getElementById('unlockMasterKey') || {}).value || '';
+        const msgEl = document.getElementById('adminUnlockMsg');
+        if (!masterKey) { if (msgEl) { msgEl.textContent = 'Please enter the master key.'; msgEl.style.display = 'block'; msgEl.style.color = '#b91c1c'; } return; }
+        adminUnlockBtn.disabled = true;
+        adminUnlockBtn.textContent = 'Unlocking…';
+        try {
+          const r = await fetch(`${API_BASE}/api/auth/admin/unlock`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ masterKey, username: adminUsernameInput ? adminUsernameInput.value.trim() : '' })
+          });
+          const data = await r.json();
+          if (msgEl) {
+            msgEl.style.display = 'block';
+            if (data.success) {
+              msgEl.textContent = '✅ ' + data.message;
+              msgEl.style.color = '#166534';
+            } else {
+              msgEl.textContent = '❌ ' + (data.message || 'Unlock failed.');
+              msgEl.style.color = '#b91c1c';
+            }
+          }
+        } catch (err) {
+          if (msgEl) { msgEl.textContent = '❌ Network error. Is the server running?'; msgEl.style.display = 'block'; msgEl.style.color = '#b91c1c'; }
+        }
+        adminUnlockBtn.disabled = false;
+        adminUnlockBtn.textContent = 'Clear Login Lockout';
+      });
+    }
 
     adminLogoutBtn.addEventListener('click', () => {
       if (confirm('Log out of YEBS Admin Dashboard?')) {

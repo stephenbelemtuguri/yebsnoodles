@@ -789,7 +789,90 @@
     footer { padding: 40px 0; background: var(--forest-dark); color: #e9ece5; }
     .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
     .footer-brand { font-family: var(--serif); font-size: 1.3rem; display: flex; align-items: center; gap: 10px; }
+
+    /* ========================================================= */
+    /* THANK-YOU CELEBRATION                                      */
+    /* ========================================================= */
+    .thanks-overlay {
+      position: fixed; inset: 0; z-index: 14000; display: flex; align-items: center;
+      justify-content: center; padding: 16px; background: rgba(9, 24, 18, .72);
+      backdrop-filter: blur(6px);
+    }
+    .thanks-card {
+      position: relative; width: min(440px, 100%); max-height: calc(100dvh - 32px);
+      overflow: hidden; border-radius: 22px; background: var(--paper);
+      box-shadow: 0 30px 70px rgba(0, 0, 0, .45);
+      animation: thanksIn .35s cubic-bezier(.2, 1.3, .5, 1);
+    }
+    @keyframes thanksIn {
+      from { opacity: 0; transform: translateY(18px) scale(.96); }
+      to { opacity: 1; transform: none; }
+    }
+    .thanks-body { position: relative; padding: 30px 24px 24px; text-align: center; }
+    .thanks-close {
+      position: absolute; top: 10px; right: 12px; width: 34px; height: 34px; border: 0;
+      border-radius: 50%; background: #f1eee4; color: #5b675c; font-size: 1.2rem;
+      cursor: pointer; line-height: 1;
+    }
+    .thanks-sticker { font-size: 3.4rem; line-height: 1; animation: thanksBounce 1.1s ease-in-out infinite; }
+    @keyframes thanksBounce {
+      0%, 100% { transform: translateY(0) rotate(-4deg); }
+      50% { transform: translateY(-9px) rotate(4deg); }
+    }
+    .thanks-eyebrow {
+      margin: 10px 0 4px; font-size: .68rem; font-weight: 900; letter-spacing: .16em;
+      text-transform: uppercase; color: var(--orange);
+    }
+    .thanks-body h2 {
+      margin: 0 0 8px; font-family: var(--serif); font-size: 1.5rem;
+      line-height: 1.2; color: var(--forest);
+    }
+    .thanks-copy { margin: 0 0 16px; color: var(--muted); font-size: .9rem; line-height: 1.6; }
+    .thanks-summary {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      padding: 12px; margin-bottom: 12px; border: 1px solid #dbe7d4;
+      border-radius: 12px; background: #f6faf2;
+    }
+    .thanks-summary span {
+      display: block; font-size: .6rem; font-weight: 800; letter-spacing: .07em;
+      text-transform: uppercase; color: #6b7280;
+    }
+    .thanks-summary strong {
+      display: block; margin-top: 2px; font-family: ui-monospace, monospace;
+      font-size: .98rem; color: var(--forest);
+    }
+    .thanks-note { margin: 0 0 16px; font-size: .78rem; line-height: 1.5; color: #5b675c; }
+    .thanks-actions { display: flex; gap: 10px; }
+    .thanks-actions .button { flex: 1; min-height: 46px; }
+    .thanks-secondary { background: #eef2ec; color: var(--forest); }
+    .thanks-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+    .thanks-confetti i {
+      position: absolute; top: -14px; width: 9px; height: 14px; border-radius: 2px;
+      animation: confettiFall linear forwards;
+    }
+    @keyframes confettiFall {
+      0% { transform: translate3d(0, -20px, 0) rotate(0); opacity: 1; }
+      100% { transform: translate3d(var(--drift, 0), 560px, 0) rotate(720deg); opacity: 0; }
+    }
+
+    /* USSD "welcome back" banner inside the payment modal */
+    .pay-return-banner {
+      display: none; margin: 0 0 14px; padding: 12px 14px; border-radius: 12px;
+      background: #ecfdf5; border: 1.5px solid #6ee7b7; color: #065f46;
+      font-size: .82rem; line-height: 1.5;
+    }
+    .pay-return-banner strong { display: block; margin-bottom: 2px; font-size: .9rem; }
+    .pay-return-banner.show { display: block; animation: thanksIn .3s ease-out; }
+    .pay-paste-row { display: flex; gap: 8px; margin-top: 8px; }
+    .pay-paste-row .button { min-height: 40px; padding: 0 12px; font-size: .78rem; }
+
+    @media (max-width: 420px) {
+      .thanks-body { padding: 26px 18px 20px; }
+      .thanks-summary { grid-template-columns: 1fr; text-align: left; }
+      .thanks-actions { flex-direction: column; }
+    }
   </style>
+  <link rel="stylesheet" href="mobile.css">
 </head>
 <body>
   <script>
@@ -829,14 +912,21 @@
           <span class="brand-tagline">The standard of delicacy</span>
         </span>
       </a>
-      <nav class="main-nav" aria-label="Main navigation">
+      <nav class="main-nav" id="mainNav" aria-label="Main navigation">
         <a href="#menu">Menu</a>
         <a href="#how-it-works">How it works</a>
         <button type="button" class="nav-track-btn" id="openTrackModalBtn">
           📍 Live Order Tracking
         </button>
         <a class="nav-cta button-orange" href="#order">Order now ↗</a>
+        <a href="public/customer-portal.html" class="nav-mobile-only">📦 My Orders</a>
+        <a href="public/customer-reviews.html" class="nav-mobile-only">⭐ Reviews &amp; Rewards</a>
+        <a href="driver.html" class="nav-mobile-only">🛵 Driver Portal</a>
+        <a href="admin.html" class="nav-mobile-only">📊 Admin Dashboard</a>
       </nav>
+      <button type="button" class="nav-toggle" id="mobileNavToggle" aria-expanded="false" aria-controls="mainNav" aria-label="Open navigation menu">
+        <span></span><span></span><span></span>
+      </button>
     </div>
   </header>
 
@@ -935,6 +1025,15 @@
             <span>Orders of 30, 40, and 60 Cedis include a free chilled Beta Malt drink!</span>
           </div>
         </div>
+        <div class="promo-banner" style="background:#f0fdf4; border-color:#86efac; margin-top:10px;">
+          <span class="promo-icon" aria-hidden="true" style="color:#16a34a;">🛵</span>
+          <div>
+            <strong style="color:#166534;">Multi-Meal Delivery Discount &mdash; The more meals you order, the less delivery costs!</strong><br>
+            <span style="color:#14532d; font-size:0.86rem;">
+              Base delivery is <strong>GH₵3.00/km</strong> from VIP Station. Order <strong>2–3 meals</strong> for <strong>GH₵2 off</strong> &bull; <strong>4–5 meals</strong> for <strong>GH₵4 off</strong> &bull; <strong>6+ meals</strong> for <strong>GH₵6 off delivery!</strong>
+            </span>
+          </div>
+        </div>
 
         <div class="menu-grid" id="menuGrid">
           <!-- Populated dynamically with Image 1 Poster Template cards -->
@@ -969,6 +1068,11 @@
               <span id="deliveryFeeLabel">Collection at shared pickup</span>
               <span id="deliveryFeeValue">Free</span>
             </div>
+            <div class="total-row discount-row" id="deliveryDiscountRow" style="display:none; color:#16a34a; font-weight:700;">
+              <span id="deliveryDiscountLabel">🎉 Multi-meal discount</span>
+              <span id="deliveryDiscountValue">-GH₵0.00</span>
+            </div>
+            <div id="deliveryFeeExplanation" style="display:none; font-size:0.75rem; color:var(--muted); margin:-4px 0 8px; line-height:1.4;"></div>
             <div class="pickup-summary" id="pickupSummary">
               <strong>📍 Shared pickup point:</strong> <span id="pickupSummaryText">Loading the pickup point set by the kitchen…</span>
             </div>
@@ -1444,7 +1548,9 @@
       apiFetchSession,
       setSessionPickupPoint,
       getMenuItems,
-      apiFetchMenu
+      apiFetchMenu,
+      calculateDeliveryQuote,
+      calculateDistanceKm
     } from './shared.js';
 
     initStore();
@@ -1808,14 +1914,62 @@
     function updateTotals(subtotal) {
       const amount = Number(subtotal);
       const delivery = isDeliverySelected();
-      const fee = delivery ? (Number(deliveryFeeAmount) || 0) : 0;
+      const entries = Object.entries(cart);
+      const mealCount = entries.reduce((s, [k, qty]) => s + Number(qty || 0), 0);
+
+      // Distance from restaurant/pickup point
+      const originLat = (sharedPickupPoint && Number(sharedPickupPoint.lat)) || RESTAURANT_COORDS.lat;
+      const originLng = (sharedPickupPoint && Number(sharedPickupPoint.lng)) || RESTAURANT_COORDS.lng;
+      const targetLat = (customerGpsPin && Number(customerGpsPin.lat)) || originLat;
+      const targetLng = (customerGpsPin && Number(customerGpsPin.lng)) || originLng;
+      const hasRealPin = !!(customerGpsPin && Number.isFinite(Number(customerGpsPin.lat)));
+      const distanceKm = hasRealPin
+        ? calculateDistanceKm(originLat, originLng, targetLat, targetLng)
+        : (Number(deliveryFeeAmount) > 0 ? (deliveryFeeAmount / 3) : 2.5);
+
+      const quote = calculateDeliveryQuote(distanceKm, mealCount, delivery);
+      const fee = quote.finalFee;
+
       const feeLabel = document.getElementById("deliveryFeeLabel");
       const feeValue = document.getElementById("deliveryFeeValue");
       const feeRow = document.getElementById("deliveryFeeRow");
+      const discountRow = document.getElementById("deliveryDiscountRow");
+      const discountLabel = document.getElementById("deliveryDiscountLabel");
+      const discountValue = document.getElementById("deliveryDiscountValue");
+      const explanationEl = document.getElementById("deliveryFeeExplanation");
       const grand = document.getElementById("grandTotal");
-      if (feeLabel) feeLabel.textContent = delivery ? "Delivery fee (rider to your address)" : "Collection at shared pickup";
-      if (feeValue) feeValue.textContent = delivery ? money(fee) : "Free";
+
+      if (feeLabel) {
+        feeLabel.textContent = delivery
+          ? `Delivery (${quote.distanceKm} km @ GH₵3.00/km)`
+          : "Collection at shared pickup";
+      }
+      if (feeValue) {
+        feeValue.textContent = delivery
+          ? (quote.discount > 0 ? money(quote.finalFee) : money(quote.baseFee))
+          : "Free";
+      }
       if (feeRow) feeRow.classList.toggle("fee-free", !delivery);
+
+      if (discountRow) {
+        if (delivery && quote.discount > 0) {
+          discountRow.style.display = "flex";
+          if (discountLabel) discountLabel.textContent = `🎉 Multi-meal discount (${mealCount} meals)`;
+          if (discountValue) discountValue.textContent = `-${money(quote.discount)}`;
+        } else {
+          discountRow.style.display = "none";
+        }
+      }
+
+      if (explanationEl) {
+        if (delivery) {
+          explanationEl.style.display = "block";
+          explanationEl.innerHTML = `🛵 <strong>${quote.distanceKm} km</strong> &times; GH₵3.00 = GH₵${quote.baseFee.toFixed(2)}${quote.discount > 0 ? ` &minus; GH₵${quote.discount.toFixed(2)} (${quote.nextTierMessage})` : (quote.nextTierMessage ? ` &bull; <em>${quote.nextTierMessage}</em>` : '')}`;
+        } else {
+          explanationEl.style.display = "none";
+        }
+      }
+
       if (grand) grand.textContent = money((Number.isFinite(amount) ? amount : 0) + fee);
     }
 
@@ -1857,6 +2011,7 @@
       }
       if (pickupBox) pickupBox.style.display = delivery ? "none" : "block";
       renderPickupDetails();
+      renderPinMap();
       updateTotals(cartSubtotal());
     }
 
@@ -1990,22 +2145,57 @@
       }
     }
 
+    function onCustomerPinUpdated(lat, lng, source) {
+      customerGpsPin = { lat: Number(lat), lng: Number(lng), source: source || 'manual' };
+      const originLat = (sharedPickupPoint && Number(sharedPickupPoint.lat)) || RESTAURANT_COORDS.lat;
+      const originLng = (sharedPickupPoint && Number(sharedPickupPoint.lng)) || RESTAURANT_COORDS.lng;
+      const dist = calculateDistanceKm(originLat, originLng, lat, lng);
+      if (locationInput) {
+        locationInput.value = `Selected Pin: ${lat.toFixed(4)}, ${lng.toFixed(4)} (~${dist.toFixed(1)} km from VIP Station)`;
+        setLocationStatus(`📍 Delivery spot pinned: ${dist.toFixed(1)} km from VIP Station. Delivery fee & volume discount updated!`, "ok");
+      }
+      reverseGeocodeInto(lat, lng);
+      renderGpsPreview();
+      renderCart();
+    }
+
     function renderPinMap() {
       const el = document.getElementById("customerPinMap");
-      if (!el) return;
-      if (!customerGpsPin || typeof L === "undefined") { el.hidden = true; return; }
-      const lat = Number(customerGpsPin.lat);
-      const lng = Number(customerGpsPin.lng);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) { el.hidden = true; return; }
+      if (!el || typeof L === "undefined") return;
+
+      const originLat = (sharedPickupPoint && Number(sharedPickupPoint.lat)) || RESTAURANT_COORDS.lat;
+      const originLng = (sharedPickupPoint && Number(sharedPickupPoint.lng)) || RESTAURANT_COORDS.lng;
+      const lat = customerGpsPin && Number.isFinite(Number(customerGpsPin.lat)) ? Number(customerGpsPin.lat) : originLat;
+      const lng = customerGpsPin && Number.isFinite(Number(customerGpsPin.lng)) ? Number(customerGpsPin.lng) : originLng;
+
       el.hidden = false;
+
+      const pinIcon = L.divIcon({
+        className: 'customer-interactive-marker',
+        html: `<div style="background:#e57a45; color:white; width:34px; height:34px; border-radius:50%; display:grid; place-items:center; border:2.5px solid white; box-shadow:0 3px 12px rgba(0,0,0,0.35); font-size:17px; cursor:grab;">📍</div>`,
+        iconSize: [34, 34],
+        iconAnchor: [17, 34]
+      });
+
       if (!customerPinMap) {
-        customerPinMap = L.map(el, { zoomControl: false, attributionControl: false, dragging: true }).setView([lat, lng], 16);
+        customerPinMap = L.map(el, { zoomControl: true, attributionControl: false, dragging: true }).setView([lat, lng], 15);
         addReliableBasemap(customerPinMap);
-        customerPinMarker = L.circleMarker([lat, lng], {
-          radius: 9, color: "#173d30", weight: 3, fillColor: "#fbb017", fillOpacity: 1
+        customerPinMarker = L.marker([lat, lng], {
+          icon: pinIcon,
+          draggable: true
         }).addTo(customerPinMap);
+
+        customerPinMarker.on('dragend', function (e) {
+          const pos = e.target.getLatLng();
+          onCustomerPinUpdated(pos.lat, pos.lng, 'manual-drag');
+        });
+
+        customerPinMap.on('click', function (e) {
+          if (customerPinMarker) customerPinMarker.setLatLng(e.latlng);
+          onCustomerPinUpdated(e.latlng.lat, e.latlng.lng, 'manual-tap');
+        });
       } else {
-        customerPinMap.setView([lat, lng], 16);
+        customerPinMap.setView([lat, lng]);
         if (customerPinMarker) customerPinMarker.setLatLng([lat, lng]);
       }
       setTimeout(() => { try { customerPinMap.invalidateSize(); } catch (e) {} }, 120);
@@ -2244,7 +2434,14 @@
       }
 
       const subtotal = entries.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const deliveryFee = isDelivery ? Number(deliveryFeeAmount) || 15 : 0;
+      const mealCount = entries.reduce((sum, item) => sum + item.quantity, 0);
+      const originLat = (sharedPickupPoint && Number(sharedPickupPoint.lat)) || RESTAURANT_COORDS.lat;
+      const originLng = (sharedPickupPoint && Number(sharedPickupPoint.lng)) || RESTAURANT_COORDS.lng;
+      const targetLat = (customerGpsPin && Number(customerGpsPin.lat)) || originLat;
+      const targetLng = (customerGpsPin && Number(customerGpsPin.lng)) || originLng;
+      const dist = customerGpsPin ? calculateDistanceKm(originLat, originLng, targetLat, targetLng) : (deliveryFeeAmount / 3 || 2.5);
+      const quote = calculateDeliveryQuote(dist, mealCount, isDelivery);
+      const deliveryFee = quote.finalFee;
       const total = subtotal + deliveryFee;
 
       const orderLocation = isDelivery
@@ -2267,6 +2464,8 @@
         items: entries,
         subtotal,
         deliveryFee,
+        deliveryDistanceKm: quote.distanceKm,
+        deliveryDiscount: quote.discount,
         total
       };
 
@@ -2303,12 +2502,23 @@
       // Clear the cart so the order is not accidentally submitted twice.
       Object.keys(cart).forEach(k => delete cart[k]);
       renderCart();
+      clearCheckoutDraft();
 
       formFeedback.style.color = "#166534";
       formFeedback.textContent = `✅ Order ${newOrder.id} placed! ${newOrder.fulfilment === 'Collection'
         ? 'Collect it free at ' + (newOrder.pickupPointName || sharedPickupPoint.name) + '.'
         : 'The rider will bring it to ' + (newOrder.location || 'your address') + '.'} ${notifyNote}`;
       showOrderIdModal(newOrder);
+
+      // Celebrate every successful order (the mobile-money flow celebrates
+      // again once the payment is verified).
+      if (window.celebrateOrder) {
+        window.celebrateOrder(newOrder, {
+          note: payMode === "now" && newOrder.paymentMode !== "cash"
+            ? 'Finish the mobile money step and your order is fully confirmed.'
+            : notifyNote
+        });
+      }
 
       // "Pay now" customers go straight to the MoMo panel so the order is
       // never left unpaid by accident. Cash orders just see the Order ID.
@@ -2386,11 +2596,97 @@
           if (mapEl) mapEl.innerHTML = `<div style="height:100%; display:grid; place-items:center; text-align:center; padding:20px; color:var(--muted); font-size:0.9rem;">Map library could not load.<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Adabraka, Accra')}" target="_blank" style="color:var(--orange); font-weight:700;">Open location in Google Maps ↗</a></div>`;
         }
       }, 200);
+
+      // ── Live SSE subscription: get real-time order status pushes ──
+      startOrderSSE(orderId);
+    }
+
+    let _orderSSE = null;
+    let _orderPollInterval = null;
+
+    function startOrderSSE(orderId) {
+      stopOrderSSE(); // clear any existing connection
+      if (!orderId) return;
+      try {
+        _orderSSE = new EventSource(`${API_BASE}/api/sse/order/${encodeURIComponent(orderId)}`);
+        _orderSSE.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg && msg.order) {
+              // Merge updated order into local store and re-render tracking UI
+              const local = getOrderById(msg.order.id);
+              if (local) Object.assign(local, msg.order);
+              renderTrackingModal();
+              updateStepperFromStatus(msg.order.status);
+            }
+          } catch (_) {}
+        };
+        _orderSSE.onerror = () => {
+          // SSE failed — fall back to polling every 15s
+          stopOrderSSE();
+          _orderPollInterval = setInterval(() => pollOrderStatus(orderId), 15000);
+        };
+      } catch (e) {
+        // Browser doesn't support EventSource — use polling
+        _orderPollInterval = setInterval(() => pollOrderStatus(orderId), 15000);
+      }
+    }
+
+    async function pollOrderStatus(orderId) {
+      if (!orderId) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/track`, { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.order) {
+            const local = getOrderById(data.order.id);
+            if (local) Object.assign(local, data.order);
+            if (document.getElementById('trackOrderIdDisplay')) {
+              renderTrackingModal();
+              updateStepperFromStatus(data.order.status);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    function stopOrderSSE() {
+      if (_orderSSE) { try { _orderSSE.close(); } catch (_) {} _orderSSE = null; }
+      if (_orderPollInterval) { clearInterval(_orderPollInterval); _orderPollInterval = null; }
+    }
+
+    function updateStepperFromStatus(status) {
+      const steps = ['stepNode1', 'stepNode2', 'stepNode3', 'stepNode4'];
+      const fill  = document.getElementById('stepperProgressFill');
+      const statusMap = {
+        pending:   { active: 0, pct: '5%',   icon: '⏳', heading: 'Your order has been received!', detail: 'The YEBS kitchen is being notified. Hang tight!' },
+        kitchen:   { active: 1, pct: '33%',  icon: '👨‍🍳', heading: 'Your noodles are being prepared!', detail: 'The kitchen team is cooking your order fresh right now.' },
+        enroute:   { active: 2, pct: '66%',  icon: '🛵', heading: 'Driver en route — watch the map!', detail: 'Your rider is on the way. Track their exact position on the map.' },
+        arrived:   { active: 3, pct: '90%',  icon: '📍', heading: 'Driver has arrived!', detail: 'Your rider is at the drop-off point. Come collect your order.' },
+        delivered: { active: 3, pct: '100%', icon: '✅', heading: 'Delivered! Enjoy your noodles 🍜', detail: 'Order complete. Thank you for choosing YEBS Noodles!' },
+        cancelled: { active: -1, pct: '0%',  icon: '❌', heading: 'Order cancelled', detail: 'This order was cancelled. Please contact YEBS if you need help.' }
+      };
+      const s = statusMap[status] || statusMap['pending'];
+      if (fill) fill.style.width = s.pct;
+      steps.forEach((id, idx) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.remove('completed', 'active');
+        if (idx < s.active) el.classList.add('completed');
+        else if (idx === s.active) el.classList.add('active');
+      });
+      const heading = document.getElementById('trackSessionHeading');
+      const detail  = document.getElementById('trackSessionDetails');
+      const icon    = document.getElementById('trackSessionIcon');
+      if (icon) icon.textContent = s.icon;
+      if (heading) heading.textContent = s.heading;
+      if (detail) detail.textContent = s.detail;
     }
 
     function closeTrackingModal() {
       trackingOverlay.classList.remove("active");
       document.body.style.overflow = "";
+      stopOrderSSE();
     }
 
     function renderTrackingModal() {
@@ -2904,8 +3200,26 @@
       }
     });
 
+    // Keep menu items, prices & availability fresh across customer devices
+    setInterval(() => {
+      apiFetchMenu().then(() => {
+        renderMenu();
+        renderCart();
+      }).catch(() => {});
+    }, 15000);
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        apiFetchMenu().then(() => {
+          renderMenu();
+          renderCart();
+        }).catch(() => {});
+      }
+    });
+
     renderMenu();
     renderCart();
+    renderPinMap();
     updateSessionBanner();
     initPermissionsCheck();
 
@@ -2980,8 +3294,10 @@
 
     function setDeliveryPin(pin, source) {
       if (!pin || !Number.isFinite(pin.lat) || !Number.isFinite(pin.lng)) return;
-      customerGpsPin = { lat: pin.lat, lng: pin.lng, source: source || 'gps', at: new Date().toISOString() };
+      customerGpsPin = { lat: Number(pin.lat), lng: Number(pin.lng), source: source || 'gps', at: new Date().toISOString() };
       renderGpsPreview();
+      renderPinMap();
+      renderCart();
     }
 
     function geolocationFailureMessage(err) {
@@ -3333,6 +3649,13 @@
       const laterBtn = document.getElementById('payNowLaterBtn');
       if (laterBtn) laterBtn.textContent = 'View my order & live tracking';
       playChime('arrival');
+      clearPendingPayment();
+      if (currentPayOrder && window.celebrateOrder) {
+        window.celebrateOrder(currentPayOrder, {
+          copy: 'Payment confirmed. Your food is being prepared fresh right now.',
+          note: message || 'Payment received — thank you for choosing YEBS!'
+        });
+      }
       if (currentPayOrder && currentPayOrder.id) {
         apiFetchOrder(currentPayOrder.id).catch(() => {});
       }
@@ -3362,6 +3685,7 @@
       if (receipt) receipt.value = '';
       setPayNowStatus('', '');
       setPushStatus('', '');
+      hideReturnBanner();
       renderNetworkTiles();
       applyPayNetworkToModal();
       modal.style.display = 'flex';
@@ -3369,7 +3693,13 @@
       if (card) card.scrollTop = 0;
       document.body.style.overflow = 'hidden';
       stopPayPolling();
+      // Save pending payment so USSD return detection can re-open this modal
+      if (window.savePendingPayment && order.paymentMode !== 'cash') {
+        window.savePendingPayment(order);
+      }
     }
+    // Expose globally for USSD return detection
+    window.openPayNowModal = openPayNowModal;
 
     function closePayNowModal() {
       const modal = document.getElementById('payNowModal');
@@ -3505,6 +3835,205 @@
       });
     }
 
+    // =========================================================
+    // MOBILE NAVIGATION
+    // =========================================================
+    (function initMobileNav() {
+      const toggle = document.getElementById('mobileNavToggle');
+      const nav = document.getElementById('mainNav');
+      if (!toggle || !nav) return;
+      const setOpen = (open) => {
+        nav.classList.toggle('nav-open', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggle.setAttribute('aria-label', open ? 'Close navigation menu' : 'Open navigation menu');
+      };
+      toggle.addEventListener('click', () => setOpen(!nav.classList.contains('nav-open')));
+      nav.querySelectorAll('a').forEach(link => link.addEventListener('click', () => setOpen(false)));
+      document.addEventListener('click', (event) => {
+        if (!nav.classList.contains('nav-open')) return;
+        if (nav.contains(event.target) || toggle.contains(event.target)) return;
+        setOpen(false);
+      });
+      document.addEventListener('keydown', (event) => { if (event.key === 'Escape') setOpen(false); });
+      window.addEventListener('resize', () => { if (window.innerWidth > 820) setOpen(false); });
+    })();
+
+    // Expose the tracker so the thank-you card can open it.
+    window.openTrackingModal = openTrackingModal;
+
+    // =========================================================
+    // CHECKOUT DRAFT — details survive a reload or a USSD trip
+    // =========================================================
+    const DRAFT_KEY = 'yebs_checkout_draft';
+    const DRAFT_FIELDS = ['customer', 'phone', 'fulfilment', 'timing', 'location', 'payerPhone', 'notes'];
+
+    function saveCheckoutDraft() {
+      try {
+        const data = {};
+        DRAFT_FIELDS.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) data[id] = el.value;
+        });
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(data));
+      } catch (e) { /* private mode */ }
+    }
+
+    function restoreCheckoutDraft() {
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw) || {};
+        DRAFT_FIELDS.forEach(id => {
+          const el = document.getElementById(id);
+          if (el && !el.value && typeof data[id] === 'string') el.value = data[id];
+        });
+        updatePaymentPreferenceUi();
+      } catch (e) { /* ignore */ }
+    }
+
+    function clearCheckoutDraft() {
+      try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* ignore */ }
+    }
+
+    // =========================================================
+    // USSD ROUND-TRIP — dial, pay, come back, keep going
+    // =========================================================
+    const PENDING_PAY_KEY = 'yebs_pending_payment';
+    let awaitingUssdReturn = false;
+    let ussdArmedAt = 0;
+
+    function rememberPendingPayment(order, network) {
+      try {
+        localStorage.setItem(PENDING_PAY_KEY, JSON.stringify({
+          orderId: order.id,
+          network: network || selectedPayNetwork,
+          total: order.total,
+          at: Date.now()
+        }));
+      } catch (e) { /* ignore */ }
+    }
+
+    function clearPendingPayment() {
+      try { localStorage.removeItem(PENDING_PAY_KEY); } catch (e) { /* ignore */ }
+    }
+
+    function readPendingPayment() {
+      try {
+        const raw = localStorage.getItem(PENDING_PAY_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data || !data.orderId) return null;
+        if (Date.now() - Number(data.at || 0) > 45 * 60 * 1000) { clearPendingPayment(); return null; }
+        return data;
+      } catch (e) { return null; }
+    }
+
+    function showReturnBanner(text) {
+      const banner = document.getElementById('payNowReturnBanner');
+      const copy = document.getElementById('payNowReturnText');
+      if (copy && text) copy.textContent = text;
+      if (banner) banner.classList.add('show');
+    }
+
+    function hideReturnBanner() {
+      const banner = document.getElementById('payNowReturnBanner');
+      if (banner) banner.classList.remove('show');
+    }
+
+    function focusTxnInput() {
+      const txn = document.getElementById('payNowTxn');
+      if (!txn) return;
+      try { txn.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ }
+      setTimeout(() => { try { txn.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 260);
+    }
+
+    function armUssdReturn() {
+      if (!currentPayOrder) return;
+      awaitingUssdReturn = true;
+      ussdArmedAt = Date.now();
+      rememberPendingPayment(currentPayOrder, selectedPayNetwork);
+      showReturnBanner('Approve the payment in the USSD menu, then come back to this page. Your order and details are saved — we will pick up exactly here.');
+      setPayNowStatus('Waiting for you to return from the USSD menu…', '');
+    }
+
+    async function handleUssdReturn(force) {
+      if (!awaitingUssdReturn || !currentPayOrder) return;
+      // Ignore the focus event that fires in the same tap that opened the dialer.
+      if (!force && Date.now() - ussdArmedAt < 1500) return;
+      awaitingUssdReturn = false;
+      showReturnBanner('Welcome back! Paste the transaction ID from your MoMo SMS below (or upload the receipt), then tap verify.');
+      focusTxnInput();
+      try {
+        const res = await apiMomoStatus(currentPayOrder.id);
+        if (res && res.paid) {
+          markPayNowPaid(res.message || 'Payment confirmed.');
+          return;
+        }
+      } catch (e) { /* the prompt may not be configured */ }
+      if (payNetworkById(selectedPayNetwork).apiReady) startPayPolling();
+      else setPayNowStatus('Almost done — enter the transaction ID from your SMS to confirm the payment.', '');
+    }
+
+    function extractMomoReference(text) {
+      const raw = String(text || '');
+      const patterns = [
+        /(?:transaction\s*(?:id|ref(?:erence)?)|financial\s*transaction\s*id|txn\s*id)\s*[:#-]?\s*([A-Z0-9][A-Z0-9.\-]{5,})/i,
+        /\b(MP\d{6}\.[A-Z0-9.]{4,})\b/i,
+        /\b([A-Z]{2,4}\d{6,}\.[A-Z0-9.]{4,})\b/,
+        /\b(\d{9,12})\b/
+      ];
+      for (const re of patterns) {
+        const match = raw.match(re);
+        if (match && match[1]) return match[1].replace(/[.,;:]$/, '');
+      }
+      return '';
+    }
+
+    async function pasteMomoSms() {
+      let text = '';
+      try {
+        text = await navigator.clipboard.readText();
+      } catch (e) {
+        text = window.prompt('Paste the MoMo SMS here:') || '';
+      }
+      if (!text) return;
+      const ref = extractMomoReference(text);
+      const txn = document.getElementById('payNowTxn');
+      if (txn && ref) {
+        txn.value = ref;
+        txn.focus();
+        setPayNowStatus('Found transaction ' + ref + '. Tap “I have paid — verify now”.', 'ok');
+      } else {
+        setPayNowStatus('Could not find a transaction ID in that message. Copy the ID from the SMS and paste it into the box.', 'error');
+      }
+    }
+
+    async function restorePendingPayment() {
+      const pending = readPendingPayment();
+      if (!pending) return;
+      try {
+        const order = await apiFetchOrder(pending.orderId);
+        if (!order || order.paymentStatus === 'paid') { clearPendingPayment(); return; }
+        openPayNowModal(order, pending.network);
+        awaitingUssdReturn = true;
+        handleUssdReturn(true);
+      } catch (e) { /* ignore */ }
+    }
+
+    const payDialBtn = document.getElementById('payNowDialBtn');
+    if (payDialBtn) payDialBtn.addEventListener('click', armUssdReturn);
+    const payPasteBtn = document.getElementById('payNowPasteBtn');
+    if (payPasteBtn) payPasteBtn.addEventListener('click', pasteMomoSms);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') handleUssdReturn();
+    });
+    window.addEventListener('focus', () => handleUssdReturn());
+
+    checkoutForm.addEventListener('input', saveCheckoutDraft);
+    checkoutForm.addEventListener('change', saveCheckoutDraft);
+    restoreCheckoutDraft();
+    restorePendingPayment();
+
     bindPaymentPreference();
     bindPayNowModal();
   </script>
@@ -3518,6 +4047,10 @@
         <p id="payNowSubtitle">Order <span id="payNowOrderId">YB----</span> &middot; pay with mobile money &middot; no card needed</p>
       </div>
       <div class="pay-modal-body">
+        <div id="payNowReturnBanner" class="pay-return-banner" role="status" aria-live="polite">
+          <strong>Welcome back! 👋</strong>
+          <span id="payNowReturnText">Did your mobile money payment go through? Paste the transaction ID from your MoMo SMS below and tap verify — your order stays exactly as you left it.</span>
+        </div>
         <div class="pay-amount">
           <div>
             <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:#6b7280; font-weight:800;">Amount due</div>
@@ -3562,6 +4095,9 @@
         <div style="margin-top:14px; padding-top:12px; border-top:1px dashed #e5e7eb;">
           <label for="payNowTxn" style="font-size:.78rem; font-weight:800; color:#374151; display:block; margin-bottom:6px;">Transaction ID (or upload the receipt)</label>
           <input id="payNowTxn" type="text" autocomplete="off" placeholder="e.g. MP240412.1234.A56789" style="min-height:40px;">
+          <div class="pay-paste-row">
+            <button type="button" id="payNowPasteBtn" class="button" style="background:#eef5f0; color:var(--forest); border:1px solid #c9decb;">📋 Paste MoMo SMS</button>
+          </div>
           <input id="payNowReceipt" type="file" accept="image/*" capture="environment" style="margin-top:8px; font-size:.75rem; padding:4px;">
           <button type="button" id="payNowConfirmBtn" class="button button-orange" style="width:100%; min-height:42px; margin-top:10px; font-size:.9rem;">I have paid &mdash; verify now</button>
           <div id="payNowStatus" style="font-size:.8rem; margin-top:8px; font-weight:600; color:#6b7280;" role="status" aria-live="polite"></div>
@@ -3638,3 +4174,217 @@
       </div>
     </div>
   </div>
+
+  <!-- ===================================== -->
+  <!-- THANK-YOU CELEBRATION (every order)    -->
+  <!-- ===================================== -->
+  <div id="thankYouModal" class="thanks-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="thanksTitle">
+    <div class="thanks-card">
+      <div class="thanks-confetti" id="thanksConfetti" aria-hidden="true"></div>
+      <div class="thanks-body">
+        <button type="button" class="thanks-close" id="thanksCloseBtn" aria-label="Close">&times;</button>
+        <!-- Animated sticker cluster -->
+        <div style="display:flex; justify-content:center; gap:6px; margin-bottom:6px;" aria-hidden="true">
+          <div class="thanks-sticker" style="font-size:2.6rem; animation-delay:0s;">🎉</div>
+          <div class="thanks-sticker" style="font-size:2.2rem; animation-delay:.15s;">🍜</div>
+          <div class="thanks-sticker" style="font-size:2.6rem; animation-delay:.3s;">🎊</div>
+        </div>
+        <p class="thanks-eyebrow" style="font-size:.75rem;">✨ Order Confirmed ✨</p>
+        <h2 id="thanksTitle" style="font-size:1.6rem; margin-bottom:6px;">Thank you for choosing YEBS Noodles!</h2>
+        <p style="font-size:.82rem; color:#e57a45; font-weight:700; margin:0 0 12px;">We are honoured to serve you fresh, delicious noodles 🙏</p>
+        <p class="thanks-copy" id="thanksCopy">Your food is being prepared fresh. We can&rsquo;t wait for you to taste it.</p>
+        <div class="thanks-summary">
+          <div><span>Order ID</span><strong id="thanksOrderId">YB-0000</strong></div>
+          <div><span>Total Paid</span><strong id="thanksTotal">GH&#8373;0</strong></div>
+          <div><span>Collection PIN</span><strong id="thanksPin">0000</strong></div>
+        </div>
+        <p class="thanks-note" id="thanksNote"></p>
+        <div class="thanks-actions">
+          <button type="button" id="thanksTrackBtn" class="button button-orange">🛵 Track my order</button>
+          <button type="button" id="thanksDoneBtn" class="button thanks-secondary">Done ✓</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dark / Light Mode Toggle (floating) -->
+  <button class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle dark/light mode" title="Toggle dark/light mode">🌙</button>
+
+  <script>
+    // ============================================================
+    // DARK / LIGHT MODE MANAGER
+    // ============================================================
+    (function () {
+      var THEME_KEY = 'yebs_theme';
+      var btn = document.getElementById('themeToggleBtn');
+      var html = document.documentElement;
+
+      function applyTheme(theme) {
+        html.setAttribute('data-theme', theme);
+        document.body.setAttribute('data-theme', theme);
+        if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+        try { localStorage.setItem(THEME_KEY, theme); } catch(e){}
+      }
+
+      // Initialise from saved preference or OS preference
+      var saved = '';
+      try { saved = localStorage.getItem(THEME_KEY) || ''; } catch(e){}
+      if (!saved) {
+        saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      }
+      applyTheme(saved);
+
+      if (btn) {
+        btn.addEventListener('click', function () {
+          var current = html.getAttribute('data-theme') || 'light';
+          applyTheme(current === 'dark' ? 'light' : 'dark');
+        });
+      }
+
+      window.applyTheme = applyTheme;
+    })();
+
+    // ============================================================
+    // THANK-YOU CELEBRATION + CONFETTI
+    // A classic script (not a module) so the module below can call
+    // window.celebrateOrder() whenever an order is placed or a
+    // mobile-money payment is verified.
+    // ============================================================
+    (function () {
+      var modal = document.getElementById('thankYouModal');
+      var confettiBox = document.getElementById('thanksConfetti');
+      var currentOrder = null;
+      var confettiTimer = null;
+
+      function burstConfetti() {
+        if (!confettiBox) return;
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        confettiBox.innerHTML = '';
+        var colors = ['#e57a45', '#e9bd68', '#173d30', '#52785b', '#f8c471', '#ffffff', '#ef4444', '#22c55e', '#fbbf24'];
+        for (var i = 0; i < 90; i += 1) {
+          var piece = document.createElement('i');
+          piece.style.left = (Math.random() * 100) + '%';
+          piece.style.background = colors[i % colors.length];
+          piece.style.animationDuration = (1.4 + Math.random() * 2) + 's';
+          piece.style.animationDelay = (Math.random() * 0.7) + 's';
+          piece.style.setProperty('--drift', (Math.random() * 160 - 80) + 'px');
+          piece.style.width = (5 + Math.random() * 8) + 'px';
+          piece.style.height = (9 + Math.random() * 10) + 'px';
+          piece.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+          confettiBox.appendChild(piece);
+        }
+        clearTimeout(confettiTimer);
+        confettiTimer = setTimeout(function () { confettiBox.innerHTML = ''; }, 4500);
+      }
+
+      function close() {
+        if (!modal) return;
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+        if (confettiBox) confettiBox.innerHTML = '';
+      }
+
+      window.celebrateOrder = function (order, options) {
+        if (!modal || !order) return;
+        currentOrder = order;
+        var opts = options || {};
+        var pin = order.pickupPin || String(order.id || '').slice(-4);
+        var setText = function (id, text) {
+          var el = document.getElementById(id);
+          if (el) el.textContent = text;
+        };
+        setText('thanksOrderId', order.id || 'YB----');
+        setText('thanksTotal', 'GH\u20b5' + Number(order.total || 0).toFixed(2));
+        setText('thanksPin', pin);
+        setText('thanksCopy', opts.copy || (order.fulfilment === 'Delivery'
+          ? 'Your rider will bring it to ' + (order.location || 'your address') + '. We cannot wait for you to taste it!'
+          : 'Collect it free at ' + (order.pickupPointName || 'the shared pickup point') + '. We cannot wait for you to taste it!'));
+        setText('thanksNote', opts.note || '🌟 The kitchen has your order. Keep your Order ID & PIN handy!');
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        // Small delay so the modal is visible before confetti fires
+        setTimeout(burstConfetti, 120);
+      };
+
+      if (modal) {
+        modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+        var closeBtn = document.getElementById('thanksCloseBtn');
+        if (closeBtn) closeBtn.addEventListener('click', close);
+        var doneBtn = document.getElementById('thanksDoneBtn');
+        if (doneBtn) doneBtn.addEventListener('click', close);
+        var trackBtn = document.getElementById('thanksTrackBtn');
+        if (trackBtn) {
+          trackBtn.addEventListener('click', function () {
+            var id = currentOrder && currentOrder.id;
+            close();
+            if (id && window.openTrackingModal) window.openTrackingModal(id);
+          });
+        }
+      }
+      window.closeThankYou = close;
+
+      // ============================================================
+      // USSD RETURN DETECTION
+      // When the user dials a USSD code and navigates back to our app
+      // (pageshow / visibilitychange) we detect any pending payment and
+      // show the return banner inside the payment modal so they can
+      // confirm payment without hunting for the modal again.
+      // ============================================================
+      var PENDING_PAY_KEY = 'yebs_pending_payment';
+
+      window.savePendingPayment = function(order) {
+        try { localStorage.setItem(PENDING_PAY_KEY, JSON.stringify({ id: order.id, total: order.total, network: order.paymentNetwork, ts: Date.now() })); } catch(e){}
+      };
+      window.clearPendingPayment = function() {
+        try { localStorage.removeItem(PENDING_PAY_KEY); } catch(e){}
+      };
+
+      function checkReturn() {
+        var raw;
+        try { raw = localStorage.getItem(PENDING_PAY_KEY); } catch(e){ return; }
+        if (!raw) return;
+        try {
+          var pending = JSON.parse(raw);
+          // Only act on payments less than 20 minutes old
+          if (!pending || !pending.id || (Date.now() - pending.ts) > 20 * 60 * 1000) {
+            window.clearPendingPayment(); return;
+          }
+          // Show the return banner if the pay modal is already open
+          var banner = document.getElementById('payReturnBanner');
+          var modal2 = document.getElementById('payNowModal');
+          if (banner) {
+            banner.style.display = 'block';
+            banner.classList.add('show');
+            var refEl = document.getElementById('payReturnRef');
+            if (refEl) refEl.textContent = pending.id;
+            var amtEl = document.getElementById('payReturnAmt');
+            if (amtEl) amtEl.textContent = 'GH\u20b5' + Number(pending.total || 0).toFixed(2);
+          }
+          // Re-open the pay modal if it is closed
+          if (modal2 && modal2.style.display === 'none') {
+            if (window.openPayNowModal && window.currentPayOrder) {
+              window.openPayNowModal(window.currentPayOrder, pending.network);
+            } else if (modal2) {
+              // Fallback: just show the banner in a toast
+              var toast = document.createElement('div');
+              toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:99999;background:#065f46;color:white;padding:14px 22px;border-radius:14px;font-size:.9rem;font-weight:700;box-shadow:0 8px 30px rgba(0,0,0,.3);text-align:center;max-width:340px;';
+              toast.innerHTML = '✅ Welcome back! Tap <strong>\"I have paid\"</strong> in your payment screen to verify your MoMo payment for order <strong>' + pending.id + '</strong>.';
+              document.body.appendChild(toast);
+              setTimeout(function(){ if(toast.parentNode) toast.parentNode.removeChild(toast); }, 8000);
+            }
+          }
+        } catch(e){}
+      }
+
+      // Check on tab visibility change (user switched away to dial USSD, now back)
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') setTimeout(checkReturn, 400);
+      });
+      // Also check on page-show (back/forward cache)
+      window.addEventListener('pageshow', function(e) {
+        if (e.persisted) setTimeout(checkReturn, 400);
+      });
+    })();
+  </script>
+</body>
+</html>

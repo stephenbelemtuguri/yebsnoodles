@@ -13,6 +13,7 @@ const FILES = [
   'admin.html',
   'driver.html',
   'shared.js',
+  'recovery.js',
   'sw.js',
   'manifest.json'
 ];

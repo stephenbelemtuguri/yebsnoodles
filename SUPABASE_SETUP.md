@@ -87,6 +87,21 @@ Change the password in **Admin → Settings** after the first login.
 
 ---
 
+## Want individual tables in the Supabase Table Editor?
+
+By default, the app stores everything in `public.yebs_state` for extreme speed and atomic state transactions.
+
+If you want human-readable, browsable tables in the Supabase Table Editor:
+1. Open the SQL Editor: <https://supabase.com/dashboard/project/dujmpwcarxliadnfdydr/sql/new>
+2. Paste [`supabase/separate_tables.sql`](supabase/separate_tables.sql) and click **Run**.
+
+This sets up:
+- `public.yebs_orders`, `public.yebs_drivers`, `public.yebs_admins`, `public.yebs_menu_items`, `public.yebs_reviews`, `public.yebs_audit_logs`, `public.yebs_settings`, and `public.yebs_sessions`.
+- **Automatic triggers**: Whenever the app saves an order, rider signup, or review to `yebs_state`, it is instantly unpacked into the relational tables.
+- **Reverse sync**: If you edit a menu price or order status directly inside the Supabase Table Editor, triggers automatically update `yebs_state` so the live site reflects your changes within seconds.
+
+---
+
 ## Production (Render + Netlify)
 
 Add these environment variables in both dashboards:
@@ -102,6 +117,41 @@ Add these environment variables in both dashboards:
 
 On Render you can instead use the Blueprint's own PostgreSQL (`yebs-db`) and
 skip Supabase entirely.
+
+---
+
+## Password recovery
+
+Both login pages (Admin and Rider) have a **Forgot your password?** link that
+opens a two-step dialog: request a 6-digit code, then set a new password.
+
+| Piece | Detail |
+|---|---|
+| Code lifetime | 10 minutes, single use, 5 wrong attempts maximum |
+| Storage | Only a bcrypt hash of the code is stored, in `recoveryCodes` inside `yebs_state` |
+| Delivery | WhatsApp Cloud API (`WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`) |
+| Admin phone | `ADMIN_RECOVERY_PHONE`, or the phone saved in Admin → Settings |
+| Rider phone | The number used at sign-up |
+| Session safety | A successful reset bumps `sessionEpoch`, signing out every old session |
+
+When WhatsApp is not configured the server prints the code in its log and the
+dialog tells the user to ask the owner. The guaranteed owner fallback works
+without WhatsApp:
+
+```bash
+# Reset the first admin account
+npm run reset:password -- admin "NewStrongPassword"
+
+# Reset a specific rider by username or phone
+npm run reset:password -- driver "NewStrongPassword" 0541234567
+```
+
+The script writes to Supabase when `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY` are set (the same store the deployed app uses),
+otherwise to `database.json`.
+
+> Never expose `RECOVERY_SHOW_CODE=1` on a public host: it returns the code in
+> the HTTP response. It is only meant for local development.
 
 ---
 
@@ -126,6 +176,8 @@ the running app.
 | `PGRST205` / “Could not find the table” | Run `supabase/setup.sql` in the SQL Editor. |
 | `401` from `/rest/v1/yebs_state` | You used the publishable key. Use the **secret** key. |
 | Admin login fails | Set `ADMIN_USERNAME` / `ADMIN_PASSWORD` and restart; the app seeds the admin when the row has none. |
+| Forgot the admin password | Use **Forgot your password?** on the login page, or run `npm run reset:password -- admin "NewPassword"` on the server. |
+| Recovery code never arrives | Set `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `ADMIN_RECOVERY_PHONE`; without them the code is printed in the server log. |
 | `storage: local-file` | No Supabase key or password in the environment. |
 | `P1001` on Render | Use the session pooler or the Blueprint database; never `db.<ref>.supabase.co`. |
 | Data appears then disappears | The app is on `local-file` on one host. Set the same Supabase variables on Render **and** Netlify. |

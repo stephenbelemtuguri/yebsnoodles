@@ -129,6 +129,22 @@ and write the same orders, menu and drivers — no Supabase key required.
 
 Change the admin password in **Settings** before going live.
 
+### Forgot the password?
+
+Both login pages have **Forgot your password?**. It sends a 6-digit code over
+WhatsApp when `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` and
+`ADMIN_RECOVERY_PHONE` are set. If WhatsApp is not configured, the code is
+printed in the Render log, and the owner can always reset it from a shell:
+
+```bash
+npm run reset:password -- admin "NewStrongPassword"
+npm run reset:password -- driver "NewStrongPassword" 0541234567
+```
+
+The script uses the same `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (or
+`DATABASE_URL`) the service uses. Do **not** set `RECOVERY_SHOW_CODE=1` on
+Render: it returns codes in the HTTP response.
+
 ## 5. Notes
 
 - **Database persistence:** data lives in the Render PostgreSQL database, so

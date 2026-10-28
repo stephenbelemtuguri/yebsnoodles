@@ -44,10 +44,13 @@ app.use((req, res, next) => {
 });
 app.use(express.static(__dirname, { extensions: ['html', 'htm'] }));
 
-// Never let browsers cache live operational data.
-app.use('/api', (req, res, next) => {
+// Never let browsers cache live operational data; auto-refresh state from Supabase when remote.
+app.use('/api', async (req, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.set('Pragma', 'no-cache');
+  if (store.isRemote()) {
+    try { await store.refresh(); } catch (e) { /* non-fatal, fallback to memory */ }
+  }
   next();
 });
 
@@ -392,6 +395,38 @@ app.get('/api/admin/notifications', requireRole('admin'), (req, res) => {
   res.json({ success: true, notifications: (db.notifications || []).slice(0, 100) });
 });
 
+// Send one plain WhatsApp Cloud API text message. Used by the kitchen alert
+// above and by the password-recovery flow. Returns { ok, reason } and never
+// throws, so callers can fall back to another channel.
+async function sendWhatsAppText(to, text) {
+  const cfg = whatsappConfig();
+  const target = String(to || cfg.to || '').replace(/[^\d]/g, '');
+  if (!cfg.token || !cfg.phoneId) return { ok: false, reason: 'not-configured' };
+  if (!target) return { ok: false, reason: 'no-phone' };
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const response = await fetch('https://graph.facebook.com/' + cfg.version + '/' + cfg.phoneId + '/messages', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + cfg.token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: target,
+        type: 'text',
+        text: { preview_url: false, body: String(text).slice(0, 3800) }
+      }),
+      signal: controller.signal
+    }).finally(() => clearTimeout(timer));
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error((payload.error && payload.error.message) || ('WhatsApp API ' + response.status));
+    return { ok: true, providerId: payload.messages && payload.messages[0] ? payload.messages[0].id : null };
+  } catch (err) {
+    console.warn('[whatsapp] message failed:', err.message);
+    return { ok: false, reason: err.message };
+  }
+}
+
 // ==========================================================
 // SECURITY PRIMITIVES — bcrypt passwords + HMAC session tokens
 // ==========================================================
@@ -493,13 +528,16 @@ function authenticate(req) {
   const payload = verifyToken(bearerFrom(req));
   if (!payload) return null;
   const db = loadDatabase();
+  // Bumping sessionEpoch (password reset) invalidates every token issued
+  // before the change, even though the HMAC itself is still valid.
+  const epochMatches = (account) => Number(payload.sessionEpoch || 0) === Number(account.sessionEpoch || 0);
   if (payload.role === 'admin') {
     const admin = db.admins.find(a => a.id === payload.sub);
-    return admin ? { payload, admin } : null;
+    return admin && epochMatches(admin) ? { payload, admin } : null;
   }
   if (payload.role === 'driver') {
     const driver = db.drivers.find(d => d.id === payload.sub);
-    return driver ? { payload, driver } : null;
+    return driver && epochMatches(driver) ? { payload, driver } : null;
   }
   return null;
 }
@@ -517,7 +555,8 @@ function requireRole(...roles) {
 
 // Brute-force protection: 5 failed attempts per identity per 15 minutes.
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_MAX_FAILURES = 5;
+const LOGIN_MAX_FAILURES = 10; // hard lockout after this many attempts
+const LOGIN_SOFT_FAILURES = 5; // 30-second cooldown starts here
 const loginAttempts = new Map();
 
 function loginKey(req, role, identity) {
@@ -529,26 +568,72 @@ function rateCheck(req, role, identity) {
   const key = loginKey(req, role, identity);
   const record = loginAttempts.get(key);
   if (!record) return { blocked: false };
+  // Hard block (full window lockout after 10 fails)
   if (record.blockedUntil && record.blockedUntil > Date.now()) {
-    return { blocked: true, retryAfter: Math.ceil((record.blockedUntil - Date.now()) / 1000) };
+    return {
+      blocked: true,
+      retryAfter: Math.ceil((record.blockedUntil - Date.now()) / 1000),
+      retryAfterMs: record.blockedUntil - Date.now(),
+      hardBlocked: true
+    };
+  }
+  // Soft 30-second cooldown between attempts (after 5 fails)
+  if (record.cooldownUntil && record.cooldownUntil > Date.now()) {
+    return {
+      blocked: true,
+      retryAfter: Math.ceil((record.cooldownUntil - Date.now()) / 1000),
+      retryAfterMs: record.cooldownUntil - Date.now(),
+      softBlock: true
+    };
   }
   if (record.firstAt && (Date.now() - record.firstAt) > LOGIN_WINDOW_MS) {
     loginAttempts.delete(key);
   }
-  return { blocked: false };
+  return { blocked: false, count: record ? record.count : 0 };
+}
+
+async function sendLockoutEmail(role, identity) {
+  try {
+    const smtpUser = process.env.SMTP_USER || '';
+    const to = process.env.ADMIN_EMAIL || 'yebsnoodles@gmail.com';
+    if (!smtpUser || !to) return;
+    let nodemailer;
+    try { nodemailer = require('nodemailer'); } catch (e) { return; }
+    const transporter = nodemailer.createTransporter({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: { user: smtpUser, pass: process.env.SMTP_PASSWORD || '' }
+    });
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM || `YEBS Noodles <${smtpUser}>`,
+      to,
+      subject: `🔒 YEBS Security Alert: ${role} account "${identity}" locked after 10 failed logins`,
+      html: `<div style="font-family:sans-serif;max-width:520px;margin:auto"><h2 style="color:#b91c1c">Security Alert</h2><p>The <strong>${role}</strong> account <strong>${identity}</strong> has been locked out after <strong>10 consecutive failed login attempts</strong> at ${new Date().toUTCString()}.</p><p>If this was not you, please reset your password immediately.</p><hr><p style="font-size:0.85rem;color:#555">YEBS Noodles Automated Security &bull; Do not reply to this email.</p></div>`
+    });
+  } catch (e) {
+    console.warn('[LOCKOUT_EMAIL]', e.message);
+  }
 }
 
 function rateFail(req, role, identity) {
   const key = loginKey(req, role, identity);
-  const record = loginAttempts.get(key) || { count: 0, firstAt: Date.now(), blockedUntil: 0 };
+  const record = loginAttempts.get(key) || { count: 0, firstAt: Date.now(), blockedUntil: 0, cooldownUntil: 0 };
   if ((Date.now() - record.firstAt) > LOGIN_WINDOW_MS) {
-    record.count = 0;
-    record.firstAt = Date.now();
-    record.blockedUntil = 0;
+    record.count = 0; record.firstAt = Date.now();
+    record.blockedUntil = 0; record.cooldownUntil = 0;
   }
   record.count += 1;
+  // Soft cooldown: 30s between each attempt after 5 failures
+  if (record.count >= LOGIN_SOFT_FAILURES && record.count < LOGIN_MAX_FAILURES) {
+    record.cooldownUntil = Date.now() + 30000;
+    record.blockedUntil = 0;
+  }
+  // Hard lockout: full window after 10 failures + email alert
   if (record.count >= LOGIN_MAX_FAILURES) {
     record.blockedUntil = Date.now() + LOGIN_WINDOW_MS;
+    record.cooldownUntil = 0;
+    sendLockoutEmail(role, identity).catch(() => {});
   }
   loginAttempts.set(key, record);
   return record;
@@ -574,7 +659,7 @@ const DEFAULT_PICKUP_POINT = {
 };
 
 function ensureSystemAccounts(db) {
-  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'notifications'];
+  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'notifications', 'recoveryCodes'];
   let changed = false;
 
   collections.forEach(key => {
@@ -683,14 +768,17 @@ function loadDatabase() {
 }
 
 function saveDatabase(data) {
-  // Memory + Supabase (when configured). The local file is kept in sync so
-  // `npm start` behaves exactly as before.
+  // Memory + Supabase (when configured). The local file is only used when the
+  // app is running in local-file mode: in production the remote row is the
+  // source of truth, and mirroring it to disk would copy live customer data
+  // (and bcrypt hashes) onto the server's filesystem for no benefit.
   store.set(data);
+  if (store.remoteMode !== 'local') return;
   try {
     fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
-    // Read-only filesystem on Netlify Functions — Supabase already has it.
+    // Read-only filesystem — nothing else to persist.
   }
 }
 
@@ -952,7 +1040,7 @@ app.post('/api/auth/admin/login', (req, res) => {
   rateSuccess(req, 'admin', username);
   logAction("ADMIN_LOGIN_SUCCESS", admin.username, "ADMIN_PORTAL", { role: admin.role }, req);
 
-  const token = createToken(admin.id, 'admin', { username: admin.username, name: admin.name });
+  const token = createToken(admin.id, 'admin', { username: admin.username, name: admin.name, sessionEpoch: admin.sessionEpoch || 0 });
   res.json({
     success: true,
     message: "Admin authenticated successfully.",
@@ -966,6 +1054,20 @@ app.post('/api/auth/admin/login', (req, res) => {
       token
     }
   });
+});
+
+// ADMIN LOCKOUT RESET — only works with the master password from .env
+// This allows recovering from rate-limit lockout without restarting the server.
+app.post('/api/auth/admin/unlock', (req, res) => {
+  const { username, masterKey } = req.body || {};
+  // Allow unlock if masterKey matches the original ADMIN_PASSWORD from env
+  if (!masterKey || masterKey !== DEFAULT_ADMIN_PASSWORD) {
+    return res.status(401).json({ success: false, message: 'Invalid master key.' });
+  }
+  // Clear all rate limit records
+  loginAttempts.clear();
+  logAction('ADMIN_LOCKOUT_CLEARED', username || 'SYSTEM', 'ADMIN_PORTAL', { reason: 'Manual unlock via master key' });
+  return res.json({ success: true, message: 'All login lockouts have been cleared. You may try logging in again.' });
 });
 
 // DRIVER SIGN UP
@@ -1089,13 +1191,214 @@ app.post('/api/auth/driver/login', (req, res) => {
   rateSuccess(req, 'driver', username);
   logAction("DRIVER_LOGIN_SUCCESS", driver.username, "DRIVER_PORTAL", { name: driver.name }, req);
 
-  const token = createToken(driver.id, 'driver', { username: driver.username, name: driver.name || `${driver.fname} ${driver.lname}` });
+  const token = createToken(driver.id, 'driver', { username: driver.username, name: driver.name || `${driver.fname} ${driver.lname}`, sessionEpoch: driver.sessionEpoch || 0 });
   res.json({
     success: true,
     message: `Welcome back, ${driver.fname}!`,
     token,
     expiresInMs: SESSION_TTL_MS,
     driver: { ...publicDriver(driver), token }
+  });
+});
+
+// ==========================================================
+// PASSWORD RECOVERY (admin + driver)
+// ==========================================================
+// A 6-digit code is valid for 10 minutes, is stored only as a bcrypt hash, and
+// is delivered over WhatsApp when the Cloud API is configured. The response
+// never reveals whether an account exists.
+
+const RECOVERY_TTL_MS = 10 * 60 * 1000;
+const RECOVERY_MAX_ATTEMPTS = 5;
+
+function recoveryRole(raw) {
+  const role = String(raw || '').toLowerCase();
+  return role === 'admin' || role === 'driver' ? role : null;
+}
+
+function isLocalRequest(req) {
+  const clean = (value) => String(value || '').split(',')[0].trim().replace(/^::ffff:/, '');
+  const socketIp = clean(req.socket && req.socket.remoteAddress);
+  const forwarded = clean(req.headers['x-forwarded-for']);
+  const local = (ip) => ip === '127.0.0.1' || ip === '::1' || ip === 'localhost' || ip === '';
+  return local(socketIp) && local(forwarded);
+}
+
+function findRecoveryAccount(db, role, identifier) {
+  const needle = String(identifier || '').trim();
+  if (!needle) return null;
+  const lower = needle.toLowerCase();
+  const compact = needle.replace(/\s+/g, '');
+  if (role === 'admin') {
+    return (db.admins || []).find(a => String(a.username || '').toLowerCase() === lower) || null;
+  }
+  return (db.drivers || []).find(d =>
+    String(d.username || '').toLowerCase() === lower ||
+    String(d.phone || '').replace(/\s+/g, '') === compact
+  ) || null;
+}
+
+function recoveryPhoneFor(db, role, account) {
+  if (role === 'driver') return String(account.phone || '');
+  return String(
+    account.recoveryPhone ||
+    (db.settings && db.settings.recoveryPhone) ||
+    process.env.ADMIN_RECOVERY_PHONE ||
+    // Sensible default: the shop's own WhatsApp/MoMo line. The owner can
+    // override it with ADMIN_RECOVERY_PHONE or a recoveryPhone on the account.
+    (db.settings && db.settings.momo && db.settings.momo.payTo) ||
+    ''
+  );
+}
+
+function maskPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 5) return '';
+  return digits.slice(0, 3) + '•••' + digits.slice(-2);
+}
+
+app.post('/api/auth/recovery/start', async (req, res) => {
+  const role = recoveryRole(req.body && req.body.role);
+  const identifier = cleanString(req.body && req.body.identifier, 120);
+  if (!role) {
+    return res.status(400).json({ success: false, message: "Choose whether you are recovering an admin or a rider account." });
+  }
+  if (!identifier) {
+    return res.status(400).json({ success: false, message: "Enter your username or phone number." });
+  }
+
+  const limit = rateCheck(req, 'recovery', identifier);
+  if (limit.blocked) {
+    res.set('Retry-After', String(limit.retryAfter || 900));
+    return res.status(429).json({ success: false, message: `Too many recovery attempts. Try again in ${Math.ceil((limit.retryAfter || 900) / 60)} minute(s).` });
+  }
+
+  const db = loadDatabase();
+  db.recoveryCodes = Array.isArray(db.recoveryCodes) ? db.recoveryCodes : [];
+  const account = findRecoveryAccount(db, role, identifier);
+
+  // Same answer for every identifier so nobody can probe which accounts exist.
+  const generic = {
+    success: true,
+    message: "If that account exists, a 6-digit recovery code has been sent to the phone number on file.",
+    expiresInMinutes: Math.round(RECOVERY_TTL_MS / 60000)
+  };
+
+  if (!account) {
+    rateFail(req, 'recovery', identifier);
+    return res.json({ ...generic, delivered: false, canSelfRecover: false });
+  }
+
+  // Retire any code that is still unused for this account.
+  db.recoveryCodes.forEach(entry => {
+    if (entry.accountId === account.id && !entry.usedAt) entry.usedAt = new Date().toISOString();
+  });
+
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  db.recoveryCodes.push({
+    id: 'rcv-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+    role,
+    accountId: account.id,
+    codeHash: hashPassword(code),
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + RECOVERY_TTL_MS).toISOString(),
+    attempts: 0,
+    usedAt: null
+  });
+  if (db.recoveryCodes.length > 100) db.recoveryCodes = db.recoveryCodes.slice(-100);
+
+  const phone = recoveryPhoneFor(db, role, account);
+  let delivered = false;
+  if (phone) {
+    const sent = await sendWhatsAppText(phone,
+      `YEBS recovery code: ${code}\n\nUse it within 10 minutes to set a new password for "${account.username || account.name || identifier}".\nIf you did not ask for this, ignore this message.`);
+    delivered = sent.ok === true;
+  }
+
+  // Local development convenience: show the code when the request comes from
+  // this machine. On a public host the code is only sent over WhatsApp (or
+  // printed in the server log) unless RECOVERY_SHOW_CODE=1 is set explicitly.
+  const echoSetting = String(process.env.RECOVERY_SHOW_CODE || '').toLowerCase();
+  const showCode = echoSetting === '1' || (echoSetting !== '0' && isLocalRequest(req));
+  if (!delivered) {
+    console.warn(`[recovery] WhatsApp delivery unavailable (${phone ? 'send failed' : 'no phone on file'}). Code for ${role} "${account.username || account.name}": ${code}`);
+  }
+
+  saveDatabase(db);
+  logAction('PASSWORD_RECOVERY_REQUESTED', account.username || account.name || identifier,
+    role === 'admin' ? 'ADMIN_PORTAL' : 'DRIVER_PORTAL',
+    { delivered, phone: maskPhone(phone) }, req);
+
+  res.json({
+    ...generic,
+    delivered,
+    canSelfRecover: Boolean(phone),
+    phoneHint: maskPhone(phone),
+    ...(showCode ? { code } : {})
+  });
+});
+
+app.post('/api/auth/recovery/verify', (req, res) => {
+  const body = req.body || {};
+  const role = recoveryRole(body.role);
+  const identifier = cleanString(body.identifier, 120);
+  const code = String(body.code || '').replace(/\D/g, '');
+  const password = String(body.password || '');
+
+  if (!role || !identifier) {
+    return res.status(400).json({ success: false, message: "Enter your username and the code you received." });
+  }
+  if (code.length !== 6) {
+    return res.status(400).json({ success: false, message: "Enter the 6-digit recovery code." });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ success: false, message: "Choose a new password with at least 8 characters." });
+  }
+
+  const db = loadDatabase();
+  const account = findRecoveryAccount(db, role, identifier);
+  const invalid = { success: false, message: "That code is invalid or has expired. Request a new one." };
+  if (!account) return res.status(400).json(invalid);
+
+  db.recoveryCodes = Array.isArray(db.recoveryCodes) ? db.recoveryCodes : [];
+  const record = db.recoveryCodes
+    .filter(entry => entry.accountId === account.id && !entry.usedAt)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+  if (!record) return res.status(400).json(invalid);
+
+  if (new Date(record.expiresAt).getTime() < Date.now()) {
+    record.usedAt = new Date().toISOString();
+    saveDatabase(db);
+    return res.status(400).json({ success: false, message: "That code has expired. Request a new one." });
+  }
+
+  record.attempts = Number(record.attempts || 0) + 1;
+  if (record.attempts > RECOVERY_MAX_ATTEMPTS) {
+    record.usedAt = new Date().toISOString();
+    saveDatabase(db);
+    return res.status(429).json({ success: false, message: "Too many wrong codes. Request a fresh code and try again." });
+  }
+
+  if (!verifyPassword(code, record.codeHash)) {
+    saveDatabase(db);
+    return res.status(400).json(invalid);
+  }
+
+  record.usedAt = new Date().toISOString();
+  account.password = hashPassword(password);
+  account.passwordUpdatedAt = new Date().toISOString();
+  account.sessionEpoch = (account.sessionEpoch || 0) + 1;
+  saveDatabase(db);
+
+  rateSuccess(req, 'recovery', identifier);
+  logAction('PASSWORD_RECOVERED', account.username || account.name || identifier,
+    role === 'admin' ? 'ADMIN_PORTAL' : 'DRIVER_PORTAL', { via: 'recovery-code' }, req);
+
+  res.json({
+    success: true,
+    message: "Password updated. Sign in with your new password.",
+    username: account.username || account.phone || identifier
   });
 });
 
@@ -1155,6 +1458,22 @@ app.post('/api/drivers/:id/location', (req, res) => {
       if (driver.photo) o.driver.photo = driver.photo;
       if (driver.phone) o.driver.phone = driver.phone;
       if (driver.vehicle) o.driver.vehicle = driver.vehicle;
+      if (typeof pushOrderUpdate === 'function') {
+        pushOrderUpdate(o.id, {
+          type: 'location',
+          driver: {
+            lat: driver.lat,
+            lng: driver.lng,
+            speedKmh: driver.speedKmh,
+            statusText: driver.statusText,
+            photo: driver.photo,
+            name: driver.name,
+            phone: driver.phone,
+            vehicle: driver.vehicle
+          },
+          order: projectOrder(o, 'customer')
+        });
+      }
     }
   });
 
@@ -1582,6 +1901,9 @@ app.post('/api/orders/:id/pay/momo', (req, res) => {
   });
 
   saveDatabase(db);
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'payment', order: projectOrder(order, 'customer') });
+  }
   logAction(result.ok ? (result.alreadyPaid ? 'MOMO_ALREADY_PAID' : 'MOMO_AUTO_VERIFIED') : 'MOMO_PAYMENT_REVIEW',
     order.customer, order.id, {
       amount: order.momoAmount,
@@ -1800,6 +2122,9 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), (req, res) 
   addPaymentAudit(order, 'CASH_COLLECTED', actorName, { received, expected: total });
 
   saveDatabase(db);
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'payment', order: projectOrder(order, 'customer') });
+  }
   logAction('CASH_PAYMENT_COLLECTED', actorName, order.id, { received, expected: total }, req);
 
   res.json({
@@ -2021,6 +2346,40 @@ app.get('/api/orders/:id', (req, res) => {
 // ORDER SUBMISSION & MANAGEMENT
 // ========================================
 
+function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup) {
+  if (!isDelivery) {
+    return { fee: 0, distanceKm: 0, discount: 0, baseFee: 0, mealCount: 0 };
+  }
+  const mealCount = (items || []).reduce((sum, i) => sum + (Number(i.quantity) || 1), 0);
+  const originLat = (sharedPickup && Number(sharedPickup.lat)) || 5.5612;
+  const originLng = (sharedPickup && Number(sharedPickup.lng)) || -0.2155;
+  const destLat = (orderPin && Number(orderPin.lat)) || originLat;
+  const destLng = (orderPin && Number(orderPin.lng)) || originLng;
+  const rawDist = calculateDistanceKm(originLat, originLng, destLat, destLng);
+  const distanceKm = Math.max(0.5, Math.round(rawDist * 10) / 10);
+  const baseFee = Math.round(distanceKm * 3 * 100) / 100; // 3 Cedis per km
+
+  let discount = 0;
+  if (mealCount >= 6) discount = 6;
+  else if (mealCount >= 4) discount = 4;
+  else if (mealCount >= 2) discount = 2;
+
+  const fee = Math.max(0, Math.round((baseFee - discount) * 100) / 100);
+  return { fee, distanceKm, discount, baseFee, mealCount };
+}
+
 app.post('/api/orders', async (req, res) => {
   const body = req.body || {};
   const db = loadDatabase();
@@ -2059,8 +2418,6 @@ app.post('/api/orders', async (req, res) => {
   const subtotal = Math.round(items.reduce((sum, i) => sum + (i.price * i.quantity), 0) * 100) / 100;
   const requestedFulfilment = cleanString(body.fulfilment || 'Delivery', 40);
   const isDelivery = /deliver/i.test(requestedFulfilment);
-  const deliveryFee = isDelivery ? (Number(db.settings && db.settings.deliveryFee) || 15) : 0;
-  const total = Math.round((subtotal + deliveryFee) * 100) / 100;
 
   let id = requested;
   let pin;
@@ -2095,6 +2452,13 @@ app.post('/api/orders', async (req, res) => {
     ? sharedPickup.name
     : cleanString(body.location || 'Adabraka, Accra', 200);
 
+  // Dynamic delivery fee calculation: GH₵3 per km with multi-meal volume discount:
+  // 2-3 meals: GH₵2 off, 4-5 meals: GH₵4 off, 6+ meals: GH₵6 off.
+  const deliveryCalc = calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup);
+  const clientFee = Number(body.deliveryFee);
+  const deliveryFee = (Number.isFinite(clientFee) && clientFee >= 0) ? clientFee : deliveryCalc.fee;
+  const total = Math.round((subtotal + deliveryFee) * 100) / 100;
+
   const newOrder = {
     id,
     pickupPin: pin,
@@ -2114,6 +2478,9 @@ app.post('/api/orders', async (req, res) => {
     items,
     subtotal,
     deliveryFee,
+    deliveryDistanceKm: deliveryCalc.distanceKm,
+    deliveryDiscount: deliveryCalc.discount,
+    deliveryBaseFee: deliveryCalc.baseFee,
     total,
     payment,
     paymentMode,
@@ -2161,6 +2528,10 @@ app.post('/api/orders', async (req, res) => {
     console.warn('[whatsapp] notification skipped:', err.message);
   }
 
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(newOrder.id, { type: 'created', order: projectOrder(newOrder, 'customer') });
+  }
+
   res.status(201).json(projectOrder(newOrder, 'public'));
 });
 
@@ -2187,7 +2558,75 @@ app.patch('/api/orders/:id/status', requireRole('driver', 'admin'), (req, res) =
   saveDatabase(db);
   logAction("ORDER_STATUS_CHANGED", driver ? driver.name : (req.auth.payload.role === 'admin' ? req.auth.admin.username : 'DRIVER'), order.id, { newStatus: order.status }, req);
 
+  // Push real-time update to any customer watching this order via SSE
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'status', order: projectOrder(order, 'customer') });
+  }
+
   res.json(projectOrder(order, req.auth.payload.role === 'admin' ? 'admin' : 'driver'));
+});
+
+// Driver or Admin claims / accepts an order for delivery
+app.post('/api/orders/:id/claim', requireRole('driver', 'admin'), (req, res) => {
+  const db = loadDatabase();
+  const id = normalizeOrderId(req.params.id);
+  const order = db.orders.find(o => String(o.id).toUpperCase() === id);
+  if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+
+  const role = req.auth.payload.role;
+  const driverObj = role === 'driver' ? req.auth.driver : (req.body.driver || { id: 'admin-dispatch', name: req.auth.admin.name || req.auth.admin.username, phone: req.auth.admin.phone || '' });
+  const driverName = driverObj.name || `${driverObj.fname || ''} ${driverObj.lname || ''}`.trim() || driverObj.username || 'YEBS Rider';
+
+  order.driverId = driverObj.id || null;
+  order.driverName = driverName;
+  order.driverPhone = driverObj.phone || null;
+  order.driver = {
+    id: driverObj.id || null,
+    name: driverName,
+    phone: driverObj.phone || null,
+    vehicle: driverObj.vehicle || null,
+    photo: driverObj.photo || null,
+    currentLocation: (driverObj.lat && driverObj.lng) ? { lat: Number(driverObj.lat), lng: Number(driverObj.lng) } : (order.driver && order.driver.currentLocation ? order.driver.currentLocation : null)
+  };
+  if (order.status === 'Received' || order.status === 'pending' || order.status === 'kitchen' || !order.status) {
+    order.status = 'enroute';
+    order.enrouteAt = new Date().toISOString();
+  }
+
+  saveDatabase(db);
+  logAction("ORDER_CLAIMED", driverName, order.id, { driverId: driverObj.id, status: order.status }, req);
+
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'status', order: projectOrder(order, 'customer') });
+  }
+
+  res.json({ success: true, message: `Delivery assigned to ${driverName}.`, order: projectOrder(order, role) });
+});
+
+// Driver or Admin releases / unclaims an order
+app.post('/api/orders/:id/unclaim', requireRole('driver', 'admin'), (req, res) => {
+  const db = loadDatabase();
+  const id = normalizeOrderId(req.params.id);
+  const order = db.orders.find(o => String(o.id).toUpperCase() === id);
+  if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+
+  const prevDriver = order.driverName || (order.driver && order.driver.name) || 'Rider';
+  order.driverId = null;
+  order.driverName = null;
+  order.driverPhone = null;
+  order.driver = null;
+  if (order.status === 'enroute') {
+    order.status = 'Received';
+  }
+
+  saveDatabase(db);
+  logAction("ORDER_UNCLAIMED", prevDriver, order.id, {}, req);
+
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'status', order: projectOrder(order, 'customer') });
+  }
+
+  res.json({ success: true, message: "Order unassigned and available for any rider to claim.", order: projectOrder(order, req.auth.payload.role) });
 });
 
 // Handover validation: the customer's code must be the last 4 digits of the ID.
@@ -2203,9 +2642,13 @@ app.post('/api/orders/:id/verify-pin', requireRole('driver', 'admin'), (req, res
   if (entered && entered === expected) {
     order.verifiedByDriver = true;
     order.verifiedAt = new Date().toISOString();
-    if (order.status !== 'delivered') order.status = 'arrived';
+    order.status = 'delivered';
+    order.deliveredAt = new Date().toISOString();
     saveDatabase(db);
     logAction("PIN_VERIFIED", req.auth.payload.role === 'admin' ? req.auth.admin.username : (req.auth.driver.name || 'DRIVER'), order.id, { customer: order.customer }, req);
+    if (typeof pushOrderUpdate === 'function') {
+      pushOrderUpdate(order.id, { type: 'delivered', order: projectOrder(order, 'customer') });
+    }
     return res.json({
       success: true,
       message: `Order ID verified ✅ Hand ${order.id} to ${order.customer}.`,
@@ -2710,6 +3153,7 @@ app.post('/api/admin/settings/credentials', requireRole('admin'), (req, res) => 
     }
     admin.password = hashPassword(String(newPassword));
     admin.passwordUpdatedAt = new Date().toISOString();
+    admin.sessionEpoch = (admin.sessionEpoch || 0) + 1;
     changed.push('password');
   }
 
@@ -2718,7 +3162,7 @@ app.post('/api/admin/settings/credentials', requireRole('admin'), (req, res) => 
   saveDatabase(db);
   logAction("ADMIN_CREDENTIALS_UPDATED", admin.username, "SETTINGS", { changed }, req);
 
-  const token = createToken(admin.id, 'admin', { username: admin.username, name: admin.name });
+  const token = createToken(admin.id, 'admin', { username: admin.username, name: admin.name, sessionEpoch: admin.sessionEpoch || 0 });
   res.json({
     success: true,
     message: `Updated: ${changed.join(' and ')}. Please use your new credentials next time.`,
@@ -3360,7 +3804,61 @@ function pushToDriver(driverId, payload) {
   if (client) client.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-// Admin: read/update the merchant wallet every payment settles into.
+// ──────────────────────────────────────────────────────────────
+// Customer-facing SSE: live order status stream (no auth needed)
+// The tracking modal subscribes to /api/sse/order/:id and gets a
+// push whenever the order status, payment or driver changes.
+// ──────────────────────────────────────────────────────────────
+const orderSseClients = new Map(); // orderId -> Set<res>
+
+app.get('/api/sse/order/:id', (req, res) => {
+  const orderId = normalizeOrderId(req.params.id);
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable Nginx buffering on Render
+  res.flushHeaders();
+
+  if (!orderSseClients.has(orderId)) orderSseClients.set(orderId, new Set());
+  orderSseClients.get(orderId).add(res);
+
+  // Send current snapshot immediately
+  try {
+    const db = loadDatabase();
+    const order = db.orders.find(o => String(o.id).toUpperCase() === orderId);
+    if (order) res.write(`data: ${JSON.stringify({ type: 'snapshot', order: projectOrder(order, 'customer') })}\n\n`);
+  } catch (e) { /* non-fatal */ }
+
+  // Heartbeat every 25s to prevent Render from dropping idle SSE connections
+  const heartbeat = setInterval(() => {
+    try { res.write(`: ping\n\n`); } catch (e) { clearInterval(heartbeat); }
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    const set = orderSseClients.get(orderId);
+    if (set) { set.delete(res); if (set.size === 0) orderSseClients.delete(orderId); }
+  });
+});
+
+// Public lightweight order status endpoint (no auth) — used by the tracking page
+app.get('/api/orders/:id/track', (req, res) => {
+  const db = loadDatabase();
+  const id = normalizeOrderId(req.params.id);
+  const order = db.orders.find(o => String(o.id).toUpperCase() === id);
+  if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+  res.json({ success: true, order: projectOrder(order, 'customer') });
+});
+
+function pushOrderUpdate(orderId, payload) {
+  const id = normalizeOrderId(orderId);
+  const clients = orderSseClients.get(id);
+  if (!clients || clients.size === 0) return;
+  const msg = `data: ${JSON.stringify(payload)}\n\n`;
+  clients.forEach(r => { try { r.write(msg); } catch (e) { clients.delete(r); } });
+}
+
+
 app.get('/api/admin/settings/momo', requireRole('admin'), (req, res) => {
   const db = loadDatabase();
   res.json({ success: true, momo: getMomoSettings(db) });
@@ -3461,7 +3959,9 @@ function start() {
       const data = await store.init(loadDatabase);
       if (ensureSystemAccounts(data)) {
         store.set(data);
-        try { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); } catch (e) { /* read-only fs */ }
+        if (store.remoteMode === 'local') {
+          try { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); } catch (e) { /* read-only fs */ }
+        }
       }
       migratePasswords();
       return data;

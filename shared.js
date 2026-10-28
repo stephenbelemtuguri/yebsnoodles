@@ -1339,7 +1339,14 @@ export async function apiAdminLogin(username, password) {
       if (data.expiresInMs) sessionStorage.setItem('yebs_admin_expires_in', String(data.expiresInMs));
       return { success: true, admin: data.admin, token };
     }
-    return { success: false, error: data.message || 'Invalid administrator credentials.' };
+    // Pass rate-limit metadata through so the UI can show a countdown
+    return {
+      success: false,
+      error: data.message || 'Invalid administrator credentials.',
+      retryAfterMs: data.retryAfterMs || (data.retryAfter ? data.retryAfter * 1000 : 0),
+      hardBlocked: !!data.hardBlocked,
+      softBlock: !!data.softBlock
+    };
   } catch (err) {
     return { success: false, error: 'Cannot reach the YEBS server. Run start.bat / npm start, then sign in again.' };
   }
@@ -1520,11 +1527,14 @@ export async function apiFetchPublicSettings() {
 
 export async function apiFetchMenu() {
   try {
-    const res = await fetch(`${API_BASE}/api/menu`);
+    const res = await fetch(`${API_BASE}/api/menu`, { cache: 'no-store' });
     if (res.ok) {
       const items = await res.json();
       if (Array.isArray(items) && items.length > 0) {
-        saveMenuItems(items);
+        // Server is authoritative: always overwrite the local cache so admin
+        // price / image changes survive a page refresh.
+        try { localStorage.setItem(MENU_KEY, JSON.stringify(items)); } catch(e) {}
+        broadcastEvent("MENU_UPDATED", { items });
         return items;
       }
     }
@@ -2268,5 +2278,93 @@ export async function apiVerifyPin(orderId, pin) {
     return data;
   } catch (e) {
     return { success: false, message: 'Server unreachable.' };
+  }
+}
+
+/**
+ * Calculate dynamic delivery fee:
+ * Base rate: GH₵3.00 per km from the restaurant/pickup point.
+ * Multi-meal volume discount:
+ *   - 2 to 3 meals: GH₵2.00 off
+ *   - 4 to 5 meals: GH₵4.00 off
+ *   - 6 or more meals: GH₵6.00 off
+ * If collection: GH₵0.00 (Free).
+ */
+export function calculateDeliveryQuote(distanceKm, mealCount, isDelivery) {
+  if (!isDelivery) {
+    return {
+      distanceKm: 0,
+      baseFee: 0,
+      discount: 0,
+      finalFee: 0,
+      mealCount: Number(mealCount || 0),
+      discountMessage: 'Collection at shared pickup is Free'
+    };
+  }
+  const dist = Math.max(0.5, Math.round(Number(distanceKm || 2.5) * 10) / 10);
+  const baseFee = Math.round(dist * 3 * 100) / 100; // 3 Cedis per km
+  const count = Number(mealCount || 0);
+
+  let discount = 0;
+  let nextTierMessage = '';
+
+  if (count >= 6) {
+    discount = 6;
+    nextTierMessage = 'Max GH₵6 delivery discount applied! 🎉';
+  } else if (count >= 4) {
+    discount = 4;
+    nextTierMessage = `Add ${6 - count} more meal to get GH₵6 off delivery!`;
+  } else if (count >= 2) {
+    discount = 2;
+    nextTierMessage = `Add ${4 - count} more meal to get GH₵4 off delivery!`;
+  } else {
+    discount = 0;
+    nextTierMessage = 'Order 2 or more meals to save up to GH₵6 on delivery!';
+  }
+
+  const finalFee = Math.max(0, Math.round((baseFee - discount) * 100) / 100);
+  return {
+    distanceKm: dist,
+    baseFee,
+    discount,
+    finalFee,
+    mealCount: count,
+    nextTierMessage
+  };
+}
+
+export async function apiClaimOrder(orderId) {
+  if (!orderId) return { success: false, message: 'Missing order ID' };
+  try {
+    const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/claim`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.order) {
+      mergeServerOrders([data.order]);
+      broadcastEvent("ORDER_STATUS_CHANGED", { orderId, status: data.order.status, order: data.order });
+    }
+    return { ...data, ok: res.ok };
+  } catch (e) {
+    return { success: false, message: 'Could not reach server to claim delivery.' };
+  }
+}
+
+export async function apiUnclaimOrder(orderId) {
+  if (!orderId) return { success: false, message: 'Missing order ID' };
+  try {
+    const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/unclaim`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.order) {
+      mergeServerOrders([data.order]);
+      broadcastEvent("ORDER_STATUS_CHANGED", { orderId, status: data.order.status, order: data.order });
+    }
+    return { ...data, ok: res.ok };
+  } catch (e) {
+    return { success: false, message: 'Could not reach server to unclaim delivery.' };
   }
 }

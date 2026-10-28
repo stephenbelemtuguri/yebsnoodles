@@ -588,6 +588,21 @@
       margin-bottom: 14px;
       display: none;
     }
+    .auth-forgot-link {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 6px;
+      border: 0;
+      background: transparent;
+      color: #52785b;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .auth-forgot-link:hover { color: #173d30; }
     .auth-success-box {
       background: #f0fdf4;
       border: 1.5px solid #86efac;
@@ -608,6 +623,7 @@
       margin-top: auto;
     }
   </style>
+  <link rel="stylesheet" href="mobile.css">
 </head>
 <body>
   <script>
@@ -747,6 +763,15 @@
             Each customer's <strong>4-digit PIN is the last 4 digits of their Order ID</strong> (e.g. Order YB-3041 → PIN 3041). Ask for it, verify it below, then hand over the food. Cash orders are recorded here too.
           </p>
 
+          <!-- Driver Order Selection & Filtering -->
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;" id="driverFilterBar">
+            <button type="button" class="btn btn-sm driver-filter-btn active" data-filter="all" style="font-size:0.75rem; padding:6px 12px; border-radius:999px; background:#173d30; color:white; border:none; cursor:pointer;">📦 All Orders</button>
+            <button type="button" class="btn btn-sm driver-filter-btn" data-filter="my" style="font-size:0.75rem; padding:6px 12px; border-radius:999px; background:#f4f1e8; color:#173d30; border:1px solid #d8ddcf; cursor:pointer;">🛵 My Deliveries (<span id="myDeliveriesCount">0</span>)</button>
+            <button type="button" class="btn btn-sm driver-filter-btn" data-filter="available" style="font-size:0.75rem; padding:6px 12px; border-radius:999px; background:#f4f1e8; color:#173d30; border:1px solid #d8ddcf; cursor:pointer;">⚡ Available to Claim (<span id="availableDeliveriesCount">0</span>)</button>
+            <button type="button" class="btn btn-sm driver-filter-btn" data-filter="direct" style="font-size:0.75rem; padding:6px 12px; border-radius:999px; background:#f4f1e8; color:#173d30; border:1px solid #d8ddcf; cursor:pointer;">🚚 Direct Delivery</button>
+            <button type="button" class="btn btn-sm driver-filter-btn" data-filter="pickup" style="font-size:0.75rem; padding:6px 12px; border-radius:999px; background:#f4f1e8; color:#173d30; border:1px solid #d8ddcf; cursor:pointer;">📍 Pickup Point</button>
+          </div>
+
           <div id="sessionPackagesList">
             <!-- Dynamic package cards populated with Order ID, Customer Name, Phone, and 4-Digit Security PIN -->
           </div>
@@ -836,6 +861,17 @@
   <footer>
     YEBS Noodles Driver Portal · 4-Digit Pickup PIN Security · Bilingual Voice Megaphone (English + Twi) · PWA Ready
   </footer>
+  <!-- Dark / Light Mode Toggle -->
+  <button id="themeToggleBtnDriver" aria-label="Toggle dark/light mode" title="Toggle dark/light mode" style="position:fixed;bottom:20px;right:16px;z-index:9999;width:48px;height:48px;border-radius:50%;border:2px solid rgba(255,255,255,0.15);background:#173d30;color:white;font-size:1.3rem;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;transition:transform .2s;">&#127769;</button>
+  <script>
+    (function(){
+      var THEME_KEY='yebs_theme'; var btn=document.getElementById('themeToggleBtnDriver'); var html=document.documentElement;
+      function applyTheme(t){ html.setAttribute('data-theme',t); document.body.setAttribute('data-theme',t); if(btn) btn.textContent=t==='dark'?'\u2600\ufe0f':'\ud83c\udf19'; try{localStorage.setItem(THEME_KEY,t);}catch(e){} }
+      var saved=''; try{saved=localStorage.getItem(THEME_KEY)||'';}catch(e){} if(!saved) saved=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light'; applyTheme(saved);
+      if(btn) btn.addEventListener('click',function(){ var c=html.getAttribute('data-theme')||'light'; applyTheme(c==='dark'?'light':'dark'); });
+    })();
+  </script>
+
 
   <!-- Driver Authentication Modal must exist before the module script runs -->
   <div id="driverAuthModal" class="auth-overlay" style="display:flex;">
@@ -865,6 +901,7 @@
             <button type="submit" id="driverLoginSubmitBtn" class="btn btn-orange" style="width:100%; padding:12px; font-size:0.95rem; margin-top:8px;">
               🛵 Rider Portal Login
             </button>
+            <button type="button" id="driverForgotBtn" class="auth-forgot-link">Forgot your password?</button>
           </form>
           <div style="background:#f8f6f0; border:1px solid #e8e3d6; border-radius:8px; padding:12px; margin-top:14px; font-size:0.8rem; color:var(--muted); line-height:1.4;">
             New rider joining YEBS? Click the <strong>Driver Sign Up</strong> tab above to create an account and receive your auto-generated rider username.
@@ -978,10 +1015,13 @@
       apiLookupOrder,
       apiPayCash,
       apiFetchOrder,
+      apiClaimOrder,
+      apiUnclaimOrder,
       getPickupPoint,
       applyServerSession,
       startLiveOrderSync
     } from './shared.js';
+    import { openRecovery } from './recovery.js';
 
     initStore();
 
@@ -1358,40 +1398,101 @@
     }
 
     // ===============================================
-    // RENDER SESSION PACKAGES WITH 4-DIGIT PIN SECURITY
+    // RENDER SESSION PACKAGES WITH DRIVER ASSIGNMENT & 4-DIGIT PIN SECURITY
     // ===============================================
+    let currentDriverFilter = 'all';
+
+    const driverFilterBar = document.getElementById('driverFilterBar');
+    if (driverFilterBar) {
+      driverFilterBar.addEventListener('click', (e) => {
+        const btn = e.target.closest('.driver-filter-btn');
+        if (!btn) return;
+        driverFilterBar.querySelectorAll('.driver-filter-btn').forEach(b => {
+          b.classList.remove('active');
+          b.style.background = '#f4f1e8';
+          b.style.color = '#173d30';
+          b.style.border = '1px solid #d8ddcf';
+        });
+        btn.classList.add('active');
+        btn.style.background = '#173d30';
+        btn.style.color = 'white';
+        btn.style.border = 'none';
+        currentDriverFilter = btn.dataset.filter || 'all';
+        renderSessionPackages();
+      });
+    }
+
     function renderSessionPackages() {
       const orders = getOrders();
       const session = getSessionState();
+      const driver = getCurrentDriver();
 
       const activeOrders = orders.filter(o => o.status !== 'cancelled');
       sessionBatchOrdersBadge.textContent = `${activeOrders.length} Packages`;
-      sessionBatchTitle.textContent = `Session #${session.sessionNumber || 1}: All Foods Delivery to Pickup Point`;
+      sessionBatchTitle.textContent = `Session #${session.sessionNumber || 1}: All Foods Delivery`;
+
+      const myOrders = activeOrders.filter(o => {
+        const dId = o.driverId || (o.driver && o.driver.id);
+        const dName = o.driverName || (o.driver && o.driver.name);
+        return (driver.id && dId === driver.id) || (driver.name && dName && dName.toLowerCase() === driver.name.toLowerCase());
+      });
+
+      const availableOrders = activeOrders.filter(o => {
+        const hasDriver = o.driverId || (o.driver && o.driver.name);
+        return !hasDriver && o.status !== 'delivered';
+      });
+
+      const myCountEl = document.getElementById('myDeliveriesCount');
+      if (myCountEl) myCountEl.textContent = String(myOrders.length);
+      const availCountEl = document.getElementById('availableDeliveriesCount');
+      if (availCountEl) availCountEl.textContent = String(availableOrders.length);
+
+      let displayedOrders = activeOrders;
+      if (currentDriverFilter === 'my') {
+        displayedOrders = myOrders;
+      } else if (currentDriverFilter === 'available') {
+        displayedOrders = availableOrders;
+      } else if (currentDriverFilter === 'direct') {
+        displayedOrders = activeOrders.filter(o => o.fulfilment === 'Delivery');
+      } else if (currentDriverFilter === 'pickup') {
+        displayedOrders = activeOrders.filter(o => o.fulfilment === 'Collection');
+      }
 
       const accountedCount = activeOrders.filter(o => o.verifiedByDriver || o.status === 'delivered').length;
       packagesAccountedRatio.textContent = `${accountedCount} / ${activeOrders.length}`;
 
-      if (activeOrders.length === 0) {
+      if (displayedOrders.length === 0) {
         sessionPackagesList.innerHTML = `
           <div style="text-align:center; padding:30px 10px; color:var(--muted); font-size:0.88rem;">
-            No food orders currently in this session. Real orders placed by customers will appear here automatically.
+            No food orders matching this filter (${currentDriverFilter}). Real orders placed by customers will appear here automatically.
           </div>
         `;
         return;
       }
 
-      sessionPackagesList.innerHTML = activeOrders.map(order => {
+      sessionPackagesList.innerHTML = displayedOrders.map(order => {
         const isVerified = order.verifiedByDriver || order.status === 'delivered';
+        const isDirect = order.fulfilment === 'Delivery';
+        const isMyOrder = myOrders.some(m => m.id === order.id);
+        const isUnassigned = availableOrders.some(a => a.id === order.id);
+        const assignedDriverName = order.driverName || (order.driver && order.driver.name) || '';
+
         const itemsText = order.items && order.items.length
-          ? order.items.map(i => `• <strong>${i.name}</strong> (${i.noodle}) x${i.quantity} = GH₵${i.price * i.quantity}`).join('<br>')
+          ? order.items.map(i => `• <strong>${i.name}</strong> (${i.noodle || 'Spaghetti'}) x${i.quantity} = GH₵${Number(i.price * i.quantity).toFixed(2)}`).join('<br>')
           : 'Ghanaian Street Noodles';
 
         return `
           <div class="package-card ${isVerified ? 'accounted' : ''}" data-id="${order.id}">
-            <div class="package-header">
-              <span class="package-order-id">#${order.id}</span>
+            <div class="package-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="package-order-id">#${order.id}</span>
+                ${isDirect
+                  ? `<span class="badge" style="background:#ffedd5; color:#c2410c; font-size:0.7rem; font-weight:800;">🚚 DIRECT CUSTOMER DELIVERY</span>`
+                  : `<span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.7rem; font-weight:800;">🏢 PICKUP POINT</span>`
+                }
+              </div>
               <span class="badge" style="background:${isVerified ? '#dcfce7' : '#fef3c7'}; color:${isVerified ? '#166534' : '#92400e'}; padding:3px 8px; border-radius:999px; font-size:0.72rem; font-weight:800; text-transform:uppercase;">
-                ${isVerified ? '✅ PIN VERIFIED' : order.status.toUpperCase()}
+                ${isVerified ? '✅ DELIVERED' : order.status.toUpperCase()}
               </span>
             </div>
 
@@ -1399,20 +1500,69 @@
             <div class="package-cust-line">
               <span>👤 <strong>${order.customer}</strong></span>
               <a href="${formatTelHref(order.phone)}" class="package-phone">📞 ${order.phone}</a>
-              <a href="${formatWhatsAppUrl(order.phone, `Hello ${order.customer}! I am your YEBS driver at the pickup point with order #${order.id}.`)}" target="_blank" style="color:#16a34a; font-size:0.85rem; text-decoration:none; font-weight:700;">💬 WhatsApp</a>
+              <a href="${formatWhatsAppUrl(order.phone, `Hello ${order.customer}! I am your YEBS driver with order #${order.id}.`)}" target="_blank" style="color:#16a34a; font-size:0.85rem; text-decoration:none; font-weight:700;">💬 WhatsApp</a>
             </div>
+
+            <!-- Delivery Location & GPS Navigation -->
+            ${isDirect ? `
+              <div style="margin:8px 0; padding:8px 10px; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; font-size:0.8rem;">
+                <div>📍 <strong>Customer Delivery Address:</strong> ${order.location || 'Direct address'}</div>
+                ${order.mapPin && Number.isFinite(Number(order.mapPin.lat)) ? `
+                  <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
+                    <a href="https://www.google.com/maps/dir/?api=1&destination=${order.mapPin.lat},${order.mapPin.lng}" target="_blank" class="btn btn-sm" style="background:#ea580c; color:white; text-decoration:none; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
+                      🗺️ Open in Google Maps
+                    </a>
+                    <button type="button" class="btn btn-sm view-on-map-btn" data-lat="${order.mapPin.lat}" data-lng="${order.mapPin.lng}" data-name="${order.customer}" style="background:#fff; color:#ea580c; border:1px solid #ea580c; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
+                      📍 Show on Driver Map
+                    </button>
+                  </div>
+                ` : ''}
+              </div>
+            ` : `
+              <div style="margin:8px 0; padding:8px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:0.8rem;">
+                <div>📍 <strong>Collection Point:</strong> ${order.pickupPointName || (order.pickupPoint && order.pickupPoint.name) || 'VIP Station Pickup'}</div>
+                <div style="margin-top:6px;">
+                  <a href="https://www.google.com/maps/dir/?api=1&destination=5.5612,-0.2155" target="_blank" class="btn btn-sm" style="background:#16a34a; color:white; text-decoration:none; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
+                    🗺️ Navigate to Pickup Point
+                  </a>
+                </div>
+              </div>
+            `}
 
             <!-- Food Details -->
             <div class="package-food-box">
               <div style="font-weight:700; color:var(--forest); margin-bottom:4px;">🍜 Food Items:</div>
               <div>${itemsText}</div>
               <div style="margin-top:6px; font-weight:700; color:var(--ink);">
-                Total: GH₵${order.total} · Payment: ${order.payment || 'MTN MoMo / Cash'}
+                Total: GH₵${Number(order.total || 0).toFixed(2)} · Payment: ${order.payment || 'MTN MoMo / Cash'}
               </div>
               ${order.notes ? `<div style="font-size:0.8rem; color:var(--orange); margin-top:4px;">Note: "${order.notes}"</div>` : ''}
             </div>
 
-            <!-- Payment state (cash is collected by the rider at handover) -->
+            <!-- Delivery Assignment / Selection Action -->
+            <div style="margin-top:8px;">
+              ${isUnassigned ? `
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; padding:8px 12px;">
+                  <span style="font-size:0.8rem; color:#64748b; font-weight:600;">⚡ Unassigned — Ready for delivery</span>
+                  <button type="button" class="btn btn-orange btn-sm claim-delivery-btn" data-id="${order.id}" style="padding:6px 14px; font-size:0.8rem; font-weight:700;">
+                    🛵 Accept Delivery
+                  </button>
+                </div>
+              ` : isMyOrder ? `
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:8px 12px;">
+                  <span style="font-size:0.8rem; color:#166534; font-weight:700;">✅ Assigned to You (${order.status})</span>
+                  <button type="button" class="btn btn-outline btn-sm unclaim-delivery-btn" data-id="${order.id}" style="padding:4px 10px; font-size:0.75rem; color:#b91c1c; border-color:#fca5a5;">
+                    Release
+                  </button>
+                </div>
+              ` : `
+                <div style="font-size:0.78rem; color:#64748b; background:#f1f5f9; padding:6px 10px; border-radius:6px;">
+                  🛵 Assigned to: <strong>${assignedDriverName}</strong>
+                </div>
+              `}
+            </div>
+
+            <!-- Payment state -->
             <div style="margin-top:8px; font-size:0.78rem; background:#fbfbf9; border:1px solid #eceae4; border-radius:8px; padding:7px 10px;">
               ${order.paymentStatus === 'paid'
                 ? `✅ <strong style="color:#166534;">PAID</strong>${order.verificationMethod === 'cash-driver' ? ' · cash collected' : ' · MoMo verified'} · GH₵${Number(order.total || 0).toFixed(2)}`
@@ -1426,7 +1576,7 @@
             </div>
 
             <!-- 4-Digit Pickup PIN Security Verification -->
-            <div class="pin-verification-box">
+            <div class="pin-verification-box" style="margin-top:8px;">
               <div>
                 <strong style="font-size:0.85rem; color:var(--forest);">🔐 Customer PIN = last 4 of Order ID:</strong>
                 <div style="font-size:0.72rem; color:var(--muted);">e.g. YB-3041 → PIN 3041</div>
@@ -1528,6 +1678,51 @@
           const cashInput = document.getElementById('driverCashAmount');
           if (cashInput) { cashInput.focus(); cashInput.select(); }
         }, 350);
+      }
+
+      if (e.target.classList.contains('claim-delivery-btn')) {
+        const orderId = e.target.dataset.id;
+        e.target.disabled = true;
+        e.target.textContent = 'Accepting…';
+        const res = await apiClaimOrder(orderId);
+        if (res && res.success) {
+          renderSessionPackages();
+        } else {
+          alert((res && res.message) || 'Could not accept delivery.');
+          e.target.disabled = false;
+          e.target.textContent = '🛵 Accept Delivery';
+        }
+      }
+
+      if (e.target.classList.contains('unclaim-delivery-btn')) {
+        const orderId = e.target.dataset.id;
+        if (!confirm(`Release order #${orderId}? Another rider will be able to claim it.`)) return;
+        e.target.disabled = true;
+        const res = await apiUnclaimOrder(orderId);
+        if (res && res.success) {
+          renderSessionPackages();
+        } else {
+          alert((res && res.message) || 'Could not release delivery.');
+          e.target.disabled = false;
+        }
+      }
+
+      if (e.target.classList.contains('view-on-map-btn')) {
+        const lat = parseFloat(e.target.dataset.lat);
+        const lng = parseFloat(e.target.dataset.lng);
+        const name = e.target.dataset.name || 'Customer';
+        if (Number.isFinite(lat) && Number.isFinite(lng) && driverMap) {
+          driverMap.setView([lat, lng], 16);
+          if (typeof L !== 'undefined') {
+            L.popup()
+              .setLatLng([lat, lng])
+              .setContent(`<b>📍 Delivery Destination</b><br>${name}`)
+              .openOn(driverMap);
+          }
+          if (typeof drawRouteToPickup === 'function') {
+            drawRouteToPickup(lat, lng);
+          }
+        }
       }
     });
 
@@ -1951,6 +2146,11 @@
         driverAuthError.style.display = 'block';
       }
     });
+
+    const driverForgotBtn = document.getElementById('driverForgotBtn');
+    if (driverForgotBtn) {
+      driverForgotBtn.addEventListener('click', () => openRecovery('driver'));
+    }
 
     // Webcam Photo Capture Logic
     let capturedPhotoData = null;
