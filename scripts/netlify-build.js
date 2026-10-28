@@ -71,3 +71,24 @@ for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
 }
 
 console.log(`[netlify] published ${copied} static files to dist/`);
+
+// Guard against broken food cards: every local menu photo must exist in dist/.
+try {
+  const db = JSON.parse(fs.readFileSync(path.join(root, 'database.json'), 'utf8'));
+  const missing = [];
+  for (const item of db.menuItems || []) {
+    const raw = String(item.image || '').trim();
+    if (!raw || /^(data:|blob:|https?:)/i.test(raw)) continue;
+    const rel = raw.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/^(public\/)+/i, '').replace(/^stephen 1\//i, '');
+    if (!rel) continue;
+    if (!fs.existsSync(path.join(dist, rel))) missing.push(`${item.name || item.id}: ${rel}`);
+  }
+  if (missing.length) {
+    console.error('[netlify] missing menu images:\n  ' + missing.join('\n  '));
+    process.exitCode = 1;
+  } else {
+    console.log('[netlify] all menu photos are present in dist/');
+  }
+} catch (err) {
+  console.warn('[netlify] could not verify menu photos:', err.message);
+}
