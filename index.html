@@ -941,11 +941,30 @@
         <a href="driver.html" class="nav-mobile-only">🛵 Driver Portal</a>
         <a href="admin.html" class="nav-mobile-only">📊 Admin Dashboard</a>
       </nav>
-      <button type="button" class="nav-toggle" id="mobileNavToggle" aria-expanded="false" aria-controls="mainNav" aria-label="Open navigation menu">
+      <button type="button" class="nav-toggle" id="mobileNavToggle" aria-expanded="false" aria-controls="mainNav" aria-label="Open navigation menu" onclick="window.toggleMobileNav && window.toggleMobileNav()">
         <span></span><span></span><span></span>
       </button>
     </div>
   </header>
+  <div id="mobileNavBackdrop" class="mobile-nav-backdrop" onclick="window.toggleMobileNav && window.toggleMobileNav(false)"></div>
+  <script>
+    function toggleMobileNav(force) {
+      var nav = document.getElementById('mainNav');
+      var toggle = document.getElementById('mobileNavToggle');
+      var backdrop = document.getElementById('mobileNavBackdrop');
+      if (!nav || !toggle) return;
+      var isOpen = typeof force === 'boolean' ? force : !nav.classList.contains('nav-open');
+      nav.classList.toggle('nav-open', isOpen);
+      nav.classList.toggle('active', isOpen);
+      nav.classList.toggle('open', isOpen);
+      toggle.classList.toggle('active', isOpen);
+      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      toggle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
+      if (backdrop) backdrop.classList.toggle('active', isOpen);
+      document.body.classList.toggle('mobile-nav-active', isOpen);
+    }
+    window.toggleMobileNav = toggleMobileNav;
+  </script>
 
   <!-- ======================================================== -->
   <!-- 3-MINUTE SESSION CYCLE BANNER (INTERMISSION & COUNTDOWN) -->
@@ -1072,7 +1091,175 @@
         </div>
 
         <div class="menu-grid" id="menuGrid">
-          <!-- Populated dynamically with Image 1 Poster Template cards -->
+          <!-- Populated dynamically with Image 1 Poster Template cards; pre-rendered for instant visibility -->
+          <article class="poster-card" id="card-spag15">
+            <div class="poster-capsule-bar">
+              <div class="poster-price-badge">
+                <span class="poster-price-num">15</span>
+                <span class="poster-price-unit">CEDIS</span>
+              </div>
+              <div class="poster-capsule-info">
+                <div class="poster-capsule-title">SPAGHETTI</div>
+                <p class="poster-capsule-formula"><span class="eq">=</span> Add scrambled egg + Cut half sausage</p>
+              </div>
+            </div>
+            <div class="poster-food-img-wrap">
+              <img src="img_food_3.jpg" alt="SPAGHETTI - 15 Cedis" class="poster-food-img" width="600" height="420" loading="eager" fetchpriority="high" decoding="async" onerror="this.onerror=null;this.src='img_food_1.jpg';">
+              <span class="poster-availability">Available today</span>
+              <span class="poster-tag-pill">Quick Bite</span>
+            </div>
+            <div class="poster-card-footer">
+              <p class="poster-desc">Add scrambled egg + Cut half sausage</p>
+              <div class="poster-meta-row">
+                <span class="poster-rating">★ Kitchen favourite</span>
+                <span>Ready in 15–25 min</span>
+              </div>
+              <div style="font-size:0.8rem; color:var(--muted); font-weight:600;">🍝 Served with freshly boiled spaghetti</div>
+              <button class="button button-orange menu-add-btn" type="button" data-id="spag15" style="width:100%; font-weight:800; font-size:0.95rem; border-radius:10px; box-shadow:0 4px 12px rgba(229,122,69,0.3);">
+                Add to order · GH₵15
+              </button>
+            </div>
+          </article>
+
+          <article class="poster-card" id="card-indomie20">
+            <div class="poster-capsule-bar">
+              <div class="poster-price-badge">
+                <span class="poster-price-num">20</span>
+                <span class="poster-price-unit">CEDIS</span>
+              </div>
+              <div class="poster-capsule-info">
+                <div class="poster-capsule-title">SPAGHETTI / INDOMIE</div>
+                <p class="poster-capsule-formula"><span class="eq">=</span> Add scrambled egg + Cut full sausage + Put one egg on top.</p>
+              </div>
+            </div>
+            <div class="poster-food-img-wrap">
+              <img src="img_food_2.jpg" alt="SPAGHETTI / INDOMIE - 20 Cedis" class="poster-food-img" width="600" height="420" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='img_food_1.jpg';">
+              <span class="poster-availability">Available today</span>
+              <span class="poster-tag-pill">Bestseller</span>
+            </div>
+            <div class="poster-card-footer">
+              <p class="poster-desc">Add scrambled egg + Cut full sausage + Put one egg on top.</p>
+              <div class="poster-meta-row">
+                <span class="poster-rating">★ Kitchen favourite</span>
+                <span>Ready in 20–30 min</span>
+              </div>
+              <div>
+                <label class="field-label" for="noodle-indomie20" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; color:var(--forest); margin-bottom:4px; display:block;">Select Noodles:</label>
+                <select class="noodle-select" id="noodle-indomie20" style="margin-bottom:0; font-weight:600;">
+                  <option value="Spaghetti">Spaghetti</option>
+                  <option value="Indomie">Indomie</option>
+                </select>
+              </div>
+              <button class="button button-orange menu-add-btn" type="button" data-id="indomie20" style="width:100%; font-weight:800; font-size:0.95rem; border-radius:10px; box-shadow:0 4px 12px rgba(229,122,69,0.3);">
+                Add to order · GH₵20
+              </button>
+            </div>
+          </article>
+
+          <article class="poster-card" id="card-indomie30">
+            <div class="poster-capsule-bar">
+              <div class="poster-price-badge">
+                <span class="poster-price-num">30</span>
+                <span class="poster-price-unit">CEDIS</span>
+              </div>
+              <div class="poster-capsule-info">
+                <div class="poster-capsule-title">SPAGHETTI / INDOMIE</div>
+                <p class="poster-capsule-formula"><span class="eq">=</span> Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + Free Beta malt</p>
+              </div>
+            </div>
+            <div class="poster-food-img-wrap">
+              <img src="img_food_1.jpg" alt="SPAGHETTI / INDOMIE - 30 Cedis" class="poster-food-img" width="600" height="420" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='img_food_1.jpg';">
+              <span class="poster-availability">Available today</span>
+              <span class="poster-tag-pill">Free Beta Malt</span>
+            </div>
+            <div class="poster-card-footer">
+              <p class="poster-desc">Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + Free Beta malt</p>
+              <div class="poster-meta-row">
+                <span class="poster-rating">★ Kitchen favourite</span>
+                <span>Ready in 20–30 min</span>
+              </div>
+              <div>
+                <label class="field-label" for="noodle-indomie30" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; color:var(--forest); margin-bottom:4px; display:block;">Select Noodles:</label>
+                <select class="noodle-select" id="noodle-indomie30" style="margin-bottom:0; font-weight:600;">
+                  <option value="Spaghetti">Spaghetti</option>
+                  <option value="Indomie">Indomie</option>
+                </select>
+              </div>
+              <button class="button button-orange menu-add-btn" type="button" data-id="indomie30" style="width:100%; font-weight:800; font-size:0.95rem; border-radius:10px; box-shadow:0 4px 12px rgba(229,122,69,0.3);">
+                Add to order · GH₵30
+              </button>
+            </div>
+          </article>
+
+          <article class="poster-card" id="card-indomie40">
+            <div class="poster-capsule-bar">
+              <div class="poster-price-badge">
+                <span class="poster-price-num">40</span>
+                <span class="poster-price-unit">CEDIS</span>
+              </div>
+              <div class="poster-capsule-info">
+                <div class="poster-capsule-title">SPAGHETTI / INDOMIE</div>
+                <p class="poster-capsule-formula"><span class="eq">=</span> Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + One Chicken + Free Beta Malt</p>
+              </div>
+            </div>
+            <div class="poster-food-img-wrap">
+              <img src="ghana_spag_chicken.jpg" alt="SPAGHETTI / INDOMIE - 40 Cedis" class="poster-food-img" width="600" height="420" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='img_food_1.jpg';">
+              <span class="poster-availability">Available today</span>
+              <span class="poster-tag-pill">Chicken + Beta Malt</span>
+            </div>
+            <div class="poster-card-footer">
+              <p class="poster-desc">Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + One Chicken + Free Beta Malt</p>
+              <div class="poster-meta-row">
+                <span class="poster-rating">★ Kitchen favourite</span>
+                <span>Ready in 20–30 min</span>
+              </div>
+              <div>
+                <label class="field-label" for="noodle-indomie40" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; color:var(--forest); margin-bottom:4px; display:block;">Select Noodles:</label>
+                <select class="noodle-select" id="noodle-indomie40" style="margin-bottom:0; font-weight:600;">
+                  <option value="Spaghetti">Spaghetti</option>
+                  <option value="Indomie">Indomie</option>
+                </select>
+              </div>
+              <button class="button button-orange menu-add-btn" type="button" data-id="indomie40" style="width:100%; font-weight:800; font-size:0.95rem; border-radius:10px; box-shadow:0 4px 12px rgba(229,122,69,0.3);">
+                Add to order · GH₵40
+              </button>
+            </div>
+          </article>
+
+          <article class="poster-card" id="card-indomie60">
+            <div class="poster-capsule-bar">
+              <div class="poster-price-badge">
+                <span class="poster-price-num">60</span>
+                <span class="poster-price-unit">CEDIS</span>
+              </div>
+              <div class="poster-capsule-info">
+                <div class="poster-capsule-title">SPAGHETTI / INDOMIE</div>
+                <p class="poster-capsule-formula"><span class="eq">=</span> Add scrambled egg + Cut full sausage + Put one egg on top + One sausage + more Gizzard + One Full Chicken (Two pieces) + Free Beta Malt</p>
+              </div>
+            </div>
+            <div class="poster-food-img-wrap">
+              <img src="img_food_4.jpg" alt="SPAGHETTI / INDOMIE - 60 Cedis" class="poster-food-img" width="600" height="420" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='img_food_1.jpg';">
+              <span class="poster-availability">Available today</span>
+              <span class="poster-tag-pill">Two Chicken + Beta Malt</span>
+            </div>
+            <div class="poster-card-footer">
+              <p class="poster-desc">Add scrambled egg + Cut full sausage + Put one egg on top + One sausage + more Gizzard + One Full Chicken (Two pieces) + Free Beta Malt</p>
+              <div class="poster-meta-row">
+                <span class="poster-rating">★ Kitchen favourite</span>
+                <span>Ready in 25–35 min</span>
+              </div>
+              <div>
+                <label class="field-label" for="noodle-indomie60" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:700; color:var(--forest); margin-bottom:4px; display:block;">Select Noodles:</label>
+                <select class="noodle-select" id="noodle-indomie60" style="margin-bottom:0; font-weight:600;">
+                  <option value="Spaghetti">Spaghetti</option>
+                  <option value="Indomie">Indomie</option>
+                </select>
+              </div>
+              <button class="button button-orange menu-add-btn" type="button" data-id="indomie60" style="width:100%; font-weight:800; font-size:0.95rem; border-radius:10px; box-shadow:0 4px 12px rgba(229,122,69,0.3);">
+                Add to order · GH₵60
+              </button>
+            </div>
+          </article>
         </div>
       </div>
     </section>
@@ -1585,8 +1772,7 @@
       setSessionPickupPoint,
       getMenuItems,
       apiFetchMenu,
-      calculateDeliveryQuote,
-      calculateDistanceKm
+      calculateDeliveryQuote
     } from './shared.js';
 
     initStore();
@@ -1948,6 +2134,12 @@
         </article>
         `;
       }).join('');
+    }
+
+    try {
+      renderMenu();
+    } catch (e) {
+      console.warn("Initial menu render error:", e);
     }
 
     window.setMenuFilter = function(filter) {
@@ -4013,20 +4205,38 @@
       const toggle = document.getElementById('mobileNavToggle');
       const nav = document.getElementById('mainNav');
       if (!toggle || !nav) return;
-      const setOpen = (open) => {
-        nav.classList.toggle('nav-open', open);
-        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-        toggle.setAttribute('aria-label', open ? 'Close navigation menu' : 'Open navigation menu');
-      };
-      toggle.addEventListener('click', () => setOpen(!nav.classList.contains('nav-open')));
-      nav.querySelectorAll('a').forEach(link => link.addEventListener('click', () => setOpen(false)));
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof window.toggleMobileNav === 'function') {
+          window.toggleMobileNav();
+        } else {
+          nav.classList.toggle('nav-open');
+        }
+      });
+      nav.querySelectorAll('a, button').forEach(link => {
+        link.addEventListener('click', () => {
+          if (typeof window.toggleMobileNav === 'function') window.toggleMobileNav(false);
+          else nav.classList.remove('nav-open');
+        });
+      });
       document.addEventListener('click', (event) => {
         if (!nav.classList.contains('nav-open')) return;
         if (nav.contains(event.target) || toggle.contains(event.target)) return;
-        setOpen(false);
+        if (typeof window.toggleMobileNav === 'function') window.toggleMobileNav(false);
+        else nav.classList.remove('nav-open');
       });
-      document.addEventListener('keydown', (event) => { if (event.key === 'Escape') setOpen(false); });
-      window.addEventListener('resize', () => { if (window.innerWidth > 820) setOpen(false); });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          if (typeof window.toggleMobileNav === 'function') window.toggleMobileNav(false);
+          else nav.classList.remove('nav-open');
+        }
+      });
+      window.addEventListener('resize', () => {
+        if (window.innerWidth > 820) {
+          if (typeof window.toggleMobileNav === 'function') window.toggleMobileNav(false);
+          else nav.classList.remove('nav-open');
+        }
+      });
     })();
 
     // Expose the tracker so the thank-you card can open it.
