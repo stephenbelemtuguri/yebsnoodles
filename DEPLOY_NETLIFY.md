@@ -12,12 +12,24 @@ Browser ──► Netlify CDN (index.html, admin.html, driver.html, images)
 
 ---
 
-## 1. Create the Supabase table (one time)
+## 1. Connect Supabase (one time)
 
-1. Open <https://supabase.com/dashboard/project/dujmpwcarxliadnfdydr/sql/new>
-2. Paste the contents of [`supabase/yebs_state.sql`](supabase/yebs_state.sql) and press **Run**.
-3. Open **Project Settings → API keys** and copy the **secret** / `service_role` key
-   (not the publishable key). It is used only by the server.
+Choose **one** of these:
+
+**A. Database URL (creates the table automatically).** Supabase → Project
+Settings → Database → Connection string → **Session pooler**. Replace
+`[YOUR-PASSWORD]` with the real database password and put the URI in
+`DATABASE_POOL_URL` (and `DATABASE_URL`). The API creates `public.yebs_state` on
+first boot and stores all orders, drivers and menu changes there.
+
+**B. Service-role key.** Open
+<https://supabase.com/dashboard/project/dujmpwcarxliadnfdydr/sql/new>, paste
+[`supabase/yebs_state.sql`](supabase/yebs_state.sql) and press **Run**. Then copy
+the **secret** / `service_role` key from **Project Settings → API keys** (not the
+publishable key). It is used only by the server.
+
+Locally, `npm run supabase:setup` creates the table, seeds it from
+`database.json` and verifies the connection.
 
 ## 2. Add the environment variables in Netlify
 
@@ -29,7 +41,9 @@ unless you want the value hidden after saving.
 | Key | Value |
 |---|---|
 | `SUPABASE_URL` | `https://dujmpwcarxliadnfdydr.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | the **secret** key from step 1.3 |
+| `SUPABASE_SERVICE_ROLE_KEY` | the **secret** key from option B (optional if using A) |
+| `DATABASE_POOL_URL` | session-pooler URI from option A (optional if using B) |
+| `DATABASE_URL` | direct URI from option A (optional if using B) |
 | `YEBS_AUTH_SECRET` | a long random string — generate one with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
 | `JWT_SECRET` | another long random string (same command) |
 | `SESSION_SECRET` | another long random string (same command) |

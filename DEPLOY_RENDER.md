@@ -51,9 +51,11 @@ Render deploys straight from GitHub, so the repo must be up to date.
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp phone number ID | Automatic order alerts |
 | `WHATSAPP_TO` | `233559103452` | Kitchen number |
 | `WHATSAPP_API_VERSION` | `v20.0` | Graph API version |
-| `SUPABASE_URL` | `https://<project>.supabase.co` | Optional shared DB |
-| `SUPABASE_SERVICE_ROLE_KEY` | service-role key | Optional shared DB |
+| `SUPABASE_URL` | `https://dujmpwcarxliadnfdydr.supabase.co` | Optional shared DB |
+| `SUPABASE_SERVICE_ROLE_KEY` | service-role key | Optional shared DB (REST) |
 | `SUPABASE_STATE_TABLE` | `yebs_state` | Optional shared DB |
+| `DATABASE_POOL_URL` | session pooler URI with the real password | Optional shared DB (Postgres) |
+| `DATABASE_URL` | direct URI with the real password | Fallback for Postgres |
 | `MOMO_SUBSCRIPTION_KEY` | MTN key | Optional automatic MoMo |
 | `MOMO_API_USER` | MTN API user | Optional automatic MoMo |
 | `MOMO_API_KEY` | MTN API key | Optional automatic MoMo |
@@ -66,10 +68,27 @@ Render deploys straight from GitHub, so the repo must be up to date.
 
 ```json
 {
-  "database": { "storage": "local-file", "path": "/var/data/database.json", "persistent": true },
-  "whatsapp": { "configured": true, "to": "233559103452" }
+  "storage": "postgres",
+  "database": { "engine": "supabase-postgres", "persistent": true },
+  "whatsapp": { "configured": true, "to": "233 559 103 452" }
 }
 ```
+
+### Connecting Supabase (recommended)
+
+You only need **one** of these:
+
+1. **Database URL (simplest).** Supabase → Project Settings → Database →
+   Connection string → **Session pooler**, then replace `[YOUR-PASSWORD]` with
+   the real password. Put it in `DATABASE_POOL_URL` (and `DATABASE_URL`).
+   The app creates `public.yebs_state` automatically on first boot and stores
+   everything there.
+2. **Service-role key.** Supabase → Project Settings → API Keys → secret /
+   `service_role`. Put it in `SUPABASE_SERVICE_ROLE_KEY`, then run
+   `supabase/yebs_state.sql` once in the SQL Editor.
+
+Locally you can run `npm run supabase:setup` to create the table, seed it from
+`database.json` and verify the connection.
 
 ## 4. First sign-in and setup
 

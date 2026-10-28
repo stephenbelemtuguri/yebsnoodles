@@ -3407,9 +3407,13 @@ app.get('/api/health', (req, res) => {
     time: new Date().toISOString(),
     storage: store.status(),
     database: {
-      engine: "json-file",
-      path: DB_FILE,
-      persistent: Boolean(process.env.DB_PATH)
+      engine: store.remoteMode === 'local'
+        ? 'json-file'
+        : store.remoteMode === 'postgres'
+          ? 'supabase-postgres'
+          : 'supabase-rest',
+      path: store.remoteMode === 'local' ? DB_FILE : null,
+      persistent: store.remoteMode !== 'local' || Boolean(process.env.DB_PATH)
     },
     pickupPoint: pickup,
     deliveryFee: Number(db.settings && db.settings.deliveryFee) || 15,

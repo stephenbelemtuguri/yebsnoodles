@@ -308,6 +308,11 @@
       object-fit: cover;
       transition: transform 0.4s ease;
     }
+    .poster-food-img.img-fallback {
+      object-fit: contain;
+      padding: 26px;
+      background: #f4efe2;
+    }
     .poster-card:hover .poster-food-img {
       transform: scale(1.08);
     }
@@ -891,7 +896,7 @@
           </div>
         </div>
         <div class="hero-visual">
-          <img class="hero-image" src="food_photo.png" alt="A freshly prepared Ghanaian spaghetti dish with sausage and egg" fetchpriority="high">
+          <img class="hero-image" src="img_food_1.jpg" alt="A freshly prepared bowl of YEBS noodles with egg and vegetables" fetchpriority="high">
           <div class="hero-stamp" aria-label="Freshly prepared">
             <strong>Fresh</strong>
             <span>made with care</span>
@@ -1698,13 +1703,29 @@
     // ========================================================
     // RENDER MENU USING FIRST IMAGE POSTER TEMPLATE (15 TO 60)
     // ========================================================
+    // Menu photos live at the site root. Admin uploads can be data URLs, and
+    // older records may still point at "public/..." or "stephen 1/...", so
+    // normalise the path and fall back to the kitchen photo if a file is gone.
+    function menuImageSrc(image) {
+      let raw = String(image || '').trim();
+      if (!raw) return 'img_food_1.jpg';
+      if (/^(data:|blob:|https?:)/i.test(raw)) return raw;
+      raw = raw
+        .replace(/\\/g, '/')
+        .replace(/^\.?\//, '')
+        .replace(/^(public\/)+/i, '')
+        .replace(/^stephen 1\//i, '');
+      return raw || 'img_food_1.jpg';
+    }
+
     function renderMenu() {
       const items = getMenuItems();
-      menuGrid.innerHTML = items.map(item => {
+      menuGrid.innerHTML = items.map((item, index) => {
         const formulaText = item.formula || item.desc || "";
         const cleanFormula = formulaText.replace(/^=\s*/, '');
         const soldOut = item.available === false;
         const description = item.description || cleanFormula || 'Fresh Ghanaian street-style noodles, cooked to order.';
+        const imgSrc = menuImageSrc(item.image);
         return `
         <article class="poster-card${soldOut ? ' sold-out' : ''}" id="card-${item.id}">
           <!-- Poster Capsule Bar matching Image 1 -->
@@ -1721,7 +1742,7 @@
 
           <!-- Realistic Food Photo -->
           <div class="poster-food-img-wrap">
-            <img src="${item.image}" alt="${item.name} - ${item.price} Cedis" class="poster-food-img" loading="lazy" decoding="async">
+            <img src="${imgSrc}" alt="${item.name} - ${item.price} Cedis" class="poster-food-img" width="600" height="420" loading="${index === 0 ? 'eager' : 'lazy'}" ${index === 0 ? 'fetchpriority="high"' : ''} decoding="async" onerror="this.onerror=null;this.src='img_food_1.jpg';this.classList.add('img-fallback');">
             <span class="poster-availability${soldOut ? ' sold-out' : ''}">${soldOut ? 'Sold out today' : 'Available today'}</span>
             <span class="poster-tag-pill">${item.tag || item.badge || 'Freshly cooked'}</span>
           </div>
@@ -2012,7 +2033,7 @@
 
       cartItems.innerHTML = entries.map(({ key, item, noodle, qty }) => `
         <div class="cart-row">
-          <img src="${item.image}" alt="${item.name}" class="cart-thumb">
+          <img src="${menuImageSrc(item.image)}" alt="${item.name}" class="cart-thumb" width="50" height="50" loading="lazy" onerror="this.onerror=null;this.src='img_food_1.jpg';">
           <div>
             <div class="cart-name">${item.name}</div>
             <div class="cart-detail">${noodle} · ${money(item.price)} each</div>

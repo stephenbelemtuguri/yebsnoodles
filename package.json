@@ -18,7 +18,8 @@
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop ecosystem.config.js",
     "pm2:logs": "pm2 logs yebs-api",
-    "netlify:build": "node scripts/netlify-build.js"
+    "netlify:build": "node scripts/netlify-build.js",
+    "supabase:setup": "node scripts/setup-supabase.js"
   },
   "keywords": [
     "food-delivery",
@@ -48,6 +49,7 @@
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
     "node-fetch": "^3.3.2",
+    "pg": "^8.23.1",
     "prom-client": "^15.1.3",
     "serverless-http": "^3.2.0",
     "winston": "^3.14.2",

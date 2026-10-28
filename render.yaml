@@ -29,11 +29,17 @@ services:
         sync: false
       # Optional: hosted database shared with the Netlify deployment.
       - key: SUPABASE_URL
-        sync: false
+        value: https://dujmpwcarxliadnfdydr.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: SUPABASE_STATE_TABLE
         value: yebs_state
+      # Supabase Postgres (session pooler). Either this pair or the service
+      # role key above is enough; the app creates the yebs_state table itself.
+      - key: DATABASE_POOL_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
       # Optional: automatic MTN MoMo collection (sandbox or production).
       - key: MOMO_SUBSCRIPTION_KEY
         sync: false

@@ -2,11 +2,14 @@
 // Persistent JSON state store
 // ═══════════════════════════════════════════════════════════════════════════
 // The API keeps its working set in memory (exactly like it used to keep it in
-// database.json) but every save is mirrored to one of two durable backends:
+// database.json) but every save is mirrored to one of three durable backends:
 //
-//   • Supabase  — when SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set
-//                 (used by the Netlify deployment, survives cold starts)
-//   • Local file — when they are not (npm start on your own machine)
+//   • Supabase REST - when SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set
+//   • Supabase Postgres - when DATABASE_POOL_URL / DATABASE_URL is set
+//   • Local file - when neither is configured (npm start on your machine)
+//
+// The Postgres mode creates the yebs_state table automatically the first time
+// it connects, so hosting on Render or Netlify only needs the database URL.
 //
 // Reads happen once at boot (`init`); writes are queued in order and flushed
 // with `flush()` before a serverless invocation returns.
@@ -19,14 +22,25 @@ const SUPABASE_KEY = String(
   process.env.SUPABASE_SECRET_KEY ||
   ''
 );
-const TABLE = process.env.SUPABASE_STATE_TABLE || 'yebs_state';
+const DATABASE_URL = String(
+  process.env.DATABASE_POOL_URL ||
+  process.env.DATABASE_URL ||
+  process.env.SUPABASE_DB_URL ||
+  ''
+).trim();
+const TABLE = String(process.env.SUPABASE_STATE_TABLE || 'yebs_state').replace(/[^a-zA-Z0-9_]/g, '') || 'yebs_state';
 const ROW_ID = 'main';
 
-const remoteEnabled = Boolean(SUPABASE_URL && SUPABASE_KEY);
+const restEnabled = Boolean(SUPABASE_URL && SUPABASE_KEY);
+const postgresEnabled = !restEnabled && Boolean(DATABASE_URL);
+const remoteEnabled = restEnabled || postgresEnabled;
+const remoteMode = restEnabled ? 'supabase' : postgresEnabled ? 'postgres' : 'local';
 
 let cache = null;
 let initPromise = null;
 let pending = Promise.resolve();
+let pgPool = null;
+let pgReady = null;
 
 function headers(extra = {}) {
   return {
@@ -37,7 +51,7 @@ function headers(extra = {}) {
   };
 }
 
-async function readRemote() {
+async function readRest() {
   const url = `${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${encodeURIComponent(ROW_ID)}&select=data`;
   // A paused/misconfigured Supabase project must fail fast, not hang until the
   // serverless function times out (which surfaces as a 502 in the browser).
@@ -50,7 +64,7 @@ async function readRemote() {
   return Array.isArray(rows) && rows[0] ? rows[0].data : null;
 }
 
-async function writeRemote(data) {
+async function writeRest(data) {
   const url = `${SUPABASE_URL}/rest/v1/${TABLE}?on_conflict=id`;
   const res = await fetch(url, {
     method: 'POST',
@@ -64,9 +78,68 @@ async function writeRemote(data) {
   }
 }
 
+function loadPg() {
+  try {
+    return require('pg');
+  } catch (err) {
+    throw new Error('Postgres mode needs the "pg" package. Run: npm install pg');
+  }
+}
+
+/** Connect once, create the state table if it is missing, then reuse the pool. */
+function ensurePostgres() {
+  if (pgReady) return pgReady;
+  pgReady = (async () => {
+    const { Pool } = loadPg();
+    pgPool = new Pool({
+      connectionString: DATABASE_URL,
+      // Supabase requires TLS; the pooler presents its own certificate.
+      ssl: /supabase|pooler/i.test(DATABASE_URL) ? { rejectUnauthorized: false } : undefined,
+      max: Number(process.env.PG_POOL_MAX || 2),
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 8000
+    });
+    pgPool.on('error', err => console.error('[store] Postgres pool error:', err.message));
+    await pgPool.query(
+      `create table if not exists public.${TABLE} (
+         id text primary key,
+         data jsonb not null,
+         updated_at timestamptz not null default now()
+       )`
+    );
+    await pgPool.query(`alter table public.${TABLE} enable row level security`).catch(() => {});
+    return pgPool;
+  })();
+  return pgReady;
+}
+
+async function readPostgres() {
+  const pool = await ensurePostgres();
+  const res = await pool.query(`select data from public.${TABLE} where id = $1 limit 1`, [ROW_ID]);
+  return res.rows[0] ? res.rows[0].data : null;
+}
+
+async function writePostgres(data) {
+  const pool = await ensurePostgres();
+  await pool.query(
+    `insert into public.${TABLE} (id, data, updated_at)
+     values ($1, $2::jsonb, now())
+     on conflict (id) do update set data = excluded.data, updated_at = now()`,
+    [ROW_ID, JSON.stringify(data)]
+  );
+}
+
+async function readRemote() {
+  return restEnabled ? readRest() : readPostgres();
+}
+
+async function writeRemote(data) {
+  return restEnabled ? writeRest(data) : writePostgres(data);
+}
+
 /**
- * Load the state. `loadLocal` supplies the fallback/seeding document when
- * Supabase is not configured or has no row yet.
+ * Load the state. `loadLocal` supplies the fallback/seeding document when the
+ * remote store is not configured or has no row yet.
  */
 let lastError = null;
 let lastReadAt = 0;
@@ -95,7 +168,7 @@ function init(loadLocal) {
         // whole site down: fall back to the seed document so the menu, admin
         // login and sign-ups still work, and surface the reason on /api/health.
         lastError = err.message;
-        console.error('[store] Supabase unavailable, using in-memory seed:', err.message);
+        console.error('[store] remote store unavailable, using in-memory seed:', err.message);
         cache = loadLocal();
         return cache;
       }
@@ -158,7 +231,20 @@ function isRemote() {
 /** Human-readable storage status for /api/health. */
 function status() {
   if (!remoteEnabled) return 'local-file';
-  return lastError ? `supabase-error: ${lastError}` : 'supabase';
+  if (lastError) return `${remoteMode}-error: ${lastError}`;
+  return remoteMode;
 }
 
-module.exports = { init, refresh, get, set, flush, isRemote, status, remoteEnabled };
+module.exports = {
+  init,
+  refresh,
+  get,
+  set,
+  flush,
+  isRemote,
+  status,
+  remoteEnabled,
+  remoteMode,
+  DATABASE_URL,
+  TABLE
+};
