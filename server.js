@@ -390,6 +390,11 @@ app.get('/api/admin/notifications', requireRole('admin'), (req, res) => {
 const BCRYPT_ROUNDS = 10;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
+// Built-in administrator created when the store has no admins yet. Override
+// these in production: ADMIN_USERNAME / ADMIN_PASSWORD environment variables.
+const DEFAULT_ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || 'goodfood').trim() || 'goodfood';
+const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || 'goodfood@123');
+
 // A stable signing secret is generated once and never leaves this machine.
 let AUTH_SECRET = process.env.YEBS_AUTH_SECRET || '';
 if (!AUTH_SECRET && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY)) {
@@ -590,14 +595,14 @@ function ensureSystemAccounts(db) {
   if (db.admins.length === 0) {
     db.admins.push({
       id: 'adm-1',
-      username: 'yebsnoodles',
-      password: hashPassword('yebs@123'),
+      username: DEFAULT_ADMIN_USERNAME,
+      password: hashPassword(DEFAULT_ADMIN_PASSWORD),
       name: 'YEBS Administrator',
       role: 'SUPERADMIN',
       createdAt: new Date().toISOString()
     });
     changed = true;
-    console.log('[security] Seeded built-in administrator "yebsnoodles".');
+    console.log(`[security] Seeded built-in administrator "${DEFAULT_ADMIN_USERNAME}".`);
   }
 
   return changed;
@@ -612,8 +617,8 @@ function loadDatabase() {
       admins: [
         {
           id: "adm-1",
-          username: "yebsnoodles",
-          password: hashPassword("yebs@123"),
+          username: DEFAULT_ADMIN_USERNAME,
+          password: hashPassword(DEFAULT_ADMIN_PASSWORD),
           name: "YEBS Administrator",
           role: "SUPERADMIN",
           createdAt: new Date().toISOString()

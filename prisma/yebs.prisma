@@ -1,0 +1,33 @@
+// Minimal Prisma schema for the table the YEBS Noodles API actually uses.
+//
+// The API stores one JSON document per row in public.yebs_state. It does NOT
+// use the normalized models in prisma/schema.prisma (that file is a reference
+// only).
+//
+// Option A (recommended, no database password needed): run supabase/setup.sql
+// in the Supabase SQL Editor.
+//
+// Option B: point DATABASE_URL at the Supabase session pooler, then run
+//   npx prisma db push --schema prisma/yebs.prisma
+// or
+//   npm run db:push:yebs
+//
+// Option B still needs the database password and does not seed the admin; run
+// scripts/build-supabase-sql.js (npm run supabase:sql) for the seed SQL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model YebsState {
+  id        String   @id
+  data      Json
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@map("yebs_state")
+}

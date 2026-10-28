@@ -118,7 +118,8 @@ and write the same orders, menu and drivers — no Supabase key required.
 ## 4. First sign-in and setup
 
 1. Open `https://<your-service>.onrender.com/admin.html`.
-2. Sign in with `yebsnoodles` / `yebs@123` (created automatically on first boot).
+2. Sign in with `goodfood` / `goodfood@123` (created automatically on first boot,
+   or set `ADMIN_USERNAME` / `ADMIN_PASSWORD` in the environment).
 3. Go to **Settings → Shared Pickup Point**: search a landmark, drop the pin and
    set the delivery fee, then **Save & sync to all maps**.
 4. Go to **Noodles Menu & Photos** to edit prices, descriptions, prep times,

@@ -7,6 +7,9 @@
 // Database: PostgreSQL 14+ (production) / SQLite (development)
 // ═══════════════════════════════════════════════════════════════════════════
 
+// NOTE: This normalized schema is a reference only - the running app does not
+// use it. The API stores everything in public.yebs_state. Use prisma/yebs.prisma
+// or supabase/setup.sql instead.
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")

@@ -20,7 +20,10 @@
     "pm2:logs": "pm2 logs yebs-api",
     "netlify:build": "node scripts/netlify-build.js",
     "supabase:setup": "node scripts/setup-supabase.js",
-    "db:password": "node scripts/set-db-password.js"
+    "supabase:sql": "node scripts/build-supabase-sql.js",
+    "supabase:key": "node scripts/set-supabase-key.js",
+    "db:password": "node scripts/set-db-password.js",
+    "db:push:yebs": "prisma db push --schema prisma/yebs.prisma"
   },
   "keywords": [
     "food-delivery",

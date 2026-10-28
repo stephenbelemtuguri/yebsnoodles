@@ -55,8 +55,8 @@ Access the application:
 - Admin Dashboard: http://localhost:3000/admin
 
 Default admin credentials:
-- Username: `yebsnoodles`
-- Password: `yebs@123`
+- Username: `goodfood`
+- Password: `goodfood@123`
 
 ---
 

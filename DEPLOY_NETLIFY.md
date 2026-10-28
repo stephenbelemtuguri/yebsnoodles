@@ -149,7 +149,7 @@ You want:
 
 | Portal | URL | Username | Password |
 |---|---|---|---|
-| Admin | `/admin` | `yebsnoodles` | `yebs@123` |
+| Admin | `/admin` | `goodfood` | `goodfood@123` |
 | Driver | `/driver` | created at signup | chosen at signup |
 
 Change the admin password in **Admin → Login credentials** after the first login.
@@ -227,18 +227,8 @@ are present in `.env`, in which case it uses Supabase too.
 - **"Database unavailable"** in the browser: the function cannot reach Supabase.
   Check the two Supabase variables and that `yebs_state` exists.
 - **Login says "Invalid administrator credentials"**: the password was changed
-  earlier and forgotten. Reset it in Supabase → SQL Editor:
-
-  ```sql
-  update public.yebs_state
-  set data = jsonb_set(
-    data,
-    '{admins}',
-    '[{"id":"adm-1","username":"yebsnoodles","password":"yebs@123","name":"YEBS Administrator","role":"SUPERADMIN"}]'::jsonb
-  )
-  where id = 'main';
-  ```
-
-  The API re-hashes it on the next request; orders and drivers are untouched.
+  earlier and forgotten. Re-run [`supabase/setup.sql`](supabase/setup.sql) in the
+  Supabase SQL Editor — it re-adds `goodfood` / `goodfood@123` without touching
+  orders or drivers. Full instructions: [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md).
 - **Photo upload fails**: keep photos under 6 MB; the driver page already
   downsizes face photos to 480 px.

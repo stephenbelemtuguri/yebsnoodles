@@ -80,8 +80,8 @@ npm run dev
 - **Admin Dashboard**: http://localhost:3000/admin
 
 **Default Admin Login**:
-- Username: `yebsnoodles`
-- Password: `yebs@123`
+- Username: `goodfood`
+- Password: `goodfood@123`
 
 ---
 

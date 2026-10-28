@@ -84,8 +84,8 @@ npm run dev
 - **Reviews & Loyalty**: http://localhost:3000/public/customer-reviews.html
 
 ### Default Login
-- Username: `yebsnoodles`
-- Password: `yebs@123`
+- Username: `goodfood`
+- Password: `goodfood@123`
 
 ---
 
