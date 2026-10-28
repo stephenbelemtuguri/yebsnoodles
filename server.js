@@ -2,6 +2,15 @@
 // Secure auth (bcrypt + HMAC signed sessions), instant payment verification,
 // unified order IDs and shared pickup-point state.
 
+// Load .env for local development and self-hosted deployments. On Render,
+// Netlify and other hosts the values come from the platform, so a missing .env
+// is not an error. This must run before ./src/data/store reads process.env.
+try {
+  require('dotenv').config();
+} catch (error) {
+  // dotenv is optional at runtime.
+}
+
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -390,10 +399,10 @@ app.get('/api/admin/notifications', requireRole('admin'), (req, res) => {
 const BCRYPT_ROUNDS = 10;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-// Built-in administrator created when the store has no admins yet. Override
-// these in production: ADMIN_USERNAME / ADMIN_PASSWORD environment variables.
-const DEFAULT_ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || 'goodfood').trim() || 'goodfood';
-const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || 'goodfood@123');
+// Built-in administrator created when the store has no admins yet.
+// Credentials come from the environment only - never hardcode them here.
+const DEFAULT_ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || '').trim();
+const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
 
 // A stable signing secret is generated once and never leaves this machine.
 let AUTH_SECRET = process.env.YEBS_AUTH_SECRET || '';
@@ -593,16 +602,20 @@ function ensureSystemAccounts(db) {
   }
 
   if (db.admins.length === 0) {
-    db.admins.push({
-      id: 'adm-1',
-      username: DEFAULT_ADMIN_USERNAME,
-      password: hashPassword(DEFAULT_ADMIN_PASSWORD),
-      name: 'YEBS Administrator',
-      role: 'SUPERADMIN',
-      createdAt: new Date().toISOString()
-    });
-    changed = true;
-    console.log(`[security] Seeded built-in administrator "${DEFAULT_ADMIN_USERNAME}".`);
+    if (DEFAULT_ADMIN_USERNAME && DEFAULT_ADMIN_PASSWORD) {
+      db.admins.push({
+        id: 'adm-1',
+        username: DEFAULT_ADMIN_USERNAME,
+        password: hashPassword(DEFAULT_ADMIN_PASSWORD),
+        name: 'YEBS Administrator',
+        role: 'SUPERADMIN',
+        createdAt: new Date().toISOString()
+      });
+      changed = true;
+      console.log(`[security] Seeded built-in administrator "${DEFAULT_ADMIN_USERNAME}".`);
+    } else {
+      console.error('[security] No administrator exists. Set ADMIN_USERNAME and ADMIN_PASSWORD in the environment (or run supabase/setup.sql) to create one.');
+    }
   }
 
   return changed;
@@ -614,16 +627,7 @@ function loadDatabase() {
 
   if (!fs.existsSync(DB_FILE)) {
     const initialData = {
-      admins: [
-        {
-          id: "adm-1",
-          username: DEFAULT_ADMIN_USERNAME,
-          password: hashPassword(DEFAULT_ADMIN_PASSWORD),
-          name: "YEBS Administrator",
-          role: "SUPERADMIN",
-          createdAt: new Date().toISOString()
-        }
-      ],
+      admins: [],
       drivers: [],
       orders: [],
       sessions: [

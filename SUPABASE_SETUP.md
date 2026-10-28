@@ -10,20 +10,22 @@ local `database.json` and has never reached Supabase.
 
 ---
 
-## Step 1 — create the table and the admin (2 minutes)
+## Step 1 — create the table (2 minutes)
 
 1. Open the SQL Editor:
    <https://supabase.com/dashboard/project/dujmpwcarxliadnfdydr/sql/new>
 2. Open [`supabase/setup.sql`](supabase/setup.sql), copy the whole file, paste
    it into the editor and press **Run**.
-3. The result should show `menu_items = 5` and `admins = 1`.
+3. The result should show `menu_items = 5`. `admins` stays `0` until the app
+   boots with `ADMIN_USERNAME` / `ADMIN_PASSWORD` set.
 
 `supabase/setup.sql` creates:
 
 - `public.yebs_state` with RLS enabled (only the server can read/write),
 - the menu (5 dishes), the pickup point and the MoMo wallet
   `0559103452` / `MATHEW TIA`,
-- the administrator **`goodfood` / `goodfood@123`**.
+- **no administrator password** — the app creates the admin from the
+  environment on first boot.
 
 It is safe to re-run: it never deletes orders, drivers or reviews.
 
@@ -47,7 +49,7 @@ The script writes `SUPABASE_SERVICE_ROLE_KEY` to `.env` and checks the table.
 You should see:
 
 ```
-[supabase:key] connected. row=main menuItems=5 admins=[goodfood]
+[supabase:key] connected. row=main menuItems=5 admins=[your-admin]
 ```
 
 Why this method: it uses HTTPS (PostgREST), so it works on Render, Netlify and
@@ -78,7 +80,8 @@ Restart the app and open <http://localhost:3100/api/health>:
 ```
 
 or `"storage": "postgres"` if you used the password method. Then open
-`/admin.html` and sign in with **`goodfood` / `goodfood@123`**.
+`/admin.html` and sign in with the `ADMIN_USERNAME` / `ADMIN_PASSWORD` you set
+in `.env`.
 
 Change the password in **Admin → Settings** after the first login.
 
@@ -94,8 +97,8 @@ Add these environment variables in both dashboards:
 | `SUPABASE_SERVICE_ROLE_KEY` | the secret key |
 | `SUPABASE_STATE_TABLE` | `yebs_state` |
 | `YEBS_AUTH_SECRET` | `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
-| `ADMIN_USERNAME` | `goodfood` (optional override) |
-| `ADMIN_PASSWORD` | `goodfood@123` (optional override) |
+| `ADMIN_USERNAME` | your admin name |
+| `ADMIN_PASSWORD` | a strong password (never commit it) |
 
 On Render you can instead use the Blueprint's own PostgreSQL (`yebs-db`) and
 skip Supabase entirely.
@@ -122,7 +125,7 @@ the running app.
 |---|---|
 | `PGRST205` / “Could not find the table” | Run `supabase/setup.sql` in the SQL Editor. |
 | `401` from `/rest/v1/yebs_state` | You used the publishable key. Use the **secret** key. |
-| Admin login fails | The row must contain `goodfood`; re-run `supabase/setup.sql`. |
+| Admin login fails | Set `ADMIN_USERNAME` / `ADMIN_PASSWORD` and restart; the app seeds the admin when the row has none. |
 | `storage: local-file` | No Supabase key or password in the environment. |
 | `P1001` on Render | Use the session pooler or the Blueprint database; never `db.<ref>.supabase.co`. |
 | Data appears then disappears | The app is on `local-file` on one host. Set the same Supabase variables on Render **and** Netlify. |

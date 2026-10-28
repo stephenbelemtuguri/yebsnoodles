@@ -83,9 +83,10 @@ npm run dev
 - **Order Receipts**: http://localhost:3000/public/receipts.html
 - **Reviews & Loyalty**: http://localhost:3000/public/customer-reviews.html
 
-### Default Login
-- Username: `goodfood`
-- Password: `goodfood@123`
+### Admin Login
+- Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env` (or your hosting
+  environment). The administrator is created automatically on first boot.
+- Change the password from **Admin → Settings** after the first login.
 
 ---
 

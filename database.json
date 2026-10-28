@@ -1,83 +1,23 @@
 {
   "admins": [],
-  "drivers": [],
   "orders": [],
-  "sessions": [],
-  "auditLogs": [],
-  "menuItems": [
+  "drivers": [],
+  "payouts": [],
+  "reviews": [],
+  "sessions": [
     {
-      "id": "spag15",
-      "name": "SPAGHETTI",
-      "price": 15,
-      "noodles": [
-        "Spaghetti"
-      ],
-      "formula": "Add scrambled egg + Cut half sausage",
-      "desc": "= Add scrambled egg + Cut half sausage",
-      "image": "img_food_3.jpg",
-      "badge": "15 CEDIS",
-      "tag": "Quick Bite",
-      "template": "poster-capsule"
-    },
-    {
-      "id": "indomie20",
-      "name": "SPAGHETTI / INDOMIE",
-      "price": 20,
-      "noodles": [
-        "Spaghetti",
-        "Indomie"
-      ],
-      "formula": "Add scrambled egg + Cut full sausage + Put one egg on top.",
-      "desc": "= Add scrambled egg + Cut full sausage + Put one egg on top.",
-      "image": "img_food_2.jpg",
-      "badge": "20 CEDIS",
-      "tag": "Bestseller",
-      "template": "poster-capsule"
-    },
-    {
-      "id": "indomie30",
-      "name": "SPAGHETTI / INDOMIE",
-      "price": 30,
-      "noodles": [
-        "Spaghetti",
-        "Indomie"
-      ],
-      "formula": "Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + Free Beta malt",
-      "desc": "= Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + Free Beta malt",
-      "image": "img_food_1.jpg",
-      "badge": "30 CEDIS",
-      "tag": "Free Beta Malt",
-      "template": "poster-capsule"
-    },
-    {
-      "id": "indomie40",
-      "name": "SPAGHETTI / INDOMIE",
-      "price": 40,
-      "noodles": [
-        "Spaghetti",
-        "Indomie"
-      ],
-      "formula": "Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + One Chicken + Free Beta Malt",
-      "desc": "= Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + One Chicken + Free Beta Malt",
-      "image": "ghana_spag_chicken.jpg",
-      "badge": "40 CEDIS",
-      "tag": "Chicken + Beta Malt",
-      "template": "poster-capsule"
-    },
-    {
-      "id": "indomie60",
-      "name": "SPAGHETTI / INDOMIE",
-      "price": 60,
-      "noodles": [
-        "Spaghetti",
-        "Indomie"
-      ],
-      "formula": "Add scrambled egg + Cut full sausage + Put one egg on top + One sausage + more Gizzard + One Full Chicken (Two pieces) + Free Beta Malt",
-      "desc": "= Add scrambled egg + Cut full sausage + Put one egg on top + One sausage + more Gizzard + One Full Chicken (Two pieces) + Free Beta Malt",
-      "image": "img_food_4.jpg",
-      "badge": "60 CEDIS",
-      "tag": "Two Chicken + Beta Malt",
-      "template": "poster-capsule"
+      "id": 1,
+      "status": "ACTIVE",
+      "startedAt": "2026-10-28T11:24:04.828Z",
+      "pickupPoint": {
+        "lat": 5.5612,
+        "lng": -0.2155,
+        "name": "Circle Odo Rice Junction / VIP Station",
+        "address": "Kwame Nkrumah Circle, Accra",
+        "updatedAt": "2026-10-28T11:24:04.828Z"
+      },
+      "sessionNumber": 1,
+      "intermissionEndsAt": null
     }
   ],
   "settings": {
@@ -86,14 +26,109 @@
       "accountName": "MATHEW TIA"
     },
     "pickup": {
-      "name": "Circle Odo Rice Junction / VIP Station",
-      "address": "Kwame Nkrumah Circle, Accra",
       "lat": 5.5612,
-      "lng": -0.2155
+      "lng": -0.2155,
+      "name": "Circle Odo Rice Junction / VIP Station",
+      "address": "Kwame Nkrumah Circle, Accra"
     },
     "deliveryFee": 15
   },
-  "payouts": [],
-  "reviews": [],
-  "notifications": []
+  "auditLogs": [
+    {
+      "id": "log-init",
+      "actor": "SYSTEM",
+      "action": "SYSTEM_INITIALIZED",
+      "entity": "DATABASE",
+      "details": "YEBS Noodles Supabase state initialised.",
+      "timestamp": "2026-10-28T11:24:04.828Z"
+    }
+  ],
+  "menuItems": [
+    {
+      "id": "spag15",
+      "tag": "Quick Bite",
+      "desc": "= Add scrambled egg + Cut half sausage",
+      "name": "SPAGHETTI",
+      "badge": "15 CEDIS",
+      "image": "img_food_3.jpg",
+      "price": 15,
+      "formula": "Add scrambled egg + Cut half sausage",
+      "noodles": [
+        "Spaghetti"
+      ],
+      "template": "poster-capsule"
+    },
+    {
+      "id": "indomie20",
+      "tag": "Bestseller",
+      "desc": "= Add scrambled egg + Cut full sausage + Put one egg on top.",
+      "name": "SPAGHETTI / INDOMIE",
+      "badge": "20 CEDIS",
+      "image": "img_food_2.jpg",
+      "price": 20,
+      "formula": "Add scrambled egg + Cut full sausage + Put one egg on top.",
+      "noodles": [
+        "Spaghetti",
+        "Indomie"
+      ],
+      "template": "poster-capsule"
+    },
+    {
+      "id": "indomie30",
+      "tag": "Free Beta Malt",
+      "desc": "= Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + Free Beta malt",
+      "name": "SPAGHETTI / INDOMIE",
+      "badge": "30 CEDIS",
+      "image": "img_food_1.jpg",
+      "price": 30,
+      "formula": "Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + Free Beta malt",
+      "noodles": [
+        "Spaghetti",
+        "Indomie"
+      ],
+      "template": "poster-capsule"
+    },
+    {
+      "id": "indomie40",
+      "tag": "Chicken + Beta Malt",
+      "desc": "= Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + One Chicken + Free Beta Malt",
+      "name": "SPAGHETTI / INDOMIE",
+      "badge": "40 CEDIS",
+      "image": "ghana_spag_chicken.jpg",
+      "price": 40,
+      "formula": "Add scrambled egg + Cut half sausage + Put one egg on top + One sausage + Small Gizzard + One Chicken + Free Beta Malt",
+      "noodles": [
+        "Spaghetti",
+        "Indomie"
+      ],
+      "template": "poster-capsule"
+    },
+    {
+      "id": "indomie60",
+      "tag": "Two Chicken + Beta Malt",
+      "desc": "= Add scrambled egg + Cut full sausage + Put one egg on top + One sausage + more Gizzard + One Full Chicken (Two pieces) + Free Beta Malt",
+      "name": "SPAGHETTI / INDOMIE",
+      "badge": "60 CEDIS",
+      "image": "img_food_4.jpg",
+      "price": 60,
+      "formula": "Add scrambled egg + Cut full sausage + Put one egg on top + One sausage + more Gizzard + One Full Chicken (Two pieces) + Free Beta Malt",
+      "noodles": [
+        "Spaghetti",
+        "Indomie"
+      ],
+      "template": "poster-capsule"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "ntf-1793190291060-424",
+      "orderId": "YB-1460",
+      "channel": "whatsapp",
+      "to": "233559103452",
+      "createdAt": "2026-10-28T12:24:51.060Z",
+      "status": "not-configured",
+      "message": "NEW YEBS NOODLES ORDER #YB-1460\nCustomer: Supabase Connection Test\nPhone: 0550000001\nFulfilment: Collection\nLocation: Circle Odo Rice Junction / VIP Station\nItems: 1 x SPAGHETTI\nTotal: GH15.00\nPayment: MTN Mobile Money (unpaid)\nOrder ID / PIN: YB-1460 / 1460",
+      "reason": "Set WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID to send kitchen alerts automatically."
+    }
+  ]
 }

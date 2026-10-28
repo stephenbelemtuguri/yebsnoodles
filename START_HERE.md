@@ -79,9 +79,9 @@ npm run dev
 - **Driver Portal**: http://localhost:3000/driver
 - **Admin Dashboard**: http://localhost:3000/admin
 
-**Default Admin Login**:
-- Username: `goodfood`
-- Password: `goodfood@123`
+**Admin Login**:
+- Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env`; the account is created on
+  first boot. Change the password from **Admin → Settings** after logging in.
 
 ---
 

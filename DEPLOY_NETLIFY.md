@@ -149,7 +149,7 @@ You want:
 
 | Portal | URL | Username | Password |
 |---|---|---|---|
-| Admin | `/admin` | `goodfood` | `goodfood@123` |
+| Admin | `/admin` | your `ADMIN_USERNAME` | your `ADMIN_PASSWORD` |
 | Driver | `/driver` | created at signup | chosen at signup |
 
 Change the admin password in **Admin → Login credentials** after the first login.
@@ -227,8 +227,9 @@ are present in `.env`, in which case it uses Supabase too.
 - **"Database unavailable"** in the browser: the function cannot reach Supabase.
   Check the two Supabase variables and that `yebs_state` exists.
 - **Login says "Invalid administrator credentials"**: the password was changed
-  earlier and forgotten. Re-run [`supabase/setup.sql`](supabase/setup.sql) in the
-  Supabase SQL Editor — it re-adds `goodfood` / `goodfood@123` without touching
-  orders or drivers. Full instructions: [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md).
+  earlier and forgotten. Re-run [`supabase/setup.sql`](supabase/setup.sql) to
+  create the table, then set `ADMIN_USERNAME` / `ADMIN_PASSWORD` and restart so
+  the app seeds the administrator. Full instructions:
+  [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md).
 - **Photo upload fails**: keep photos under 6 MB; the driver page already
   downsizes face photos to 480 px.

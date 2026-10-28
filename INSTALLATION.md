@@ -54,9 +54,12 @@ Access the application:
 - Driver Portal: http://localhost:3000/driver
 - Admin Dashboard: http://localhost:3000/admin
 
-Default admin credentials:
-- Username: `goodfood`
-- Password: `goodfood@123`
+Default admin credentials are created from the environment:
+- `ADMIN_USERNAME` (set in `.env`)
+- `ADMIN_PASSWORD` (set in `.env`)
+
+The administrator is seeded on first boot. Change the password from
+**Admin → Settings** after logging in.
 
 ---
 

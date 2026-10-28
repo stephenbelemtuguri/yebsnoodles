@@ -100,29 +100,35 @@ function isPlaceholder(url) {
     const seedPath = path.join(__dirname, '..', 'database.json');
     const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
     const bcrypt = require('bcryptjs');
-    const adminUsername = String(process.env.ADMIN_USERNAME || 'goodfood').trim() || 'goodfood';
-    const adminPassword = String(process.env.ADMIN_PASSWORD || 'goodfood@123');
-    const admin = {
+    const adminUsername = String(process.env.ADMIN_USERNAME || '').trim();
+    const adminPassword = String(process.env.ADMIN_PASSWORD || '');
+    const admin = adminUsername && adminPassword ? {
       id: 'adm-1',
       username: adminUsername,
       password: bcrypt.hashSync(adminPassword, 10),
       name: 'YEBS Administrator',
       role: 'SUPERADMIN',
       createdAt: new Date().toISOString()
-    };
+    } : null;
+
+    if (!admin) {
+      console.warn('[setup] ADMIN_USERNAME / ADMIN_PASSWORD not set - no administrator will be seeded.');
+    }
 
     if (existing.rowCount === 0) {
-      seed.admins = [admin];
+      seed.admins = admin ? [admin] : [];
       await client.query(
         `insert into public.${TABLE} (id, data, updated_at) values ($1, $2::jsonb, now())`,
         ['main', JSON.stringify(seed)]
       );
-      console.log(`[setup] seeded "main" from database.json (${seed.menuItems ? seed.menuItems.length : 0} menu items, admin "${adminUsername}")`);
+      console.log(`[setup] seeded "main" from database.json (${seed.menuItems ? seed.menuItems.length : 0} menu items${admin ? `, admin "${adminUsername}"` : ', no admin'})`);
     } else {
       const data = existing.rows[0].data || {};
       const admins = Array.isArray(data.admins) ? data.admins : [];
-      const hasAdmin = admins.some(a => String(a.username || '').toLowerCase() === adminUsername.toLowerCase());
-      if (hasAdmin) {
+      const hasAdmin = admin && admins.some(a => String(a.username || '').toLowerCase() === adminUsername.toLowerCase());
+      if (!admin) {
+        console.log('[setup] existing "main" row kept (no admin changes)');
+      } else if (hasAdmin) {
         console.log(`[setup] existing "main" row kept (admin "${adminUsername}" already present)`);
       } else {
         data.admins = admins.concat([admin]);

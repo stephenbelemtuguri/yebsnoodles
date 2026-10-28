@@ -6,15 +6,14 @@
 //   npm run supabase:sql
 //
 // The SQL creates public.yebs_state (the single table the API reads and
-// writes), enables RLS, seeds the menu/settings and creates the built-in
-// administrator. Re-running it never deletes orders, drivers or reviews.
+// writes), enables RLS, and seeds the menu and settings. It deliberately does
+// NOT contain an administrator password: the app creates the admin from the
+// ADMIN_USERNAME / ADMIN_PASSWORD environment variables on first boot.
+//
+// Re-running it never deletes orders, drivers or reviews.
 
 const fs = require('fs');
 const path = require('path');
-const bcrypt = require('bcryptjs');
-
-const ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || 'goodfood').trim() || 'goodfood';
-const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || 'goodfood@123');
 
 const root = path.join(__dirname, '..');
 const dbPath = path.join(root, 'database.json');
@@ -27,6 +26,10 @@ for (const key of ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menu
   if (!Array.isArray(db[key])) db[key] = [];
 }
 
+// Never commit an admin password. The API seeds the administrator from the
+// environment when this array is empty.
+db.admins = [];
+
 db.settings = db.settings && typeof db.settings === 'object' ? db.settings : {};
 db.settings.momo = db.settings.momo || { payTo: '0559103452', accountName: 'MATHEW TIA' };
 db.settings.pickup = db.settings.pickup || {
@@ -36,15 +39,6 @@ db.settings.pickup = db.settings.pickup || {
   lng: -0.2155
 };
 db.settings.deliveryFee = Number.isFinite(Number(db.settings.deliveryFee)) ? Number(db.settings.deliveryFee) : 15;
-
-db.admins = [{
-  id: 'adm-1',
-  username: ADMIN_USERNAME,
-  password: bcrypt.hashSync(ADMIN_PASSWORD, 10),
-  name: 'YEBS Administrator',
-  role: 'SUPERADMIN',
-  createdAt: now
-}];
 
 if (!db.sessions.length) {
   db.sessions = [{
@@ -69,11 +63,9 @@ if (!db.auditLogs.length) {
 }
 
 const seedJson = JSON.stringify(db, null, 2);
-const adminJson = JSON.stringify(db.admins);
-const adminUsernameSql = ADMIN_USERNAME.replace(/'/g, "''");
 
-if (seedJson.includes('$yebs$') || adminJson.includes('$admin$')) {
-  throw new Error('JSON contains a dollar-quote tag; change the tag in scripts/build-supabase-sql.js');
+if (seedJson.includes('$yebs$')) {
+  throw new Error('JSON contains the dollar-quote tag; change the tag in scripts/build-supabase-sql.js');
 }
 
 const sql = `-- ============================================================================
@@ -82,13 +74,20 @@ const sql = `-- ================================================================
 -- HOW TO RUN
 --   1. Open https://supabase.com/dashboard/project/dujmpwcarxliadnfdydr/sql/new
 --   2. Paste this whole file and press Run.
---   3. You should see: menu_items = ${db.menuItems.length}, admins = 1.
+--   3. You should see: menu_items = ${db.menuItems.length}.
 --
 -- This file is safe to re-run. It never deletes orders, drivers, reviews or
--- menu edits. It only creates the table and makes sure the admin exists.
+-- menu edits.
 --
--- Admin login after running:  ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}
--- Change the password from Admin -> Settings after the first login.
+-- ADMIN ACCOUNT
+--   No password is stored in this file. On first boot the API creates the
+--   administrator from ADMIN_USERNAME and ADMIN_PASSWORD in the environment:
+--
+--     ADMIN_USERNAME=your-admin-name
+--     ADMIN_PASSWORD=a-strong-password
+--
+--   Set the same variables in Render / Netlify, or run the app once with them
+--   in .env. Change the password from Admin -> Settings after the first login.
 -- ============================================================================
 
 create table if not exists public.yebs_state (
@@ -135,27 +134,14 @@ begin
 end
 $$;
 
--- First row: menu, pickup point, MoMo wallet, settings and the admin account.
+-- First row: menu, pickup point, MoMo wallet and settings. The admin array is
+-- intentionally empty - the API fills it from ADMIN_USERNAME / ADMIN_PASSWORD.
 insert into public.yebs_state (id, data)
 values ('main', $yebs$${seedJson}$yebs$::jsonb)
 on conflict (id) do nothing;
 
--- If the app already created the row, add the admin without touching orders.
-update public.yebs_state
-set data = jsonb_set(
-      data,
-      '{admins}',
-      coalesce(data->'admins', '[]'::jsonb) || $admin$${adminJson}$admin$::jsonb
-    ),
-    updated_at = now()
-where id = 'main'
-  and not exists (
-    select 1
-    from jsonb_array_elements(coalesce(data->'admins', '[]'::jsonb)) as a
-    where lower(a->>'username') = lower('${adminUsernameSql}')
-  );
-
--- Verification: expect menu_items = ${db.menuItems.length}, admins >= 1.
+-- Verification: expect menu_items = ${db.menuItems.length}. admins is 0 until
+-- the app has booted once with ADMIN_USERNAME / ADMIN_PASSWORD.
 select id,
        updated_at,
        jsonb_array_length(coalesce(data->'menuItems', '[]'::jsonb)) as menu_items,
@@ -165,17 +151,22 @@ from public.yebs_state
 where id = 'main';
 
 -- ----------------------------------------------------------------------------
--- Changing the admin password later
---   1. Generate a bcrypt hash:
---        node -e "console.log(require('bcryptjs').hashSync('NEW-PASSWORD',10))"
---   2. Replace HASH below and run:
+-- Optional: create the admin directly in SQL
+--   1. Generate a bcrypt hash locally (never commit the password):
+--        node -e "console.log(require('bcryptjs').hashSync('YOUR-PASSWORD',10))"
+--   2. Replace HASH and ADMIN_NAME below and run:
 --        update public.yebs_state
---        set data = jsonb_set(data, '{admins,0,password}', to_jsonb('HASH'::text))
+--        set data = jsonb_set(
+--              data,
+--              '{admins}',
+--              coalesce(data->'admins', '[]'::jsonb) ||
+--              '[{"id":"adm-1","username":"ADMIN_NAME","password":"HASH","name":"YEBS Administrator","role":"SUPERADMIN"}]'::jsonb
+--            )
 --        where id = 'main';
 -- ----------------------------------------------------------------------------
 `;
 
 fs.writeFileSync(outPath, sql, 'utf8');
 console.log(`[supabase:sql] wrote ${path.relative(root, outPath)}`);
-console.log(`[supabase:sql] admin=${ADMIN_USERNAME} menuItems=${db.menuItems.length} sessions=${db.sessions.length}`);
+console.log(`[supabase:sql] menuItems=${db.menuItems.length} sessions=${db.sessions.length} admins=0 (created by the app from env)`);
 console.log('[supabase:sql] paste the file into the Supabase SQL Editor and press Run.');

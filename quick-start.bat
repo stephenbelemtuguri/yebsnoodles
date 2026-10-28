@@ -84,9 +84,9 @@ echo   • Customer: http://localhost:3000
 echo   • Driver:   http://localhost:3000/driver
 echo   • Admin:    http://localhost:3000/admin
 echo.
-echo Default admin login:
-echo   Username: yebsnoodles
-echo   Password: yebs@123
+echo Admin login:
+echo   Set ADMIN_USERNAME and ADMIN_PASSWORD in .env
+echo   The account is created automatically on first boot.
 echo.
 echo Next steps:
 echo 1. Test all three portals locally
