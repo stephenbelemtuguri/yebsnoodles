@@ -96,17 +96,42 @@ function isPlaceholder(url) {
     await client.query(`alter table public.${TABLE} enable row level security`).catch(() => {});
     console.log(`[setup] table public.${TABLE} is ready`);
 
-    const existing = await client.query(`select id from public.${TABLE} where id = $1`, ['main']);
+    const existing = await client.query(`select id, data from public.${TABLE} where id = $1`, ['main']);
+    const seedPath = path.join(__dirname, '..', 'database.json');
+    const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+    const bcrypt = require('bcryptjs');
+    const adminUsername = String(process.env.ADMIN_USERNAME || 'goodfood').trim() || 'goodfood';
+    const adminPassword = String(process.env.ADMIN_PASSWORD || 'goodfood@123');
+    const admin = {
+      id: 'adm-1',
+      username: adminUsername,
+      password: bcrypt.hashSync(adminPassword, 10),
+      name: 'YEBS Administrator',
+      role: 'SUPERADMIN',
+      createdAt: new Date().toISOString()
+    };
+
     if (existing.rowCount === 0) {
-      const seedPath = path.join(__dirname, '..', 'database.json');
-      const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+      seed.admins = [admin];
       await client.query(
         `insert into public.${TABLE} (id, data, updated_at) values ($1, $2::jsonb, now())`,
         ['main', JSON.stringify(seed)]
       );
-      console.log(`[setup] seeded "main" from database.json (${seed.menuItems ? seed.menuItems.length : 0} menu items)`);
+      console.log(`[setup] seeded "main" from database.json (${seed.menuItems ? seed.menuItems.length : 0} menu items, admin "${adminUsername}")`);
     } else {
-      console.log('[setup] existing "main" row kept (no data overwritten)');
+      const data = existing.rows[0].data || {};
+      const admins = Array.isArray(data.admins) ? data.admins : [];
+      const hasAdmin = admins.some(a => String(a.username || '').toLowerCase() === adminUsername.toLowerCase());
+      if (hasAdmin) {
+        console.log(`[setup] existing "main" row kept (admin "${adminUsername}" already present)`);
+      } else {
+        data.admins = admins.concat([admin]);
+        await client.query(
+          `update public.${TABLE} set data = $2::jsonb, updated_at = now() where id = $1`,
+          ['main', JSON.stringify(data)]
+        );
+        console.log(`[setup] existing "main" row kept; added admin "${adminUsername}"`);
+      }
     }
 
     const check = await client.query(
