@@ -1447,11 +1447,14 @@ app.post('/api/drivers/:id/location', (req, res) => {
   // Mirror the live GPS position onto every active order handled by this
   // driver so customers on other devices receive it with the order sync.
   db.orders.forEach(o => {
-    if (!o.driver) return;
-    const sameDriver = (o.driver.id && o.driver.id === driver.id)
-      || (o.driver.name || '').toLowerCase() === (driver.name || `${driver.fname} ${driver.lname}`).toLowerCase()
-      || (o.driver.phone || '').replace(/\s+/g, '') === (driver.phone || '').replace(/\s+/g, '');
+    const sameDriver = (o.driverId && o.driverId === driver.id)
+      || (o.driver && o.driver.id && o.driver.id === driver.id)
+      || (o.driver && (o.driver.name || '').toLowerCase() === (driver.name || `${driver.fname || ''} ${driver.lname || ''}`).trim().toLowerCase())
+      || (o.driver && (o.driver.phone || '').replace(/\s+/g, '') === (driver.phone || '').replace(/\s+/g, ''));
     if (sameDriver && o.status !== 'delivered' && o.status !== 'cancelled') {
+      if (!o.driver) o.driver = {};
+      o.driver.id = driver.id;
+      o.driver.name = driver.name || `${driver.fname || ''} ${driver.lname || ''}`.trim() || driver.username;
       o.driver.currentLocation = { lat: driver.lat, lng: driver.lng };
       o.driver.speedKmh = driver.speedKmh;
       o.driver.lastUpdated = driver.lastLocationUpdate;

@@ -2159,13 +2159,14 @@
       const driverPhone = resolveDriverPhone(order) || "the number shown on your live tracking page";
       const trackingUrl = `${window.location.origin}${window.location.pathname.replace(/admin\.html.*$/, 'index.html')}?track=${order.id}`;
 
+      const pin = order.pickupPin || String(order.id).slice(-4);
       let msg = "";
       if (activeTemplate === 'confirmed') {
-        msg = `Hello ${order.customer}! 🍜\n\nYour YEBS Noodles order #${order.id} has been CONFIRMED and is now being freshly prepared in our kitchen.\n\nItems: ${order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}\nTotal: GH₵${order.total}\n\nWe will update you as soon as your delivery driver hits the road!`;
+        msg = `Hello ${order.customer}! 🍜\n\nYour YEBS Noodles order #${order.id} has been CONFIRMED and is now being freshly prepared in our kitchen.\n\nCollection PIN: ${pin}\nItems: ${order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}\nTotal: GH₵${order.total}\n\nWe will update you as soon as your delivery driver hits the road!`;
       } else if (activeTemplate === 'enroute') {
-        msg = `Hello ${order.customer}! 🛵\n\nYour YEBS Noodles order #${order.id} is now EN ROUTE!\n\nDriver: ${driverName} (${driverPhone})\nDelivery to: ${order.location}\n${note ? `Note: ${note}\n` : ''}\n👉 View LIVE GPS TRACKING of your driver here just like Bolt/Yango:\n${trackingUrl}\n\nEnjoy your meal!`;
+        msg = `Hello ${order.customer}! 🛵\n\nYour YEBS Noodles order #${order.id} is now EN ROUTE!\n\nCollection PIN: ${pin}\nDriver: ${driverName} (${driverPhone})\nDelivery to: ${order.location}\n${note ? `Note: ${note}\n` : ''}\n👉 View LIVE GPS TRACKING of your driver here just like Bolt/Yango:\n${trackingUrl}\n\nEnjoy your meal!`;
       } else if (activeTemplate === 'arrived') {
-        msg = `Hello ${order.customer}! 📍\n\nYour YEBS delivery rider (${driverName}) has ARRIVED at your location with your hot noodles!\n\nPlease meet the driver or confirm delivery. Call rider: ${driverPhone}`;
+        msg = `Hello ${order.customer}! 📍\n\nYour YEBS delivery rider (${driverName}) has ARRIVED at your location with your hot noodles!\n\nShow PIN: ${pin} to receive your food.\nCall rider: ${driverPhone}`;
       } else if (activeTemplate === 'delivered') {
         msg = `Thank you ${order.customer}! 🎉\n\nYour YEBS Noodles order #${order.id} has been DELIVERED successfully.\n\nWe hope you love every bite of The Standard of Delicacy! Rate us or order again anytime: 055 910 3452.`;
       }

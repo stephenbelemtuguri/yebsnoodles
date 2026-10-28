@@ -1608,7 +1608,7 @@
     let trackDriverMarker = null;
     let trackCustMarker = null;
     let trackRouteLine = null;
-    let currentlyTrackedOrderId = "YB-1082";
+    let currentlyTrackedOrderId = localStorage.getItem('yebs_active_order_id') || "";
 
     // Elements
     const menuGrid = document.getElementById("menuGrid");
@@ -2613,6 +2613,15 @@
       formFeedback.textContent = `✅ Order ${newOrder.id} placed! ${newOrder.fulfilment === 'Collection'
         ? 'Collect it free at ' + (newOrder.pickupPointName || sharedPickupPoint.name) + '.'
         : 'The rider will bring it to ' + (newOrder.location || 'your address') + '.'} ${notifyNote}`;
+      localStorage.setItem('yebs_active_order_id', newOrder.id);
+      currentlyTrackedOrderId = newOrder.id;
+      try {
+        const list = JSON.parse(localStorage.getItem('yebs_customer_orders') || '[]');
+        list.unshift({ id: newOrder.id, customer: newOrder.customer, total: newOrder.total, status: newOrder.status, createdAt: newOrder.createdAt, pin: newOrder.pickupPin });
+        localStorage.setItem('yebs_customer_orders', JSON.stringify(list.slice(0, 10)));
+      } catch (e) {}
+      updateActiveOrderPill();
+
       showOrderIdModal(newOrder);
 
       // Celebrate every successful order (the mobile-money flow celebrates
@@ -2665,12 +2674,12 @@
 
     async function openTrackingModal(orderId) {
       if (!orderId) {
-        const orders = getOrders();
-        orderId = orders.length > 0 ? orders[0].id : null;
+        orderId = localStorage.getItem('yebs_active_order_id') || (getOrders().length > 0 ? getOrders()[0].id : null);
       }
       if (!orderId) {
-        alert("No orders placed yet. Add noodles to cart and place an order to track live GPS in real-time!");
-        return;
+        const inputId = window.prompt("Enter your Order ID (e.g. YB-1460) or 4-digit PIN to track live:");
+        if (!inputId || !inputId.trim()) return;
+        orderId = inputId.trim();
       }
 
       // Accept the 4-digit PIN on its own as well as the full Order ID.
@@ -2683,7 +2692,7 @@
         await apiFetchOrder(orderId).catch(() => {});
       }
       if (!getOrderById(orderId)) {
-        alert(`Order ${orderId} was not found. Please check the order ID (e.g. YB-1082).`);
+        alert(`Order ${orderId} was not found. Please verify your order number or place an order first.`);
         return;
       }
 
@@ -2723,6 +2732,7 @@
               if (local) Object.assign(local, msg.order);
               renderTrackingModal();
               updateStepperFromStatus(msg.order.status);
+              updateActiveOrderPill();
             }
           } catch (_) {}
         };
@@ -2750,6 +2760,7 @@
               renderTrackingModal();
               updateStepperFromStatus(data.order.status);
             }
+            updateActiveOrderPill();
           }
         }
       } catch (_) {}
@@ -3229,12 +3240,67 @@
       if (trackingOverlay.classList.contains("active")) {
         renderTrackingModal();
       }
+      updateActiveOrderPill();
     });
+
+    function updateActiveOrderPill() {
+      const pill = document.getElementById('activeOrderFloatingPill');
+      if (!pill) return;
+      const activeId = localStorage.getItem('yebs_active_order_id');
+      if (!activeId) {
+        pill.style.display = 'none';
+        return;
+      }
+      const order = getOrderById(activeId);
+      if (!order || order.status === 'delivered' || order.status === 'cancelled') {
+        pill.style.display = 'none';
+        return;
+      }
+      const idEl = document.getElementById('activePillOrderId');
+      const statusEl = document.getElementById('activePillStatus');
+      if (idEl) idEl.textContent = order.id;
+      if (statusEl) {
+        const s = String(order.status || '').toLowerCase();
+        statusEl.textContent = s === 'enroute' ? 'En Route 🛵' : (s === 'arrived' ? 'Arrived 📍' : 'Cooking 🍜');
+      }
+      pill.style.display = 'inline-flex';
+    }
+
+    const activeOrderFloatingPill = document.getElementById('activeOrderFloatingPill');
+    if (activeOrderFloatingPill) {
+      activeOrderFloatingPill.addEventListener('click', () => {
+        const activeId = localStorage.getItem('yebs_active_order_id');
+        if (activeId) openTrackingModal(activeId);
+      });
+    }
+
+    // Phone Auto-Formatter (Ghana 10-digit number cleanup)
+    const phoneInput = document.getElementById('phone');
+    if (phoneInput) {
+      phoneInput.addEventListener('input', () => {
+        let val = phoneInput.value.replace(/[^0-9+]/g, '');
+        if (val.startsWith('+233')) val = '0' + val.slice(4);
+        else if (val.startsWith('233')) val = '0' + val.slice(3);
+        phoneInput.value = val;
+      });
+    }
+    const payerPhoneInput = document.getElementById('payerPhone');
+    if (payerPhoneInput) {
+      payerPhoneInput.addEventListener('input', () => {
+        let val = payerPhoneInput.value.replace(/[^0-9+]/g, '');
+        if (val.startsWith('+233')) val = '0' + val.slice(4);
+        else if (val.startsWith('233')) val = '0' + val.slice(3);
+        payerPhoneInput.value = val;
+      });
+    }
+
+    updateActiveOrderPill();
 
     // Cross-device live sync: customer sees driver assignment + GPS that the
     // driver/admin portals publish from their own phones.
     startLiveOrderSync(() => {
       updateSessionBanner();
+      updateActiveOrderPill();
       if (trackingOverlay.classList.contains("active")) renderTrackingModal();
     }, 4000);
 
@@ -4310,6 +4376,13 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Floating Active Order Tracker Pill -->
+  <div id="activeOrderFloatingPill" style="display:none; position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:9990; background:linear-gradient(135deg, #173d30, #0e2920); color:white; border:2px solid #e9bd68; border-radius:999px; padding:10px 22px; box-shadow:0 8px 30px rgba(0,0,0,0.35); align-items:center; gap:12px; cursor:pointer; font-size:0.86rem; font-weight:700; white-space:nowrap; transition:all 0.2s ease;">
+    <span style="font-size:1.25rem;">🛵</span>
+    <span>Live Order <strong id="activePillOrderId" style="color:#e9bd68;">YB-0000</strong>: <span id="activePillStatus">Preparing 🍜</span></span>
+    <span style="background:#e57a45; color:white; padding:4px 12px; border-radius:999px; font-size:0.75rem; font-weight:800;">Track Live GPS 📍</span>
   </div>
 
   <!-- Dark / Light Mode Toggle (floating) -->

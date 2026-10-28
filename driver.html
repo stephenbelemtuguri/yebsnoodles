@@ -1549,11 +1549,31 @@
                   </button>
                 </div>
               ` : isMyOrder ? `
-                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:8px 12px;">
-                  <span style="font-size:0.8rem; color:#166534; font-weight:700;">✅ Assigned to You (${order.status})</span>
-                  <button type="button" class="btn btn-outline btn-sm unclaim-delivery-btn" data-id="${order.id}" style="padding:4px 10px; font-size:0.75rem; color:#b91c1c; border-color:#fca5a5;">
-                    Release
-                  </button>
+                <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:10px 12px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;">
+                    <span style="font-size:0.8rem; color:#166534; font-weight:700;">✅ Assigned to You (${order.status.toUpperCase()})</span>
+                    <button type="button" class="btn btn-outline btn-sm unclaim-delivery-btn" data-id="${order.id}" style="padding:3px 8px; font-size:0.72rem; color:#b91c1c; border-color:#fca5a5;">
+                      Release
+                    </button>
+                  </div>
+                  <!-- Direct Rider Status Controls -->
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    ${order.status !== 'enroute' && order.status !== 'arrived' && !isVerified ? `
+                      <button type="button" class="btn btn-orange btn-sm mark-enroute-btn" data-id="${order.id}" style="font-size:0.75rem; padding:6px 12px; font-weight:700; flex:1;">
+                        🛵 Hit the Road (En Route)
+                      </button>
+                    ` : ''}
+                    ${order.status === 'enroute' ? `
+                      <button type="button" class="btn btn-forest btn-sm mark-arrived-btn" data-id="${order.id}" style="font-size:0.75rem; padding:6px 12px; font-weight:700; flex:1;">
+                        📍 Mark Arrived at Destination
+                      </button>
+                    ` : ''}
+                    ${order.status === 'arrived' && !isVerified ? `
+                      <span style="font-size:0.78rem; color:#166534; font-weight:700; display:flex; align-items:center; gap:4px;">
+                        📍 You have arrived! Ask customer for their 4-digit PIN below to complete handover.
+                      </span>
+                    ` : ''}
+                  </div>
                 </div>
               ` : `
                 <div style="font-size:0.78rem; color:#64748b; background:#f1f5f9; padding:6px 10px; border-radius:6px;">
@@ -1705,6 +1725,24 @@
           alert((res && res.message) || 'Could not release delivery.');
           e.target.disabled = false;
         }
+      }
+
+      if (e.target.classList.contains('mark-enroute-btn')) {
+        const orderId = e.target.dataset.id;
+        e.target.disabled = true;
+        e.target.textContent = 'Updating...';
+        updateOrderStatus(orderId, 'enroute');
+        if (typeof playChime === 'function') playChime('general');
+        setTimeout(renderSessionPackages, 350);
+      }
+
+      if (e.target.classList.contains('mark-arrived-btn')) {
+        const orderId = e.target.dataset.id;
+        e.target.disabled = true;
+        e.target.textContent = 'Updating...';
+        updateOrderStatus(orderId, 'arrived');
+        if (typeof playChime === 'function') playChime('arrival');
+        setTimeout(renderSessionPackages, 350);
       }
 
       if (e.target.classList.contains('view-on-map-btn')) {
