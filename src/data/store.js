@@ -22,12 +22,33 @@ const SUPABASE_KEY = String(
   process.env.SUPABASE_SECRET_KEY ||
   ''
 );
-const DATABASE_URL = String(
-  process.env.DATABASE_POOL_URL ||
-  process.env.DATABASE_URL ||
-  process.env.SUPABASE_DB_URL ||
+const RAW_DB_PASSWORD = String(
+  process.env.DATABASE_PASSWORD ||
+  process.env.SUPABASE_DB_PASSWORD ||
   ''
 ).trim();
+
+function resolveDatabaseUrl() {
+  const raw = String(
+    process.env.DATABASE_POOL_URL ||
+    process.env.DATABASE_URL ||
+    process.env.SUPABASE_DB_URL ||
+    ''
+  ).trim();
+  if (!raw) return '';
+  if (!RAW_DB_PASSWORD) return raw;
+  try {
+    // Accept the raw password separately so characters like @ : # / do not
+    // have to be URL-encoded by hand. The URL API encodes it correctly.
+    const url = new URL(raw);
+    url.password = RAW_DB_PASSWORD;
+    return url.toString();
+  } catch {
+    return raw;
+  }
+}
+
+const DATABASE_URL = resolveDatabaseUrl();
 const TABLE = String(process.env.SUPABASE_STATE_TABLE || 'yebs_state').replace(/[^a-zA-Z0-9_]/g, '') || 'yebs_state';
 const ROW_ID = 'main';
 

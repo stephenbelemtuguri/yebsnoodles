@@ -15,7 +15,26 @@ const fs = require('fs');
 const path = require('path');
 
 const TABLE = String(process.env.SUPABASE_STATE_TABLE || 'yebs_state').replace(/[^a-zA-Z0-9_]/g, '') || 'yebs_state';
-const DB_URL = String(process.env.DATABASE_POOL_URL || process.env.DATABASE_URL || '').trim();
+const RAW_DB_PASSWORD = String(
+  process.env.DATABASE_PASSWORD ||
+  process.env.SUPABASE_DB_PASSWORD ||
+  ''
+).trim();
+
+function resolveDbUrl() {
+  const raw = String(process.env.DATABASE_POOL_URL || process.env.DATABASE_URL || '').trim();
+  if (!raw) return '';
+  if (!RAW_DB_PASSWORD) return raw;
+  try {
+    const url = new URL(raw);
+    url.password = RAW_DB_PASSWORD;
+    return url.toString();
+  } catch {
+    return raw;
+  }
+}
+
+const DB_URL = resolveDbUrl();
 
 function mask(url) {
   try {
@@ -27,8 +46,9 @@ function mask(url) {
 }
 
 function isPlaceholder(url) {
-  const pw = decodeURIComponent(new URL(url).password || '');
-  return !pw || /^(your|change|example|placeholder|password)/i.test(pw);
+  const pw = decodeURIComponent(new URL(url).password || '').trim();
+  if (!pw) return true;
+  return ['your-password', '[your-password]', 'your_password', 'change-me', 'changeme', 'placeholder', 'password', 'example'].includes(pw.toLowerCase());
 }
 
 (async () => {
