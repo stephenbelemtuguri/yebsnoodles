@@ -1,5 +1,14 @@
 {
-  "admins": [],
+  "admins": [
+    {
+      "id": "adm-1",
+      "username": "goodfood",
+      "password": "$2b$10$Sdgu6IAuF7SS8redQCJ1sO65HB11C/o1sAKaVCZ8FgtmwOOv/ZSBC",
+      "name": "YEBS Administrator",
+      "role": "SUPERADMIN",
+      "createdAt": "2026-10-28T14:51:00.943Z"
+    }
+  ],
   "orders": [],
   "drivers": [],
   "payouts": [],
@@ -10,10 +19,10 @@
       "status": "ACTIVE",
       "startedAt": "2026-10-28T11:24:04.828Z",
       "pickupPoint": {
-        "lat": 5.5612,
-        "lng": -0.2155,
+        "lat": 5.5582,
+        "lng": -0.21343,
         "name": "Adabraka infront of Efex hotel",
-        "address": "Kwame Nkrumah Circle, Accra",
+        "address": "Adabraka, Accra",
         "updatedAt": "2026-10-28T11:24:04.828Z"
       },
       "sessionNumber": 1,
