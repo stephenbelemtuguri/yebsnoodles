@@ -28,6 +28,10 @@ services:
       # Optional: use Supabase instead of the Render database.
       - key: DATABASE_POOL_URL
         sync: false
+      # Raw Supabase password. Overrides the password inside DATABASE_POOL_URL,
+      # so @ : # / do not need URL-encoding.
+      - key: DATABASE_PASSWORD
+        sync: false
       - key: SUPABASE_URL
         value: https://dujmpwcarxliadnfdydr.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY
