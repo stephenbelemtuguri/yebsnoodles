@@ -3921,8 +3921,11 @@ app.post('/api/admin/settings/credentials', requireRole('admin'), (req, res) => 
     changed.push('username');
   }
   if (newPassword) {
-    if (String(newPassword).length < 8) {
-      return res.status(400).json({ success: false, message: "New password must be at least 8 characters." });
+    if (String(newPassword).length < 12) {
+      return res.status(400).json({ success: false, message: "New password must be at least 12 characters." });
+    }
+    if (String(newPassword) === PUBLISHED_DEFAULT_ADMIN_PASSWORD) {
+      return res.status(400).json({ success: false, message: "Choose a unique password. The published default password is not allowed." });
     }
     admin.password = hashPassword(String(newPassword));
     admin.passwordUpdatedAt = new Date().toISOString();

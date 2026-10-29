@@ -66,4 +66,31 @@ describe('admin menu persistence', () => {
       formula: 'Updated test ingredients'
     });
   });
+
+  test('allows changing credentials in admin settings but rejects the published password', async () => {
+    const unsafe = await request(app)
+      .post('/api/admin/settings/credentials')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        currentPassword: process.env.ADMIN_PASSWORD,
+        newPassword: 'goodfood@123'
+      });
+    expect(unsafe.status).toBe(400);
+
+    const change = await request(app)
+      .post('/api/admin/settings/credentials')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        currentPassword: process.env.ADMIN_PASSWORD,
+        newUsername: 'menu-editor-renamed',
+        newPassword: 'menu-editor-rotated-strong-password'
+      });
+    expect(change.status).toBe(200);
+    expect(change.body.admin.username).toBe('menu-editor-renamed');
+
+    const newLogin = await request(app)
+      .post('/api/auth/admin/login')
+      .send({ username: 'menu-editor-renamed', password: 'menu-editor-rotated-strong-password' });
+    expect(newLogin.status).toBe(200);
+  });
 });
