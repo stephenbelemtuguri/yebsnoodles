@@ -14,7 +14,8 @@ fs.writeFileSync(databasePath, JSON.stringify({
     username: 'goodfood',
     password: bcrypt.hashSync('goodfood@123', 4),
     name: 'Legacy administrator',
-    role: 'SUPERADMIN'
+    role: 'SUPERADMIN',
+    sessionEpoch: 4
   }],
   drivers: [],
   orders: [],
@@ -54,6 +55,7 @@ describe('legacy administrator credential migration', () => {
 
     const admin = loadDatabase().admins[0];
     expect(admin.username).toBe(configuredUsername);
+    expect(admin.sessionEpoch).toBe(5);
     expect(admin.requiresPasswordSetup).toBeUndefined();
     expect(bcrypt.compareSync('goodfood@123', admin.password)).toBe(false);
     expect(bcrypt.compareSync(configuredPassword, admin.password)).toBe(true);

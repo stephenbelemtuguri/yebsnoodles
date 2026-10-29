@@ -767,6 +767,7 @@ function ensureSystemAccounts(db) {
       if (ADMIN_PASSWORD_CONFIGURED) {
         admin.password = hashPassword(DEFAULT_ADMIN_PASSWORD);
         admin.passwordUpdatedAt = new Date().toISOString();
+        admin.sessionEpoch = (Number(admin.sessionEpoch) || 0) + 1;
         delete admin.requiresPasswordSetup;
         if (ADMIN_USERNAME_CONFIGURED && String(admin.username || '').toLowerCase() === PUBLISHED_DEFAULT_ADMIN_USERNAME) {
           admin.username = DEFAULT_ADMIN_USERNAME;
@@ -775,6 +776,7 @@ function ensureSystemAccounts(db) {
       } else if (!admin.requiresPasswordSetup) {
         admin.password = hashPassword(crypto.randomBytes(48).toString('hex'));
         admin.requiresPasswordSetup = true;
+        admin.sessionEpoch = (Number(admin.sessionEpoch) || 0) + 1;
         changed = true;
         console.error('[security] Disabled a legacy default administrator password. Set ADMIN_USERNAME and a non-default ADMIN_PASSWORD to restore access.');
       }
