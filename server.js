@@ -3503,7 +3503,7 @@ const DEFAULT_POSTER_MENU = [
     noodles: ["Spaghetti", "Indomie"],
     formula: "Add scrambled egg + Cut full sausage + Put one egg on top + One sausage + more Gizzard + One Full Chicken (Two pieces) + Free Beta Malt",
     desc: "= Add scrambled egg + Cut full sausage + Put one egg on top + One sausage + more Gizzard + One Full Chicken (Two pieces) + Free Beta Malt",
-    image: "img_food_4.jpg",
+    image: "img_food_3.jpg",
     badge: "60 CEDIS",
     tag: "Two Chicken + Beta Malt",
     template: "poster-capsule"

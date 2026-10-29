@@ -1253,7 +1253,7 @@
               </div>
             </div>
             <div class="poster-food-img-wrap">
-              <img src="img_food_4.jpg" alt="SPAGHETTI / INDOMIE - 60 Cedis" class="poster-food-img" width="600" height="420" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='img_food_1.jpg';">
+              <img src="img_food_3.jpg" alt="SPAGHETTI / INDOMIE - 60 Cedis" class="poster-food-img" width="600" height="420" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='img_food_1.jpg';">
               <span class="poster-availability">Available today</span>
               <span class="poster-tag-pill">Two Chicken + Beta Malt</span>
             </div>
@@ -2068,6 +2068,9 @@
         .replace(/^\.?\//, '')
         .replace(/^(public\/)+/i, '')
         .replace(/^stephen 1\//i, '');
+      if (['img_food_4.jpg', 'img_menu_poster.jpg'].includes(raw.toLowerCase())) {
+        return 'img_food_3.jpg';
+      }
       return raw || 'img_food_1.jpg';
     }
 

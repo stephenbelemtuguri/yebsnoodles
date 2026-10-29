@@ -7,7 +7,9 @@ describe('persistent store recovery', () => {
     'DATABASE_URL',
     'DATABASE_POOL_URL',
     'SUPABASE_DB_URL',
-    'DATABASE_PASSWORD'
+    'DATABASE_PASSWORD',
+    'RENDER',
+    'RENDER_SERVICE_ID'
   ];
 
   beforeAll(() => {
@@ -35,6 +37,18 @@ describe('persistent store recovery', () => {
 
     expect(store.remoteMode).toBe('postgres');
     expect(store.DATABASE_URL).toBe(renderUrl);
+  });
+
+  test('prefers IPv4 addresses for Render database connections', () => {
+    const dns = require('node:dns');
+    const setDefaultResultOrder = jest.spyOn(dns, 'setDefaultResultOrder');
+    process.env.RENDER = 'true';
+    process.env.DATABASE_URL = 'postgres://render_user:password@render-db.example:5432/yebs';
+
+    require('../src/data/store');
+
+    expect(setDefaultResultOrder).toHaveBeenCalledWith('ipv4first');
+    setDefaultResultOrder.mockRestore();
   });
 
   test('allows writes after remote storage recovers with an empty state row', async () => {

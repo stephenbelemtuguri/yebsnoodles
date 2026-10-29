@@ -1188,8 +1188,6 @@
                   <option value="img_food_2.jpg">img_food_2.jpg — Sunny Fried Egg on Noodles (20 Cedis default)</option>
                   <option value="img_food_3.jpg">img_food_3.jpg — Sliced Sausage & Veggies (15 Cedis default)</option>
                   <option value="ghana_spag_chicken.jpg">ghana_spag_chicken.jpg — Golden Chicken Feast (40 Cedis default)</option>
-                  <option value="img_food_4.jpg">img_food_4.jpg — Multi-Plate Big Feast (60 Cedis default)</option>
-                  <option value="img_menu_poster.jpg">img_menu_poster.jpg — Official Poster Graphic</option>
                 </select>
                 <input type="text" id="newDishCustomImage" class="admin-edit-input" placeholder="Or paste an image URL..." style="margin-top:6px; font-size:0.8rem;">
                 <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
@@ -2855,10 +2853,7 @@
       { file: "img_food_3.jpg", label: "img_food_3.jpg — Sliced Sausage & Veggies (15 Cedis default)" },
       { file: "img_food_2.jpg", label: "img_food_2.jpg — Sunny Fried Egg on Noodles (20 Cedis default)" },
       { file: "img_food_1.jpg", label: "img_food_1.jpg — Chicken Drumstick & Egg Bowl (30 Cedis default)" },
-      { file: "ghana_spag_chicken.jpg", label: "ghana_spag_chicken.jpg — Golden Chicken Feast (40 Cedis default)" },
-      { file: "img_food_4.jpg", label: "img_food_4.jpg — Multi-Plate Big Feast (60 Cedis default)" },
-      { file: "img_menu_poster.jpg", label: "img_menu_poster.jpg — Official Poster Graphic" },
-      { file: "food_photo.png", label: "food_photo.png — YEBS Signature Dish" }
+      { file: "ghana_spag_chicken.jpg", label: "ghana_spag_chicken.jpg — Golden Chicken Feast (40 Cedis default)" }
     ];
 
     function showMenuFeedback(msg, isSuccess = true) {
@@ -2919,6 +2914,9 @@
         const formulaClean = (item.formula || item.desc || "").replace(/^=\s*/, '');
         const templateStyle = item.template || "poster-capsule";
         const pickedImage = pickedMenuImages.get(item.id) || '';
+        const previewImage = ['img_food_4.jpg', 'img_menu_poster.jpg'].includes(String(item.image || '').toLowerCase())
+          ? 'img_food_3.jpg'
+          : item.image;
         const isComingSoon = item.status === 'coming_soon' || item.comingSoon === true || String(item.tag || '').toLowerCase().includes('coming soon');
         const isSoldOut = !isComingSoon && (item.available === false || item.status === 'sold_out');
         const itemStatus = isComingSoon ? 'coming_soon' : (isSoldOut ? 'sold_out' : 'available');
@@ -2943,7 +2941,7 @@
               </div>
 
               <div style="position:relative; height:180px; width:100%; overflow:hidden; background:#eee;">
-                <img src="${pickedImage || item.image}" alt="${item.name}" id="prev-img-${item.id}" style="width:100%; height:100%; object-fit:cover;">
+                <img src="${pickedImage || previewImage}" alt="${item.name}" id="prev-img-${item.id}" style="width:100%; height:100%; object-fit:cover;">
                 <span id="prev-status-badge-${item.id}" class="${isComingSoon ? 'status-pill-coming-soon' : (isSoldOut ? 'status-pill-sold-out' : 'status-pill-available')}" style="position:absolute; top:10px; left:10px; font-size:0.72rem; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase;">
                   ${isComingSoon ? '🚀 Coming Soon' : (isSoldOut ? '🔴 Sold Out' : '🟢 Available Live')}
                 </span>

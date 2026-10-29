@@ -14,6 +14,11 @@
 // Reads happen once at boot (`init`); writes are queued in order and flushed
 // with `flush()` before a serverless invocation returns.
 // ═══════════════════════════════════════════════════════════════════════════
+const dns = require('node:dns');
+
+if (process.env.RENDER || process.env.RENDER_SERVICE_ID) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SUPABASE_KEY = String(
