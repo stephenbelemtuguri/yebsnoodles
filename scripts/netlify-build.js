@@ -14,6 +14,7 @@ const FILES = [
   'driver.html',
   'shared.js',
   'recovery.js',
+  'nav.js',
   'sw.js',
   'manifest.json'
 ];

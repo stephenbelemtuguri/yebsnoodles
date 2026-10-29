@@ -67,16 +67,7 @@ $$;
 -- First row: menu, pickup point, MoMo wallet, settings and admin account.
 insert into public.yebs_state (id, data)
 values ('main', $yebs${
-  "admins": [
-    {
-      "id": "adm-1",
-      "username": "goodfood",
-      "password": "$2b$10$Sdgu6IAuF7SS8redQCJ1sO65HB11C/o1sAKaVCZ8FgtmwOOv/ZSBC",
-      "name": "YEBS Administrator",
-      "role": "SUPERADMIN",
-      "createdAt": "2026-10-28T14:51:00.943Z"
-    }
-  ],
+  "admins": [],
   "orders": [],
   "drivers": [],
   "payouts": [],
@@ -196,37 +187,12 @@ values ('main', $yebs${
       "template": "poster-capsule"
     }
   ],
-  "notifications": [
-    {
-      "id": "ntf-1793190291060-424",
-      "orderId": "YB-1460",
-      "channel": "whatsapp",
-      "to": "233559103452",
-      "createdAt": "2026-10-28T12:24:51.060Z",
-      "status": "not-configured",
-      "message": "NEW YEBS NOODLES ORDER #YB-1460\nCustomer: Supabase Connection Test\nPhone: 0550000001\nFulfilment: Collection\nLocation: Circle Odo Rice Junction / VIP Station\nItems: 1 x SPAGHETTI\nTotal: GH15.00\nPayment: MTN Mobile Money (unpaid)\nOrder ID / PIN: YB-1460 / 1460",
-      "reason": "Set WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID to send kitchen alerts automatically."
-    }
-  ]
+  "notifications": []
 }$yebs$::jsonb)
 on conflict (id) do nothing;
 
--- If the row already exists, make sure the goodfood administrator is present.
-update public.yebs_state
-set data = jsonb_set(
-      data,
-      '{admins}',
-      coalesce(data->'admins', '[]'::jsonb) || $admin$[{"id":"adm-1","username":"goodfood","password":"$2b$10$Sdgu6IAuF7SS8redQCJ1sO65HB11C/o1sAKaVCZ8FgtmwOOv/ZSBC","name":"YEBS Administrator","role":"SUPERADMIN","createdAt":"2026-10-28T14:51:00.943Z"}]$admin$::jsonb
-    ),
-    updated_at = now()
-where id = 'main'
-  and not exists (
-    select 1
-    from jsonb_array_elements(coalesce(data->'admins', '[]'::jsonb)) as a
-    where lower(a->>'username') = lower('goodfood')
-  );
-
--- Verification: expect menu_items = 5, admins >= 1.
+-- Verification: expect menu_items = 5. admins stays 0 until the API boots and
+-- seeds the account from ADMIN_USERNAME / ADMIN_PASSWORD.
 select id,
        updated_at,
        jsonb_array_length(coalesce(data->'menuItems', '[]'::jsonb)) as menu_items,

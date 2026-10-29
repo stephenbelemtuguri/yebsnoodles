@@ -941,7 +941,7 @@
         <a href="driver.html" class="nav-mobile-only">🛵 Driver Portal</a>
         <a href="admin.html" class="nav-mobile-only">📊 Admin Dashboard</a>
       </nav>
-      <button type="button" class="nav-toggle" id="mobileNavToggle" aria-expanded="false" aria-controls="mainNav" aria-label="Open navigation menu" onclick="window.toggleMobileNav && window.toggleMobileNav()">
+      <button type="button" class="nav-toggle" id="mobileNavToggle" aria-expanded="false" aria-controls="mainNav" aria-label="Open navigation menu">
         <span></span><span></span><span></span>
       </button>
     </div>
@@ -2869,7 +2869,7 @@
         orderId = localStorage.getItem('yebs_active_order_id') || (getOrders().length > 0 ? getOrders()[0].id : null);
       }
       if (!orderId) {
-        const inputId = window.prompt("Enter your Order ID (e.g. YB-1460) or 4-digit PIN to track live:");
+        const inputId = window.prompt("Enter your Order ID (e.g. YB-1234) or 4-digit PIN to track live:");
         if (!inputId || !inputId.trim()) return;
         orderId = inputId.trim();
       }

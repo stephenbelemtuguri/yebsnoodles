@@ -760,11 +760,6 @@ values
   ('pickup',      '{"name":"Circle Odo Rice Junction / VIP Station","address":"Kwame Nkrumah Circle, Accra","lat":5.5612,"lng":-0.2155}'::jsonb)
 on conflict (key) do nothing;
 
-insert into public.yebs_admins (id, username, name, email, role)
-values
-  ('adm-1', 'goodfood', 'YEBS Administrator', 'yebsnoodles@gmail.com', 'SUPERADMIN')
-on conflict (id) do nothing;
-
 -- ────────────────────────────────────────────────────────────────────────────
 -- VERIFICATION
 -- ────────────────────────────────────────────────────────────────────────────
