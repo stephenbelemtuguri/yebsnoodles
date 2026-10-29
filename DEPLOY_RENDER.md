@@ -140,6 +140,11 @@ The phone should use the deployed HTTPS origin (for example,
 token or full payment SMS. If the Render environment values are missing, the
 endpoint returns an explicit configuration error and does not verify payment.
 
+Customer order lookup, tracking, cancellation, payment requests, and receipt
+submission use a per-order access token returned at checkout and kept in that
+browser's local storage. Customers should keep the checkout browser/device;
+the token is not recoverable from the order number alone.
+
 ### Optional: use Supabase instead of the Render database
 
 Put the Supabase **session-pooler** URI in `DATABASE_POOL_URL`, or set

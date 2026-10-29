@@ -56,6 +56,45 @@ app.use('/api', async (req, res, next) => {
   next();
 });
 
+app.use('/api', async (req, res, next) => {
+  const changesState = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
+    || (req.method === 'GET' && /\/pay\/status$/.test(req.path));
+  if (!changesState) return next();
+  let release;
+  try {
+    release = await store.acquireMutationLock();
+  } catch (err) {
+    console.error('[store] refusing mutation without a fresh durable state:', err.message);
+    return res.status(503).json({ success: false, persisted: false, message: 'Persistent storage is unavailable. No changes were accepted.' });
+  }
+
+  let released = false;
+  const releaseOnce = async () => {
+    if (released) return;
+    released = true;
+    await release();
+  };
+  res.on('close', releaseOnce);
+
+  const sendJson = res.json.bind(res);
+  res.json = (body) => {
+    store.flush().then(async () => {
+      if (store.remoteEnabled && !store.canPersist() && res.statusCode < 400) {
+        await releaseOnce();
+        return sendJson({ success: false, persisted: false, message: 'Storage could not confirm the change. Reload before retrying.' });
+      }
+      await releaseOnce();
+      return sendJson(body);
+    }).catch(async err => {
+      console.error('[store] mutation response persistence check failed:', err.message);
+      await releaseOnce();
+      if (!res.headersSent) sendJson({ success: false, persisted: false, message: 'Storage could not confirm the change.' });
+    });
+    return res;
+  };
+  next();
+});
+
 // Friendly clean URL routes
 app.get(['/admin', '/dashboard', '/admin-panel'], (req, res) => {
   res.sendFile(path.join(__dirname, 'admin.html'));
@@ -1073,6 +1112,21 @@ function viewerFromReq(req) {
   const auth = authenticate(req);
   if (!auth) return 'public';
   return auth.payload.role;
+}
+
+function customerOrderTokenHash(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+function hasOrderAccess(order, req) {
+  const auth = req.auth || authenticate(req);
+  if (auth && ['admin', 'driver'].includes(auth.payload.role)) return true;
+  const supplied = String(req.headers['x-order-access-token'] || req.query.access_token || '');
+  const stored = String(order.customerAccessTokenHash || '');
+  if (!supplied || !stored) return false;
+  const suppliedHash = Buffer.from(customerOrderTokenHash(supplied), 'hex');
+  const storedHash = Buffer.from(stored, 'hex');
+  return suppliedHash.length === storedHash.length && crypto.timingSafeEqual(suppliedHash, storedHash);
 }
 
 // ==========================================================
@@ -2173,6 +2227,7 @@ app.post('/api/orders/:id/pay/momo', (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
 
   const body = req.body || {};
   const amount = toAmount(body.amount);
@@ -2228,6 +2283,7 @@ app.post('/api/orders/:id/pay/request', async (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
   if (order.status === 'cancelled') return res.status(409).json({ success: false, message: "This order is cancelled and cannot accept a payment request." });
 
   if (order.paymentStatus === 'paid') {
@@ -2322,6 +2378,7 @@ app.get('/api/orders/:id/pay/status', async (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
 
   let networkStatus = order.momoRequestStatus || null;
 
@@ -2330,7 +2387,7 @@ app.get('/api/orders/:id/pay/status', async (req, res) => {
     if (state.configured && state.status && state.status !== 'unknown') {
       networkStatus = state.status;
       order.momoRequestStatus = state.status;
-      if (state.status === 'successful') {
+      if (state.status === 'successful' && Math.abs(Number(state.amount) - Number(order.total)) <= 0.009) {
         applyMomoPayment(db, order, {
           transactionRef: order.momoRequestId,
           amount: Number(order.total),
@@ -2341,6 +2398,12 @@ app.get('/api/orders/:id/pay/status', async (req, res) => {
           note: 'Settled by MTN Collections API'
         });
         logAction('MOMO_API_SETTLED', 'MTN MOMO API', order.id, { amount: order.total }, req);
+      } else if (state.status === 'successful') {
+        order.paymentStatus = 'review';
+        order.paymentVerified = false;
+        addPaymentAudit(order, 'MOMO_PROVIDER_AMOUNT_MISMATCH', 'MTN MOMO API', {
+          expected: Number(order.total), received: Number(state.amount) || null
+        });
       }
       saveDatabase(db);
     }
@@ -2463,7 +2526,7 @@ app.post('/api/orders/:id/pay/review', requireRole('admin'), (req, res) => {
   res.json({ success: true, message: paid ? 'Payment approved.' : 'Payment rejected and flagged for review.', order: projectOrder(order, 'admin') });
 });
 
-// Parse a forwarded MoMo SMS and auto-match it to an unpaid order.
+// Match a forwarded MoMo SMS to an unpaid order; bridged messages remain for admin review.
 function parseMomoSms(raw) {
   const text = cleanString(raw, 700);
   const amountMatch = text.match(/(?:GH\s*[₵C]?|GHS|GHC|GH₵)\s*([\d,]+(?:\.\d{1,2})?)/i)
@@ -2503,7 +2566,7 @@ function hasValidMomoSmsIngestToken(req) {
     && crypto.timingSafeEqual(expectedBytes, suppliedBytes);
 }
 
-async function processMomoSms(req, res, actor, ingestionKey = null) {
+async function processMomoSms(req, res, actor, ingestionKey = null, providerVerified = false) {
   const body = req.body || {};
   const rawSms = typeof body.sms === 'string' ? body.sms : '';
   if (!rawSms || rawSms.length > 1000) {
@@ -2573,7 +2636,7 @@ async function processMomoSms(req, res, actor, ingestionKey = null) {
     sender: body.sender,
     receiptImage: null,
     method: 'auto-sms',
-    providerVerified: true,
+    providerVerified,
     actor,
     note: 'Verified from forwarded MoMo SMS'
   });
@@ -2624,7 +2687,7 @@ async function processMomoSms(req, res, actor, ingestionKey = null) {
 
 app.post('/api/payments/momo/sms', requireRole('admin'), (req, res) => {
   const admin = req.auth.admin;
-  return processMomoSms(req, res, admin.name || admin.username);
+  return processMomoSms(req, res, admin.name || admin.username, null, true);
 });
 
 app.post('/api/payments/momo/sms/ingest', async (req, res) => {
@@ -2647,7 +2710,7 @@ app.post('/api/payments/momo/sms/ingest', async (req, res) => {
 
   const sender = cleanString(body.sender, 80);
   req.body = { ...body, sender };
-  await processMomoSms(req, res, `MOMO_SMS_BRIDGE:${sender}`, momoSmsIngestKey(deviceId, messageId));
+  await processMomoSms(req, res, `MOMO_SMS_BRIDGE:${sender}`, momoSmsIngestKey(deviceId, messageId), false);
 });
 
 // Legacy receipt upload kept for compatibility; proof remains unverified until reviewed.
@@ -2655,6 +2718,7 @@ app.post('/api/orders/:id/receipt', (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
   if (order.status === 'cancelled') return res.status(409).json({ success: false, message: "This order is cancelled and cannot accept payment proof." });
 
   const body = req.body || {};
@@ -2702,9 +2766,12 @@ app.post('/api/orders/:id/receipt/verify', requireRole('admin'), (req, res) => {
 // ==========================================================
 
 app.get('/api/orders', (req, res) => {
+  const auth = authenticate(req);
+  if (!auth || !['admin', 'driver'].includes(auth.payload.role)) {
+    return res.status(401).json({ success: false, message: "Sign in to view the order list." });
+  }
   const db = loadDatabase();
-  const viewer = viewerFromReq(req);
-  res.json(db.orders.map(o => projectOrder(o, viewer)));
+  res.json(db.orders.map(o => projectOrder(o, auth.payload.role)));
 });
 
 // Driver handover lookup: accepts YB-1234, 1234 or a phone number.
@@ -2740,6 +2807,7 @@ app.get('/api/orders/:id', (req, res) => {
   const id = normalizeOrderId(req.params.id);
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
   res.json(projectOrder(order, viewerFromReq(req)));
 });
 
@@ -2883,8 +2951,10 @@ app.post('/api/orders', async (req, res) => {
   const deliveryFee = deliveryCalc.fee;
   const total = Math.round((subtotal + deliveryFee) * 100) / 100;
 
+  const customerAccessToken = crypto.randomBytes(32).toString('base64url');
   const newOrder = {
     id,
+    customerAccessTokenHash: customerOrderTokenHash(customerAccessToken),
     pickupPin: pin,
     pickupPinIsOrderId: false,
     sessionNumber: body.sessionNumber || currentSession.sessionNumber,
@@ -2956,7 +3026,7 @@ app.post('/api/orders', async (req, res) => {
     pushOrderUpdate(newOrder.id, { type: 'created', order: projectOrder(newOrder, 'customer') });
   }
 
-  res.status(201).json(projectOrder(newOrder, 'checkout'));
+  res.status(201).json({ ...projectOrder(newOrder, 'checkout'), trackingToken: customerAccessToken });
 });
 
 app.patch('/api/orders/:id/status', requireRole('driver', 'admin'), (req, res) => {
@@ -3020,6 +3090,7 @@ app.post('/api/orders/:id/cancellation', (req, res) => {
   const id = normalizeOrderId(req.params.id);
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
   if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
 
   const submittedPhone = cleanString((req.body || {}).phone, 30).replace(/\D/g, '').slice(-9);
   const orderPhone = String(order.phone || '').replace(/\D/g, '').slice(-9);
@@ -3854,6 +3925,7 @@ app.patch('/api/orders/:id/edit', (req, res) => {
   const id = normalizeOrderId(req.params.id);
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
   if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
 
   // Only allow edits on pending or kitchen orders (not enroute/arrived/delivered)
   if (['enroute', 'arrived', 'delivered', 'cancelled'].includes(order.status)) {
@@ -4487,6 +4559,10 @@ const orderSseClients = new Map(); // orderId -> Set<res>
 
 app.get('/api/sse/order/:id', (req, res) => {
   const orderId = normalizeOrderId(req.params.id);
+  const initialDb = loadDatabase();
+  const initialOrder = initialDb.orders.find(o => String(o.id).toUpperCase() === orderId);
+  if (!initialOrder) return res.status(404).end();
+  if (!hasOrderAccess(initialOrder, req)) return res.status(403).end();
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -4498,15 +4574,27 @@ app.get('/api/sse/order/:id', (req, res) => {
 
   // Send current snapshot immediately
   try {
-    const db = loadDatabase();
-    const order = db.orders.find(o => String(o.id).toUpperCase() === orderId);
-    if (order) res.write(`data: ${JSON.stringify({ type: 'snapshot', order: projectOrder(order, 'customer') })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'snapshot', order: projectOrder(initialOrder, 'customer') })}\n\n`);
   } catch (e) { /* non-fatal */ }
 
-  // Heartbeat every 25s to prevent Render from dropping idle SSE connections
-  const heartbeat = setInterval(() => {
-    try { res.write(`: ping\n\n`); } catch (e) { clearInterval(heartbeat); }
-  }, 25000);
+  let lastSnapshot = JSON.stringify(projectOrder(initialOrder, 'customer'));
+  const heartbeat = setInterval(async () => {
+    try {
+      await store.refresh();
+      const db = loadDatabase();
+      const order = db.orders.find(o => String(o.id).toUpperCase() === orderId);
+      if (!order) return;
+      const snapshot = JSON.stringify(projectOrder(order, 'customer'));
+      if (snapshot !== lastSnapshot) {
+        lastSnapshot = snapshot;
+        res.write(`data: ${JSON.stringify({ type: 'snapshot', order: JSON.parse(snapshot) })}\n\n`);
+      } else {
+        res.write(': ping\n\n');
+      }
+    } catch (err) {
+      console.warn('[tracking] shared-state refresh failed:', err.message);
+    }
+  }, 3000);
 
   req.on('close', () => {
     clearInterval(heartbeat);
@@ -4521,6 +4609,7 @@ app.get('/api/orders/:id/track', (req, res) => {
   const id = normalizeOrderId(req.params.id);
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
   if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: 'Order access token required.' });
   res.json({ success: true, order: projectOrder(order, 'customer') });
 });
 

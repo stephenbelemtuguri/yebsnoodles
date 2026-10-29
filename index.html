@@ -1782,6 +1782,8 @@
       apiMomoStatus,
       apiFetchPaymentNetworks,
       apiFetchOrder,
+      getOrderAccessToken,
+      API_BASE,
       apiFetchActiveDrivers,
       syncOrdersFromServer,
       startLiveOrderSync,
@@ -2949,7 +2951,8 @@
       stopOrderSSE(); // clear any existing connection
       if (!orderId) return;
       try {
-        _orderSSE = new EventSource(`${API_BASE}/api/sse/order/${encodeURIComponent(orderId)}`);
+        const accessToken = getOrderAccessToken(orderId);
+        _orderSSE = new EventSource(`${API_BASE}/api/sse/order/${encodeURIComponent(orderId)}?access_token=${encodeURIComponent(accessToken)}`);
         _orderSSE.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data);
@@ -2977,7 +2980,11 @@
     async function pollOrderStatus(orderId) {
       if (!orderId) return;
       try {
-        const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/track`, { cache: 'no-store' });
+        const accessToken = getOrderAccessToken(orderId);
+        const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/track`, {
+          headers: accessToken ? { 'X-Order-Access-Token': accessToken } : {},
+          cache: 'no-store'
+        });
         if (res.ok) {
           const data = await res.json();
           if (data && data.order) {

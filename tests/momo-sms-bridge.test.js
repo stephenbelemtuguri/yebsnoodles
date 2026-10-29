@@ -16,6 +16,7 @@ const { app, start } = require('../server');
 
 describe('MoMo SMS ingestion bridge', () => {
   let order;
+  let trackingToken;
   const deviceId = 'test-device';
   const sender = 'MTN';
   const sms = 'You have received GHS 10.00. Transaction ID: MTN-1234567';
@@ -31,6 +32,8 @@ describe('MoMo SMS ingestion bridge', () => {
     });
     expect(response.status).toBe(201);
     order = response.body;
+    trackingToken = order.trackingToken;
+    expect(trackingToken).toBeTruthy();
   });
 
   afterAll(() => {
@@ -61,6 +64,40 @@ describe('MoMo SMS ingestion bridge', () => {
     expect(forbidden.status).toBe(403);
   });
 
+  test('restricts order lookup and updates to authorized roles or the customer token', async () => {
+    const publicList = await request(app).get('/api/orders');
+    expect(publicList.status).toBe(401);
+
+    const privateOrder = await request(app).get(`/api/orders/${order.id}`);
+    expect(privateOrder.status).toBe(403);
+
+    const unauthorizedEdit = await request(app)
+      .patch(`/api/orders/${order.id}/edit`)
+      .send({ notes: 'unauthorized' });
+    expect(unauthorizedEdit.status).toBe(403);
+
+    const customerOrder = await request(app)
+      .get(`/api/orders/${order.id}/track`)
+      .set('X-Order-Access-Token', trackingToken);
+    expect(customerOrder.status).toBe(200);
+    expect(customerOrder.body.order.phone).toBeUndefined();
+
+    const unauthenticatedPayment = await request(app)
+      .post(`/api/orders/${order.id}/pay/momo`)
+      .send({ transactionRef: 'MTN-TEST-1', amount: 10 });
+    expect(unauthenticatedPayment.status).toBe(403);
+  });
+
+  test('customer-supplied payment proof is not treated as provider confirmation', async () => {
+    const proof = await request(app)
+      .post(`/api/orders/${order.id}/pay/momo`)
+      .set('X-Order-Access-Token', trackingToken)
+      .send({ transactionRef: 'MTN-TEST-1', amount: 10 });
+    expect(proof.status).toBe(202);
+    expect(proof.body.needsReview).toBe(true);
+    expect(proof.body.order.paymentVerified).toBe(false);
+  });
+
   test('requires stable IDs and an SMS transaction reference', async () => {
     const missingIds = await ingest({ messageId: '' });
     expect(missingIds.status).toBe(400);
@@ -72,17 +109,20 @@ describe('MoMo SMS ingestion bridge', () => {
     expect(missingReference.status).toBe(400);
   });
 
-  test('verifies a matching order and deduplicates retry deliveries', async () => {
+  test('flags SMS matches for verification and deduplicates retry deliveries', async () => {
     const accepted = await ingest();
-    expect(accepted.status).toBe(200);
-    expect(accepted.body.success).toBe(true);
+    expect(accepted.status).toBe(202);
+    expect(accepted.body.success).toBe(false);
+    expect(accepted.body.needsReview).toBe(true);
     expect(accepted.body.terminal).toBe(true);
     expect(accepted.body.order.id).toBe(order.id);
+    expect(accepted.body.order.paymentStatus).toBe('review');
+    expect(accepted.body.order.paymentVerified).toBe(false);
 
     const duplicate = await ingest();
     expect(duplicate.status).toBe(200);
     expect(duplicate.body.duplicate).toBe(true);
-    expect(duplicate.body.order.paymentStatus).toBe('paid');
+    expect(duplicate.body.order.paymentStatus).toBe('review');
   });
 
   test('keeps unmatched messages retryable without confirming payment', async () => {

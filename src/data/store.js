@@ -211,9 +211,9 @@ function init(loadLocal) {
  * instance B, so re-read the shared row when the local copy is older than
  * READ_TTL_MS. Cheap (one row) and skipped entirely for local dev.
  */
-async function refresh() {
+async function refresh(force = false) {
   if (!remoteEnabled) return cache;
-  if (Date.now() - lastReadAt < READ_TTL_MS) return cache;
+  if (!force && Date.now() - lastReadAt < READ_TTL_MS) return cache;
   await pending; // never discard a write that is still in flight
   try {
     const remote = await readRemote();
@@ -229,6 +229,38 @@ async function refresh() {
     console.error('[store] refresh failed:', err.message);
   }
   return cache;
+}
+
+async function acquireMutationLock() {
+  if (remoteMode !== 'postgres') {
+    await refresh(true);
+    if (remoteEnabled && !canPersist()) throw new Error('Persistent storage is unavailable.');
+    return async () => {};
+  }
+  const pool = await ensurePostgres();
+  const client = await pool.connect();
+  try {
+    await client.query('select pg_advisory_lock($1)', [724105221]);
+    lastReadAt = 0;
+    await refresh(true);
+    if (!canPersist()) throw new Error('Persistent storage is unavailable.');
+  } catch (err) {
+    try { await client.query('select pg_advisory_unlock($1)', [724105221]); } catch (unlockErr) {
+      console.error('[store] advisory lock cleanup failed:', unlockErr.message);
+    }
+    client.release();
+    throw err;
+  }
+  let released = false;
+  return async () => {
+    if (released) return;
+    released = true;
+    try {
+      await client.query('select pg_advisory_unlock($1)', [724105221]);
+    } finally {
+      client.release();
+    }
+  };
 }
 
 function get() {
@@ -301,6 +333,7 @@ module.exports = {
   get,
   set,
   flush,
+  acquireMutationLock,
   isRemote,
   canPersist,
   status,

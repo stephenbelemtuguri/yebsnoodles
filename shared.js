@@ -1331,6 +1331,20 @@ function authHeaders(extra = {}) {
   return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
 }
 
+function orderAccessToken(orderId) {
+  try { return localStorage.getItem(`yebs_order_access_${String(orderId || '').toUpperCase()}`) || ''; }
+  catch (e) { return ''; }
+}
+
+function orderAccessHeaders(orderId, extra = {}) {
+  const token = orderAccessToken(orderId);
+  return token ? { ...extra, 'X-Order-Access-Token': token } : { ...extra };
+}
+
+export function getOrderAccessToken(orderId) {
+  return orderAccessToken(orderId);
+}
+
 export async function apiAdminLogin(username, password) {
   try {
     const res = await fetch(`${API_BASE}/api/auth/admin/login`, {
@@ -1683,7 +1697,18 @@ export async function apiCreateOrder(order) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(order)
     });
-    if (res.ok) return await res.json();
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.id && data.trackingToken) {
+        try {
+          localStorage.setItem(`yebs_order_access_${String(data.id).toUpperCase()}`, data.trackingToken);
+          delete data.trackingToken;
+        } catch (e) {
+          return null;
+        }
+      }
+      return data;
+    }
   } catch (e) {}
   return null;
 }
@@ -1720,12 +1745,12 @@ export async function apiUpdateDriverLocation(driverId, payload) {
   } catch (e) {}
 }
 
-// Customer payment proof — auto-verified on the server, never blocks the order.
+// Customer payment proof is held for server-side provider/admin verification.
 export async function apiPayMomo(orderId, { transactionRef, amount, senderPhone, receiptImage, method } = {}) {
   try {
     const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/pay/momo`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: orderAccessHeaders(orderId, { "Content-Type": "application/json" }),
       body: JSON.stringify({ transactionRef, amount, senderPhone, receiptImage, method })
     });
     const data = await res.json().catch(() => ({}));
@@ -1743,7 +1768,7 @@ export async function apiRequestMomo(orderId, { network, phone } = {}) {
   try {
     const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/pay/request`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: orderAccessHeaders(orderId, { "Content-Type": "application/json" }),
       body: JSON.stringify({ network, phone })
     });
     const data = await res.json().catch(() => ({}));
@@ -1757,7 +1782,9 @@ export async function apiRequestMomo(orderId, { network, phone } = {}) {
 // Poll whether a pushed MoMo request has been approved on the phone.
 export async function apiMomoStatus(orderId) {
   try {
-    const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/pay/status`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/pay/status`, {
+      headers: orderAccessHeaders(orderId), cache: "no-store"
+    });
     const data = await res.json().catch(() => ({}));
     if (data && data.order) mergeServerOrders([data.order]);
     return { ...data, httpStatus: res.status };
@@ -1851,7 +1878,7 @@ export async function apiRequestOrderCancellation(orderId, phone, reason = "") {
   try {
     const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/cancellation`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: orderAccessHeaders(orderId, { "Content-Type": "application/json" }),
       body: JSON.stringify({ phone, reason })
     });
     const data = await res.json().catch(() => ({}));
@@ -1895,7 +1922,7 @@ export async function apiReviewOrderRefund(orderId, approved, reason = "") {
 export async function apiFetchOrder(orderId) {
   try {
     const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}`, {
-      headers: authHeaders(),
+      headers: orderAccessHeaders(orderId, authHeaders()),
       cache: "no-store"
     });
     if (res.ok) {
@@ -1911,7 +1938,7 @@ export async function apiUploadMomoReceipt(orderId, receiptImage, transactionRef
   try {
     const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/receipt`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: orderAccessHeaders(orderId, { "Content-Type": "application/json" }),
       body: JSON.stringify({ receiptImage, transactionRef, amount })
     });
     const data = await res.json().catch(() => ({}));
