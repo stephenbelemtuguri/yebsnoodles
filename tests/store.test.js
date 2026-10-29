@@ -25,18 +25,28 @@ describe('persistent store recovery', () => {
     });
   });
 
-  test('prefers Render DATABASE_URL over optional Supabase settings', () => {
+  test('prefers the configured database pooler when both database URLs are set', () => {
     const renderUrl = 'postgres://render_user:render-password@render-db.example:5432/yebs';
     process.env.DATABASE_URL = renderUrl;
     process.env.DATABASE_POOL_URL = 'postgres://postgres:stale-password@supabase-db.example:5432/postgres';
     process.env.SUPABASE_URL = 'https://storage.example.test';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
-    process.env.DATABASE_PASSWORD = 'stale-password';
+    process.env.DATABASE_PASSWORD = '';
 
     const store = require('../src/data/store');
 
     expect(store.remoteMode).toBe('postgres');
-    expect(store.DATABASE_URL).toBe(renderUrl);
+    expect(store.DATABASE_URL).toBe(process.env.DATABASE_POOL_URL);
+  });
+
+  test('uses DATABASE_URL when no pooler URL is configured', () => {
+    process.env.DATABASE_URL = 'primary-database-url';
+    process.env.DATABASE_POOL_URL = '';
+    process.env.SUPABASE_DB_URL = '';
+
+    const store = require('../src/data/store');
+
+    expect(store.DATABASE_URL).toBe('primary-database-url');
   });
 
   test('prefers IPv4 addresses for Render database connections', () => {

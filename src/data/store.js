@@ -40,9 +40,9 @@ function resolveDatabaseUrl() {
     process.env.SUPABASE_DB_URL ||
     ''
   ).trim();
-  const raw = renderUrl || alternateUrl;
+  const raw = alternateUrl || renderUrl;
   if (!raw) return '';
-  if (renderUrl || !RAW_DB_PASSWORD) return raw;
+  if (!RAW_DB_PASSWORD) return raw;
   try {
     // Accept the raw password separately so characters like @ : # / do not
     // have to be URL-encoded by hand for alternate database URLs.
