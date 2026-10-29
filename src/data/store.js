@@ -29,17 +29,18 @@ const RAW_DB_PASSWORD = String(
 ).trim();
 
 function resolveDatabaseUrl() {
-  const raw = String(
+  const renderUrl = String(process.env.DATABASE_URL || '').trim();
+  const alternateUrl = String(
     process.env.DATABASE_POOL_URL ||
-    process.env.DATABASE_URL ||
     process.env.SUPABASE_DB_URL ||
     ''
   ).trim();
+  const raw = renderUrl || alternateUrl;
   if (!raw) return '';
-  if (!RAW_DB_PASSWORD) return raw;
+  if (renderUrl || !RAW_DB_PASSWORD) return raw;
   try {
     // Accept the raw password separately so characters like @ : # / do not
-    // have to be URL-encoded by hand. The URL API encodes it correctly.
+    // have to be URL-encoded by hand for alternate database URLs.
     const url = new URL(raw);
     url.password = RAW_DB_PASSWORD;
     return url.toString();
@@ -52,8 +53,8 @@ const DATABASE_URL = resolveDatabaseUrl();
 const TABLE = String(process.env.SUPABASE_STATE_TABLE || 'yebs_state').replace(/[^a-zA-Z0-9_]/g, '') || 'yebs_state';
 const ROW_ID = 'main';
 
-const restEnabled = Boolean(SUPABASE_URL && SUPABASE_KEY);
-const postgresEnabled = !restEnabled && Boolean(DATABASE_URL);
+const postgresEnabled = Boolean(DATABASE_URL);
+const restEnabled = !postgresEnabled && Boolean(SUPABASE_URL && SUPABASE_KEY);
 const remoteEnabled = restEnabled || postgresEnabled;
 const remoteMode = restEnabled ? 'supabase' : postgresEnabled ? 'postgres' : 'local';
 

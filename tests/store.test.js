@@ -6,7 +6,8 @@ describe('persistent store recovery', () => {
     'SUPABASE_SERVICE_ROLE_KEY',
     'DATABASE_URL',
     'DATABASE_POOL_URL',
-    'SUPABASE_DB_URL'
+    'SUPABASE_DB_URL',
+    'DATABASE_PASSWORD'
   ];
 
   beforeAll(() => {
@@ -20,6 +21,20 @@ describe('persistent store recovery', () => {
       if (originalEnv[key] === undefined) delete process.env[key];
       else process.env[key] = originalEnv[key];
     });
+  });
+
+  test('prefers Render DATABASE_URL over optional Supabase settings', () => {
+    const renderUrl = 'postgres://render_user:render-password@render-db.example:5432/yebs';
+    process.env.DATABASE_URL = renderUrl;
+    process.env.DATABASE_POOL_URL = 'postgres://postgres:stale-password@supabase-db.example:5432/postgres';
+    process.env.SUPABASE_URL = 'https://storage.example.test';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+    process.env.DATABASE_PASSWORD = 'stale-password';
+
+    const store = require('../src/data/store');
+
+    expect(store.remoteMode).toBe('postgres');
+    expect(store.DATABASE_URL).toBe(renderUrl);
   });
 
   test('allows writes after remote storage recovers with an empty state row', async () => {

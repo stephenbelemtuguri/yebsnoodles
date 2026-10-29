@@ -59,7 +59,7 @@ a database key. Everything else is optional:
 | `SUPABASE_URL` | `https://dujmpwcarxliadnfdydr.supabase.co` | Optional shared DB |
 | `SUPABASE_SERVICE_ROLE_KEY` | service-role key | Optional shared DB (REST) |
 | `SUPABASE_STATE_TABLE` | `yebs_state` | Optional shared DB |
-| `DATABASE_POOL_URL` | Supabase session-pooler URI | Optional, overrides Render DB |
+| `DATABASE_POOL_URL` | Supabase session-pooler URI | Optional alternative; used only when `DATABASE_URL` is unset |
 | `MOMO_SUBSCRIPTION_KEY` | MTN key | Optional automatic MoMo |
 | `MOMO_API_USER` | MTN API user | Optional automatic MoMo |
 | `MOMO_API_KEY` | MTN API key | Optional automatic MoMo |
