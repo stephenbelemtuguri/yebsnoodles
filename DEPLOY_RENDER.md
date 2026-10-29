@@ -77,12 +77,15 @@ a database key. Everything else is optional:
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token | Password recovery SMS |
 | `TWILIO_FROM_NUMBER` | Twilio-enabled sender number | Password recovery SMS |
 
-`GET /api/health` shows the storage mode and whether messaging providers are configured:
+`GET /api/health` shows the storage mode and whether messaging providers are configured.
+It returns HTTP 503 and `success: false` when persistent writes are unavailable, so
+Render does not mark a deployment healthy while orders and admin changes cannot be saved:
 
 ```json
 {
+  "success": true,
   "storage": "postgres",
-  "database": { "engine": "postgres", "persistent": true },
+  "database": { "engine": "postgres", "persistent": true, "writable": true },
    "whatsapp": { "configured": true, "to": "233 559 103 452" },
    "recoveryDelivery": { "emailConfigured": true, "twilioConfigured": true }
 }
@@ -226,8 +229,9 @@ Render: it returns codes in the HTTP response.
   driver webcam work without extra configuration.
 - **Logs:** Render → your service → **Logs** shows requests, WhatsApp errors and
   database writes.
-- **Health check:** `/api/health` reports `storage: postgres` and
-  `database.persistent: true` when the database is connected.
+- **Health check:** `/api/health` returns HTTP 200 and reports
+  `database.persistent: true` and `database.writable: true` when the database
+  is connected; it returns HTTP 503 when persistence is unavailable.
 
 ## 6. Custom domain (optional)
 

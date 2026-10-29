@@ -4685,8 +4685,10 @@ app.get('/api/health', (req, res) => {
     process.env.TWILIO_AUTH_TOKEN &&
     (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER)
   );
-  res.json({
-    success: true,
+  const databaseWritable = store.canPersist() || (store.remoteMode === 'local' && !isEphemeralHost());
+  const databasePersistent = store.isRemote() || (store.remoteMode === 'local' && Boolean(process.env.DB_PATH));
+  res.status(databaseWritable ? 200 : 503).json({
+    success: databaseWritable,
     service: "YEBS Noodles API",
     time: new Date().toISOString(),
     storage: store.status(),
@@ -4697,10 +4699,8 @@ app.get('/api/health', (req, res) => {
           ? 'postgres'
           : 'supabase-rest',
       path: store.remoteMode === 'local' ? DB_FILE : null,
-      persistent: store.isRemote() || (store.remoteMode === 'local' && Boolean(process.env.DB_PATH)),
-      // False means admin edits are held in memory only and will disappear on
-      // the next restart / redeploy.
-      writable: store.canPersist() || (store.remoteMode === 'local' && !isEphemeralHost())
+      persistent: databasePersistent,
+      writable: databaseWritable
     },
     pickupPoint: pickup,
     deliveryFee: Number(db.settings && db.settings.deliveryFee) || 15,
