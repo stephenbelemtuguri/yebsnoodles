@@ -71,6 +71,27 @@ unless you want the value hidden after saving.
 | `LOG_FILE_ENABLED` | `false` |
 | `BASE_URL` | `https://your-site-name.netlify.app` |
 
+### Password recovery delivery
+
+Add at least one email provider and one phone provider if codes should arrive
+through both channels. Set these as Netlify environment variables; never commit
+the secret values:
+
+| Key | Value |
+|---|---|
+| `SENDGRID_API_KEY` | SendGrid API key with Mail Send permission |
+| `SENDGRID_FROM_EMAIL` | Verified sender address in SendGrid |
+| `SENDGRID_FROM_NAME` | `YEBS Noodles` (optional) |
+| `SMTP_USER` / `SMTP_PASSWORD` | SMTP account and app password (fallback email provider) |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
+| `TWILIO_FROM_NUMBER` | Twilio-enabled sender number |
+| `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp Cloud API credentials (phone fallback) |
+
+The server tries SendGrid then SMTP for email, and Twilio then WhatsApp for
+phone delivery. Check `/api/health` → `recoveryDelivery` for boolean readiness
+status; it does not expose credentials. SendGrid must use a verified sender.
+
 ### Optional: automatic WhatsApp order alerts (no redirect)
 
 Every new order is sent to the kitchen in the background by the server. Without

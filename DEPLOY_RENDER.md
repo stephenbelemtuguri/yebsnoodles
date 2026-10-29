@@ -67,16 +67,28 @@ a database key. Everything else is optional:
 | `MOMO_TARGET_ENV` | `sandbox` or `mtnghana` | MoMo environment |
 | `MOMO_PAY_TO` | `0559103452` | Wallet that receives payment |
 | `MOMO_MERCHANT_NAME` | `MATHEW TIA` | Wallet account name |
+| `SENDGRID_API_KEY` | SendGrid Mail Send API key | Password recovery email |
+| `SENDGRID_FROM_EMAIL` | Verified SendGrid sender address | Password recovery email |
+| `SENDGRID_FROM_NAME` | `YEBS Noodles` | Password recovery email sender label |
+| `SMTP_USER` / `SMTP_PASSWORD` | SMTP account credentials | Fallback recovery email |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID | Password recovery SMS |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token | Password recovery SMS |
+| `TWILIO_FROM_NUMBER` | Twilio-enabled sender number | Password recovery SMS |
 
-`GET /api/health` shows the storage mode and whether WhatsApp is configured:
+`GET /api/health` shows the storage mode and whether messaging providers are configured:
 
 ```json
 {
   "storage": "postgres",
   "database": { "engine": "postgres", "persistent": true },
-  "whatsapp": { "configured": true, "to": "233 559 103 452" }
+   "whatsapp": { "configured": true, "to": "233 559 103 452" },
+   "recoveryDelivery": { "emailConfigured": true, "twilioConfigured": true }
 }
 ```
+
+Recovery tries SendGrid then SMTP for email, and Twilio then WhatsApp for
+phone delivery. SendGrid requires a verified sender address. Add the actual
+secret values in Render's environment settings; do not commit them.
 
 ### Optional: use Supabase instead of the Render database
 

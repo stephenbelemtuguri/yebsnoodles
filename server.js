@@ -1309,46 +1309,85 @@ async function sendRecoveryEmail(toEmail, code, role, name) {
   if (!targetEmail || !targetEmail.includes('@')) {
     return { ok: false, reason: 'no-email-on-file' };
   }
+  const subject = `Your YEBS Noodles Password Recovery Code: ${code}`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:520px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+      <div style="text-align:center;margin-bottom:20px;">
+        <h2 style="color:#173d30;margin:0 0 6px;">YEBS Noodles</h2>
+        <div style="font-size:0.85rem;color:#718096;text-transform:uppercase;letter-spacing:1px;font-weight:700;">Password Recovery</div>
+      </div>
+      <p style="color:#2d3748;font-size:1rem;line-height:1.5;">Hello <strong>${name || role}</strong>,</p>
+      <p style="color:#4a5568;font-size:0.95rem;line-height:1.5;">You requested a password reset for your ${role} account. Here is your 6-digit recovery code:</p>
+      <div style="background:#f7fafc;border:2px dashed #cbd5e0;border-radius:10px;padding:16px;text-align:center;margin:24px 0;">
+        <span style="font-size:2.2rem;letter-spacing:6px;font-weight:800;color:#e57a45;font-family:monospace;">${code}</span>
+      </div>
+      <p style="color:#718096;font-size:0.85rem;line-height:1.4;">This code is valid for <strong>10 minutes</strong>. If you did not request this, you can safely ignore this message.</p>
+      <hr style="border:none;border-top:1px solid #edf2f7;margin:20px 0;">
+      <p style="color:#a0aec0;font-size:0.75rem;text-align:center;margin:0;">YEBS Noodles &bull; Adabraka, Accra &bull; Automatic Security</p>
+    </div>`;
+  const sendGridKey = process.env.SENDGRID_API_KEY || '';
+  const fromValue = process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_FROM || process.env.SMTP_USER || '';
+  const fromMatch = fromValue.match(/<([^<>]+)>/);
+  const fromEmail = (fromMatch ? fromMatch[1] : fromValue).trim();
+  const fromName = process.env.SENDGRID_FROM_NAME || (fromMatch ? fromValue.slice(0, fromMatch.index).replace(/["']/g, '').trim() : 'YEBS Noodles');
+  let sendGridError = '';
+
+  if (sendGridKey && fromEmail.includes('@')) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${sendGridKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: targetEmail }] }],
+          from: { email: fromEmail, name: fromName || 'YEBS Noodles' },
+          subject,
+          content: [{ type: 'text/html', value: html }]
+        }),
+        signal: controller.signal
+      }).finally(() => clearTimeout(timer));
+      if (response.status !== 202) {
+        const detail = await response.text().catch(() => '');
+        throw new Error(detail.slice(0, 250) || `SendGrid API ${response.status}`);
+      }
+      return { ok: true, provider: 'sendgrid' };
+    } catch (err) {
+      sendGridError = `sendgrid: ${err.message}`;
+      console.warn('[recovery-email-error] SendGrid delivery failed:', err.message);
+    }
+  }
+
   const smtpUser = process.env.SMTP_USER || '';
   const smtpPass = process.env.SMTP_PASSWORD || '';
-  if (!smtpUser || !smtpPass) {
-    console.warn(`[recovery] SMTP not configured (set SMTP_USER & SMTP_PASSWORD). Recovery code for ${role} (${targetEmail}): ${code}`);
-    return { ok: false, reason: 'smtp-not-configured' };
+  if (smtpUser && smtpPass) {
+    try {
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: { user: smtpUser, pass: smtpPass }
+      });
+      await transporter.sendMail({
+        from: process.env.EMAIL_FROM || `YEBS Noodles <${smtpUser}>`,
+        to: targetEmail,
+        subject,
+        html
+      });
+      return { ok: true, provider: 'smtp' };
+    } catch (err) {
+      console.error(`[recovery-email-error] Failed to send email to ${targetEmail}:`, err.message);
+      return { ok: false, reason: [sendGridError, `smtp: ${err.message}`].filter(Boolean).join('; ') };
+    }
   }
-  try {
-    let nodemailer;
-    try { nodemailer = require('nodemailer'); } catch (_) { return { ok: false, reason: 'nodemailer-not-installed' }; }
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '587', 10),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: { user: smtpUser, pass: smtpPass }
-    });
-    await transporter.sendMail({
-      from: process.env.EMAIL_FROM || `YEBS Noodles <${smtpUser}>`,
-      to: targetEmail,
-      subject: `🔑 Your YEBS Noodles Password Recovery Code: ${code}`,
-      html: `
-        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:520px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
-          <div style="text-align:center;margin-bottom:20px;">
-            <h2 style="color:#173d30;margin:0 0 6px;">YEBS Noodles</h2>
-            <div style="font-size:0.85rem;color:#718096;text-transform:uppercase;letter-spacing:1px;font-weight:700;">Password Recovery</div>
-          </div>
-          <p style="color:#2d3748;font-size:1rem;line-height:1.5;">Hello <strong>${name || role}</strong>,</p>
-          <p style="color:#4a5568;font-size:0.95rem;line-height:1.5;">You requested a password reset for your ${role} account. Here is your 6-digit recovery code:</p>
-          <div style="background:#f7fafc;border:2px dashed #cbd5e0;border-radius:10px;padding:16px;text-align:center;margin:24px 0;">
-            <span style="font-size:2.2rem;letter-spacing:6px;font-weight:800;color:#e57a45;font-family:monospace;">${code}</span>
-          </div>
-          <p style="color:#718096;font-size:0.85rem;line-height:1.4;">This code is valid for <strong>10 minutes</strong>. If you did not request this, you can safely ignore this email.</p>
-          <hr style="border:none;border-top:1px solid #edf2f7;margin:20px 0;">
-          <p style="color:#a0aec0;font-size:0.75rem;text-align:center;margin:0;">YEBS Noodles &bull; Adabraka, Accra &bull; Automatic Security</p>
-        </div>`
-    });
-    return { ok: true };
-  } catch (err) {
-    console.error(`[recovery-email-error] Failed to send email to ${targetEmail}:`, err.message);
-    return { ok: false, reason: err.message };
-  }
+
+  const reason = sendGridError || (sendGridKey ? 'sendgrid-from-email-not-configured' : 'email-provider-not-configured');
+  console.warn(`[recovery] No email provider accepted delivery for ${role} (${targetEmail}): ${reason}.`);
+  return { ok: false, reason };
 }
 
 async function sendRecoverySms(toPhone, text) {
@@ -4146,6 +4185,14 @@ app.get('/api/health', (req, res) => {
   const db = loadDatabase();
   const pickup = (db.sessions && db.sessions[0] && db.sessions[0].pickupPoint) || (db.settings && db.settings.pickup) || null;
   const wa = whatsappConfig();
+  const recoverySendGridFrom = process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_FROM || process.env.SMTP_USER || '';
+  const recoveryEmailSendGridReady = Boolean(process.env.SENDGRID_API_KEY && recoverySendGridFrom.includes('@'));
+  const recoveryEmailSmtpReady = Boolean(process.env.SMTP_USER && process.env.SMTP_PASSWORD);
+  const recoveryPhoneTwilioReady = Boolean(
+    process.env.TWILIO_ACCOUNT_SID &&
+    process.env.TWILIO_AUTH_TOKEN &&
+    (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER)
+  );
   res.json({
     success: true,
     service: "YEBS Noodles API",
@@ -4169,6 +4216,13 @@ app.get('/api/health', (req, res) => {
       configured: Boolean(wa.token && wa.phoneId),
       to: wa.to ? wa.to.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1 $2 $3") : null,
       apiVersion: wa.version
+    },
+    recoveryDelivery: {
+      emailConfigured: recoveryEmailSendGridReady || recoveryEmailSmtpReady,
+      sendGridConfigured: recoveryEmailSendGridReady,
+      smtpConfigured: recoveryEmailSmtpReady,
+      twilioConfigured: recoveryPhoneTwilioReady,
+      whatsappConfigured: Boolean(wa.token && wa.phoneId)
     },
     momo: {
       payTo: getMomoSettings(db).payTo,
