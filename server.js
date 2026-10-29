@@ -60,6 +60,11 @@ app.use('/api', async (req, res, next) => {
   const changesState = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
     || (req.method === 'GET' && /\/pay\/status$/.test(req.path));
   if (!changesState) return next();
+  if (req.method === 'POST' && [
+    '/auth/admin/login',
+    '/auth/admin/unlock',
+    '/auth/driver/login'
+  ].includes(req.path.replace(/^\/api/, ''))) return next();
   let release;
   try {
     release = await store.acquireMutationLock();

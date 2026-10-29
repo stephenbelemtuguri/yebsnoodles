@@ -218,8 +218,8 @@ async function refresh(force = false) {
   try {
     const remote = await readRemote();
     lastReadAt = Date.now();
+    remoteReadOk = true;
     if (remote && typeof remote === 'object') {
-      remoteReadOk = true;
       cache = remote;
     }
     lastError = null;
