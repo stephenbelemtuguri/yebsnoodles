@@ -42,12 +42,20 @@ function resolveDatabaseUrl() {
   ).trim();
   const raw = alternateUrl || renderUrl;
   if (!raw) return '';
-  if (!RAW_DB_PASSWORD) return raw;
   try {
+    const url = new URL(raw);
+    if (
+      alternateUrl &&
+      url.hostname.endsWith('.pooler.supabase.com') &&
+      url.username === 'postgres'
+    ) {
+      const projectHost = new URL(SUPABASE_URL).hostname;
+      const projectRef = projectHost.match(/^([a-z0-9]+)\.supabase\.co$/i)?.[1];
+      if (projectRef) url.username = `postgres.${projectRef}`;
+    }
     // Accept the raw password separately so characters like @ : # / do not
     // have to be URL-encoded by hand for alternate database URLs.
-    const url = new URL(raw);
-    url.password = RAW_DB_PASSWORD;
+    if (RAW_DB_PASSWORD) url.password = RAW_DB_PASSWORD;
     return url.toString();
   } catch {
     return raw;

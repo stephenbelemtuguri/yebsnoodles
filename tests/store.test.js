@@ -39,6 +39,25 @@ describe('persistent store recovery', () => {
     expect(store.DATABASE_URL).toBe(process.env.DATABASE_POOL_URL);
   });
 
+  test('qualifies the default Supabase pooler user with the project reference', () => {
+    const poolUrl = new URL('postgres://pooler.example');
+    poolUrl.username = 'postgres';
+    poolUrl.password = 'test-password';
+    poolUrl.hostname = 'aws-0-eu-west-1.pooler.supabase.com';
+    poolUrl.port = '6543';
+    poolUrl.pathname = '/postgres';
+    poolUrl.searchParams.set('pgbouncer', 'true');
+    process.env.DATABASE_URL = '';
+    process.env.DATABASE_POOL_URL = poolUrl.toString();
+    process.env.SUPABASE_URL = 'https://projectref123.supabase.co';
+    process.env.DATABASE_PASSWORD = '';
+
+    const store = require('../src/data/store');
+    poolUrl.username = 'postgres.projectref123';
+
+    expect(store.DATABASE_URL).toBe(poolUrl.toString());
+  });
+
   test('uses DATABASE_URL when no pooler URL is configured', () => {
     process.env.DATABASE_URL = 'primary-database-url';
     process.env.DATABASE_POOL_URL = '';

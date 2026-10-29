@@ -151,8 +151,11 @@ the token is not recoverable from the order number alone.
 ### Optional: use Supabase instead of the Render database
 
 Put the Supabase **session-pooler** URI in `DATABASE_POOL_URL`, or set
-`SUPABASE_SERVICE_ROLE_KEY` and run `supabase/yebs_state.sql` once. Locally:
+`SUPABASE_SERVICE_ROLE_KEY` and run `supabase/yebs_state.sql` once.
+When a pooler URI uses the default `postgres` username, the server qualifies it
+with the project reference from `SUPABASE_URL`, as required by Supabase's pooler.
 
+Locally:
 ```bash
 node scripts/set-db-password.js "YOUR-SUPABASE-DATABASE-PASSWORD"
 ```
