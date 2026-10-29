@@ -100,6 +100,11 @@
     .nav-btn:hover { background: rgba(255,255,255,0.18); color: white; }
     .nav-btn.active { background: var(--orange); color: white; }
 
+    @media (max-width: 768px) {
+      .header-wrap { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .header-nav { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; flex-wrap: nowrap; }
+    }
+
     .main-wrap {
       max-width: 1260px;
       margin: 24px auto;
@@ -925,6 +930,10 @@
               <input type="tel" id="driverSignupPhone" class="auth-input" placeholder="e.g. 054 123 4567" required autocomplete="tel">
             </div>
             <div class="auth-form-group">
+              <label for="driverSignupEmail">Email address for account recovery</label>
+              <input type="email" id="driverSignupEmail" class="auth-input" placeholder="you@example.com" required autocomplete="email">
+            </div>
+            <div class="auth-form-group">
               <label for="driverSignupVehicle">Vehicle Type & Details</label>
               <select id="driverSignupVehicle" class="auth-input" required>
                 <option value="">— Select your vehicle type —</option>
@@ -1310,6 +1319,25 @@
       };
     }
 
+    function getDriverNavigationTarget() {
+      const driver = getCurrentDriver();
+      const assigned = getOrders().filter(order => {
+        if (order.status === 'delivered' || order.status === 'cancelled') return false;
+        const orderDriver = order.driver || {};
+        return (driver.id && (order.driverId === driver.id || orderDriver.id === driver.id))
+          || (driver.name && String(orderDriver.name || '').toLowerCase() === driver.name.toLowerCase());
+      });
+      assigned.sort((a, b) => Number(b.status === 'enroute') - Number(a.status === 'enroute'));
+      const order = assigned[0];
+      const session = getSessionState();
+      const point = order && (order.mapPin || order.pickupPoint)
+        ? (order.mapPin || order.pickupPoint)
+        : ((session && session.pickupPoint) || DEFAULT_PICKUP_POINTS[0]);
+      return Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))
+        ? { lat: Number(point.lat), lng: Number(point.lng), name: (order && order.location) || point.name || 'Order destination' }
+        : DEFAULT_PICKUP_POINTS[0];
+    }
+
     function publishDriverLocation(speed) {
       riderGpsCoords.textContent = `${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)} (${speed} km/h)`;
       if (driverMarker) driverMarker.setLatLng([currentCoords.lat, currentCoords.lng]);
@@ -1318,7 +1346,7 @@
         lat: currentCoords.lat,
         lng: currentCoords.lng,
         speedKmh: speed,
-        statusText: `Rider en route to pickup point (${speed} km/h)`,
+        statusText: `Rider en route (${speed} km/h)`,
         driverPhone: driver.phone,
         vehicle: driver.vehicle,
         photo: driver.photo
@@ -1333,10 +1361,12 @@
         vehicle: driver.vehicle,
         photo: driver.photo
       });
-      // Update ETA to current pickup point
-      const session = getSessionState();
-      const pickup = session && session.pickupPoint;
-      if (pickup && Number.isFinite(Number(pickup.lat))) {
+      const target = getDriverNavigationTarget();
+      if (target && Number.isFinite(Number(target.lat))) {
+        if (pickupMarker) {
+          pickupMarker.setLatLng([target.lat, target.lng]).bindPopup(`<b>Order destination</b><br>${target.name}`);
+          updateGoogleMapsAppLink(target.lat, target.lng);
+        }
         // Throttle: update ETA every ~5s, route line every ~15s
         const now = Date.now();
         if (!window._lastEtaUpdate || now - window._lastEtaUpdate > 5000) {
@@ -1345,13 +1375,13 @@
             if (!computeRoadEta) return;
             const eta = computeRoadEta(
               { lat: currentCoords.lat, lng: currentCoords.lng },
-              { lat: Number(pickup.lat), lng: Number(pickup.lng) },
+              { lat: target.lat, lng: target.lng },
               { speedKmh: speed }
             );
             const etaEl = document.getElementById('driverEtaDisplay');
             if (etaEl) {
               const icon = eta.wrongTurn ? '⚠️ Wrong turn — ' : (eta.improving ? '✅ On track · ' : '🛵 ');
-              etaEl.textContent = `${icon}ETA to pickup: ~${eta.etaMinutes} min · ${eta.distanceKm} km road distance`;
+              etaEl.textContent = `${icon}ETA to ${target.name}: ~${eta.etaMinutes} min · ${eta.distanceKm} km road distance`;
               etaEl.style.display = 'block';
               etaEl.style.background = eta.wrongTurn ? '#fef3c7' : '#f0fdf4';
               etaEl.style.borderColor = eta.wrongTurn ? '#fbbf24' : '#bbf7d0';
@@ -1361,7 +1391,7 @@
         }
         if (!window._lastRouteUpdate || now - window._lastRouteUpdate > 15000) {
           window._lastRouteUpdate = now;
-          drawRouteToPickup(Number(pickup.lat), Number(pickup.lng));
+          drawRouteToPickup(target.lat, target.lng);
         }
       }
     }
@@ -1370,8 +1400,7 @@
       if (watchId === 'sim') return;
       watchId = 'sim';
       setInterval(() => {
-        const session = getSessionState();
-        const target = (session && session.pickupPoint) || DEFAULT_PICKUP_POINTS[0];
+        const target = getDriverNavigationTarget();
         currentCoords.lat += (target.lat - currentCoords.lat) * 0.12;
         currentCoords.lng += (target.lng - currentCoords.lng) * 0.12;
         publishDriverLocation(22);
@@ -1522,10 +1551,13 @@
             ` : `
               <div style="margin:8px 0; padding:8px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:0.8rem;">
                 <div>📍 <strong>Collection Point:</strong> ${order.pickupPointName || (order.pickupPoint && order.pickupPoint.name) || 'VIP Station Pickup'}</div>
-                <div style="margin-top:6px;">
-                  <a href="https://www.google.com/maps/dir/?api=1&destination=5.5612,-0.2155" target="_blank" class="btn btn-sm" style="background:#16a34a; color:white; text-decoration:none; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
+                <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
+                  <a href="https://www.google.com/maps/dir/?api=1&destination=${(order.mapPin && order.mapPin.lat) || (order.pickupPoint && order.pickupPoint.lat) || 5.5612},${(order.mapPin && order.mapPin.lng) || (order.pickupPoint && order.pickupPoint.lng) || -0.2155}" target="_blank" class="btn btn-sm" style="background:#16a34a; color:white; text-decoration:none; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
                     🗺️ Navigate to Pickup Point
                   </a>
+                  <button type="button" class="btn btn-sm view-on-map-btn" data-lat="${(order.mapPin && order.mapPin.lat) || (order.pickupPoint && order.pickupPoint.lat) || 5.5612}" data-lng="${(order.mapPin && order.mapPin.lng) || (order.pickupPoint && order.pickupPoint.lng) || -0.2155}" data-name="${order.customer} Pickup" style="background:#fff; color:#16a34a; border:1px solid #16a34a; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
+                    📍 Show on Driver Map
+                  </button>
                 </div>
               </div>
             `}
@@ -2326,6 +2358,7 @@
       const fname = document.getElementById('driverSignupFname').value.trim();
       const lname = document.getElementById('driverSignupLname').value.trim();
       const phone = document.getElementById('driverSignupPhone').value.trim();
+      const email = document.getElementById('driverSignupEmail').value.trim();
       let vehicleType = document.getElementById('driverSignupVehicle').value;
       const otherVehicle = document.getElementById('driverSignupVehicleOther').value.trim();
       const plate = document.getElementById('driverSignupPlate').value.trim();
@@ -2356,7 +2389,7 @@
       btn.disabled = true;
       btn.textContent = 'Creating account & generating username...';
 
-      const res = await apiDriverSignup({ fname, lname, phone, password, vehicle: vehicleFull, photo: capturedPhotoData });
+      const res = await apiDriverSignup({ fname, lname, phone, email, password, vehicle: vehicleFull, photo: capturedPhotoData });
       btn.disabled = false;
       btn.textContent = '✨ Submit application for approval';
 

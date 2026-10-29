@@ -1367,12 +1367,12 @@ export async function apiValidateSession(role) {
   }
 }
 
-export async function apiDriverSignup({ fname, lname, phone, password, vehicle, photo }) {
+export async function apiDriverSignup({ fname, lname, phone, email, password, vehicle, photo }) {
   try {
     const res = await fetch(`${API_BASE}/api/auth/driver/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fname, lname, phone, password, vehicle, photo })
+      body: JSON.stringify({ fname, lname, phone, email, password, vehicle, photo })
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.success) {
@@ -2338,12 +2338,11 @@ export async function apiVerifyPin(orderId, pin) {
 }
 
 /**
- * Calculate dynamic delivery fee:
- * Base rate: GH₵3.00 per km from the restaurant/pickup point.
- * Multi-meal volume discount:
- *   - 2 to 3 meals: GH₵2.00 off
- *   - 4 to 5 meals: GH₵4.00 off
- *   - 6 or more meals: GH₵6.00 off
+ * Calculate delivery price per kilometer by meal count:
+ *   - 1 meal: GH₵8.00/km
+ *   - 2 meals: GH₵6.00/km
+ *   - 3 meals: GH₵4.00/km
+ *   - 4 or more meals: GH₵2.00/km
  * If collection: GH₵0.00 (Free).
  */
 export function calculateDeliveryQuote(distanceKm, mealCount, isDelivery) {
@@ -2358,34 +2357,18 @@ export function calculateDeliveryQuote(distanceKm, mealCount, isDelivery) {
     };
   }
   const dist = Math.max(0.5, Math.round(Number(distanceKm || 2.5) * 10) / 10);
-  const baseFee = Math.round(dist * 3 * 100) / 100; // 3 Cedis per km
   const count = Number(mealCount || 0);
-
-  let discount = 0;
-  let nextTierMessage = '';
-
-  if (count >= 6) {
-    discount = 6;
-    nextTierMessage = 'Max GH₵6 delivery discount applied! 🎉';
-  } else if (count >= 4) {
-    discount = 4;
-    nextTierMessage = `Add ${6 - count} more meal to get GH₵6 off delivery!`;
-  } else if (count >= 2) {
-    discount = 2;
-    nextTierMessage = `Add ${4 - count} more meal to get GH₵4 off delivery!`;
-  } else {
-    discount = 0;
-    nextTierMessage = 'Order 2 or more meals to save up to GH₵6 on delivery!';
-  }
-
-  const finalFee = Math.max(0, Math.round((baseFee - discount) * 100) / 100);
+  const ratePerKm = count >= 4 ? 2 : count === 3 ? 4 : count === 2 ? 6 : 8;
+  const baseFee = Math.round(dist * ratePerKm * 100) / 100;
+  const finalFee = baseFee;
   return {
     distanceKm: dist,
+    ratePerKm,
     baseFee,
-    discount,
+    discount: 0,
     finalFee,
     mealCount: count,
-    nextTierMessage
+    nextTierMessage: `GH₵${ratePerKm.toFixed(2)} per km for ${count} meal${count === 1 ? '' : 's'}`
   };
 }
 

@@ -941,27 +941,42 @@
         <a href="driver.html" class="nav-mobile-only">🛵 Driver Portal</a>
         <a href="admin.html" class="nav-mobile-only">📊 Admin Dashboard</a>
       </nav>
-      <button type="button" class="nav-toggle" id="mobileNavToggle" aria-expanded="false" aria-controls="mainNav" aria-label="Open navigation menu">
+      <button type="button" class="nav-toggle" id="mobileNavToggle" aria-expanded="false" aria-controls="mainNav" aria-label="Open navigation menu" onclick="window.toggleMobileNav(); event.preventDefault(); event.stopPropagation();">
         <span></span><span></span><span></span>
       </button>
     </div>
   </header>
-  <div id="mobileNavBackdrop" class="mobile-nav-backdrop" onclick="window.toggleMobileNav && window.toggleMobileNav(false)"></div>
+  <div id="mobileNavBackdrop" class="mobile-nav-backdrop" onclick="window.toggleMobileNav(false)"></div>
   <script>
+    var _lastNavToggle = 0;
     function toggleMobileNav(force) {
+      var now = Date.now();
+      if (typeof force !== 'boolean' && now - _lastNavToggle < 280) return;
+      _lastNavToggle = now;
       var nav = document.getElementById('mainNav');
       var toggle = document.getElementById('mobileNavToggle');
       var backdrop = document.getElementById('mobileNavBackdrop');
-      if (!nav || !toggle) return;
+      if (!nav) return;
       var isOpen = typeof force === 'boolean' ? force : !nav.classList.contains('nav-open');
-      nav.classList.toggle('nav-open', isOpen);
-      nav.classList.toggle('active', isOpen);
-      nav.classList.toggle('open', isOpen);
-      toggle.classList.toggle('active', isOpen);
-      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-      toggle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
-      if (backdrop) backdrop.classList.toggle('active', isOpen);
-      document.body.classList.toggle('mobile-nav-active', isOpen);
+      if (isOpen) {
+        nav.classList.add('nav-open', 'active', 'open');
+        if (toggle) {
+          toggle.classList.add('active');
+          toggle.setAttribute('aria-expanded', 'true');
+          toggle.setAttribute('aria-label', 'Close navigation menu');
+        }
+        if (backdrop) backdrop.classList.add('active');
+        document.body.classList.add('mobile-nav-active');
+      } else {
+        nav.classList.remove('nav-open', 'active', 'open');
+        if (toggle) {
+          toggle.classList.remove('active');
+          toggle.setAttribute('aria-expanded', 'false');
+          toggle.setAttribute('aria-label', 'Open navigation menu');
+        }
+        if (backdrop) backdrop.classList.remove('active');
+        document.body.classList.remove('mobile-nav-active');
+      }
     }
     window.toggleMobileNav = toggleMobileNav;
   </script>
@@ -1064,9 +1079,9 @@
         <div class="promo-banner" style="background:#f0fdf4; border-color:#86efac; margin-top:10px;">
           <span class="promo-icon" aria-hidden="true" style="color:#16a34a;">🛵</span>
           <div>
-            <strong style="color:#166534;">Multi-Meal Delivery Discount &mdash; The more meals you order, the less delivery costs!</strong><br>
+            <strong style="color:#166534;">Delivery price per kilometer varies by meal count:</strong><br>
             <span style="color:#14532d; font-size:0.86rem;">
-              Base delivery is <strong>GH₵3.00/km</strong> from VIP Station. Order <strong>2–3 meals</strong> for <strong>GH₵2 off</strong> &bull; <strong>4–5 meals</strong> for <strong>GH₵4 off</strong> &bull; <strong>6+ meals</strong> for <strong>GH₵6 off delivery!</strong>
+              <strong>1 meal:</strong> GH₵8/km &bull; <strong>2 meals:</strong> GH₵6/km &bull; <strong>3 meals:</strong> GH₵4/km &bull; <strong>4+ meals:</strong> GH₵2/km from the shared pickup point.
             </span>
           </div>
         </div>
@@ -2222,7 +2237,7 @@
       const hasRealPin = !!(customerGpsPin && Number.isFinite(Number(customerGpsPin.lat)));
       const distanceKm = hasRealPin
         ? calculateDistanceKm(originLat, originLng, targetLat, targetLng)
-        : (Number(deliveryFeeAmount) > 0 ? (deliveryFeeAmount / 3) : 2.5);
+        : 2.5;
 
       const quote = calculateDeliveryQuote(distanceKm, mealCount, delivery);
       const fee = quote.finalFee;
@@ -2238,7 +2253,7 @@
 
       if (feeLabel) {
         feeLabel.textContent = delivery
-          ? `Delivery (${quote.distanceKm} km @ GH₵3.00/km)`
+          ? `Delivery (${quote.distanceKm} km @ GH₵${quote.ratePerKm.toFixed(2)}/km)`
           : "Collection at shared pickup";
       }
       if (feeValue) {
@@ -2261,7 +2276,7 @@
       if (explanationEl) {
         if (delivery) {
           explanationEl.style.display = "block";
-          explanationEl.innerHTML = `🛵 <strong>${quote.distanceKm} km</strong> &times; GH₵3.00 = GH₵${quote.baseFee.toFixed(2)}${quote.discount > 0 ? ` &minus; GH₵${quote.discount.toFixed(2)} (${quote.nextTierMessage})` : (quote.nextTierMessage ? ` &bull; <em>${quote.nextTierMessage}</em>` : '')}`;
+          explanationEl.innerHTML = `🛵 <strong>${quote.distanceKm} km</strong> &times; GH₵${quote.ratePerKm.toFixed(2)}/km = GH₵${quote.finalFee.toFixed(2)} &bull; <em>${quote.nextTierMessage}</em>`;
         } else {
           explanationEl.style.display = "none";
         }
@@ -2707,10 +2722,9 @@
       const fulfilment = isDelivery ? "Delivery" : "Collection";
       const typedLocation = String(formData.get("location") || "").trim();
 
-      // Delivery needs a real address or a shared pin. Collection happens at
-      // the kitchen's shared pickup point, so the address is optional.
-      if (isDelivery && !typedLocation && !customerGpsPin) {
-        formFeedback.textContent = "Add your delivery area or tap “Use my live GPS location” so the rider knows where to bring the food.";
+      // Delivery requires an exact destination so pricing and live tracking agree.
+      if (isDelivery && (!typedLocation || !customerGpsPin)) {
+        formFeedback.textContent = "Enter your delivery area and select its map pin, use live GPS, or paste a map link for accurate pricing and tracking.";
         if (locationInput) locationInput.focus();
         return;
       }
@@ -2736,23 +2750,27 @@
       const originLng = (sharedPickupPoint && Number(sharedPickupPoint.lng)) || RESTAURANT_COORDS.lng;
       const targetLat = (customerGpsPin && Number(customerGpsPin.lat)) || originLat;
       const targetLng = (customerGpsPin && Number(customerGpsPin.lng)) || originLng;
-      const dist = customerGpsPin ? calculateDistanceKm(originLat, originLng, targetLat, targetLng) : (deliveryFeeAmount / 3 || 2.5);
+      const dist = customerGpsPin ? calculateDistanceKm(originLat, originLng, targetLat, targetLng) : 2.5;
       const quote = calculateDeliveryQuote(dist, mealCount, isDelivery);
       const deliveryFee = quote.finalFee;
       const total = subtotal + deliveryFee;
 
       const orderLocation = isDelivery
-        ? (typedLocation || (customerGpsPin ? "GPS pin shared" : ""))
-        : (sharedPickupPoint.name || "Shared pickup point");
+        ? (typedLocation || (customerGpsPin ? `GPS Pin: ${customerGpsPin.lat.toFixed(4)}, ${customerGpsPin.lng.toFixed(4)}` : "Direct customer delivery"))
+        : (customerGpsPin ? (typedLocation || "Customer selected pickup point") : (sharedPickupPoint.name || "Shared pickup point"));
+
+      // Always save customer's selected GPS pin or pickup point coordinates
+      const resolvedPin = (customerGpsPin && Number.isFinite(Number(customerGpsPin.lat)))
+        ? { lat: Number(customerGpsPin.lat), lng: Number(customerGpsPin.lng), name: typedLocation || orderLocation }
+        : { lat: Number(originLat), lng: Number(originLng), name: sharedPickupPoint.name || orderLocation };
 
       const orderPayload = {
         customer: formData.get("customer"),
         phone: formData.get("phone"),
         fulfilment,
         location: orderLocation,
-        mapPin: isDelivery
-          ? (customerGpsPin || null)
-          : { lat: sharedPickupPoint.lat, lng: sharedPickupPoint.lng },
+        mapPin: resolvedPin,
+        pickupPoint: resolvedPin,
         timing: formData.get("timing"),
         payment: payMode === "now" ? payNetworkById(payNetwork).label : "Pay on Delivery (Cash)",
         paymentNetwork: payNetwork,
@@ -2897,6 +2915,7 @@
         initTrackMap();
         if (trackMap) {
           trackMap.invalidateSize();
+          renderTrackingModal();
         } else {
           const mapEl = document.getElementById('liveTrackingMap');
           if (mapEl) mapEl.innerHTML = `<div style="height:100%; display:grid; place-items:center; text-align:center; padding:20px; color:var(--muted); font-size:0.9rem;">Map library could not load.<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Adabraka, Accra')}" target="_blank" style="color:var(--orange); font-weight:700;">Open location in Google Maps ↗</a></div>`;
@@ -3121,31 +3140,38 @@
           : '';
       }
 
-      // Destination: delivery orders go to the customer's own pin, collection
-      // orders go to the shared pickup point the admin set on the map.
-      const isCollectionOrder = /collect|pickup/i.test(String(order.fulfilment || ""));
-      let targetLat = order.mapPin ? Number(order.mapPin.lat) : RESTAURANT_COORDS.lat + 0.006;
-      let targetLng = order.mapPin ? Number(order.mapPin.lng) : RESTAURANT_COORDS.lng + 0.005;
-      let targetName = order.location || "Delivery address";
-      if (!Number.isFinite(targetLat) || !Number.isFinite(targetLng)) {
+      // Destination coordinates: ALWAYS prioritize customer's selected map pin or GPS location
+      let targetLat = null;
+      let targetLng = null;
+      let targetName = order.location || "Customer Location";
+
+      if (order.mapPin && Number.isFinite(Number(order.mapPin.lat)) && Number.isFinite(Number(order.mapPin.lng))) {
+        targetLat = Number(order.mapPin.lat);
+        targetLng = Number(order.mapPin.lng);
+        targetName = order.mapPin.name || order.location || "Selected Location";
+      } else if (order.pickupPoint && Number.isFinite(Number(order.pickupPoint.lat)) && Number.isFinite(Number(order.pickupPoint.lng))) {
+        targetLat = Number(order.pickupPoint.lat);
+        targetLng = Number(order.pickupPoint.lng);
+        targetName = order.pickupPoint.name || order.location || "Pickup Point";
+      } else if (sharedPickupPoint && Number.isFinite(Number(sharedPickupPoint.lat))) {
+        targetLat = Number(sharedPickupPoint.lat);
+        targetLng = Number(sharedPickupPoint.lng);
+        targetName = sharedPickupPoint.name || "Circle Odo Rice Junction / VIP Station";
+      } else {
         targetLat = RESTAURANT_COORDS.lat + 0.006;
         targetLng = RESTAURANT_COORDS.lng + 0.005;
       }
 
-      if (isCollectionOrder) {
-        const pickup = order.pickupPoint || sharedPickupPoint;
-        if (pickup && Number.isFinite(Number(pickup.lat)) && Number.isFinite(Number(pickup.lng))) {
-          targetLat = Number(pickup.lat);
-          targetLng = Number(pickup.lng);
-          targetName = pickup.name || targetName;
-        }
-        if (trackDestAddress) trackDestAddress.innerHTML = `<strong>📍 Shared pickup point:</strong> ${targetName}`;
-      } else if (trackDestAddress) {
-        trackDestAddress.innerHTML = `<strong>🏠 Delivering to:</strong> ${targetName}`;
+      const isCollectionOrder = /collect|pickup/i.test(String(order.fulfilment || ""));
+      if (trackDestAddress) {
+        trackDestAddress.innerHTML = isCollectionOrder
+          ? `<strong>📍 Pickup Point:</strong> ${targetName}`
+          : `<strong>🏠 Delivering to:</strong> ${targetName}`;
       }
 
-      let driverLat = RESTAURANT_COORDS.lat;
-      let driverLng = RESTAURANT_COORDS.lng;
+      // Driver position: prioritize live streaming currentLocation from the assigned driver
+      let driverLat = null;
+      let driverLng = null;
       let driverSpeed = 0;
       let driverPhone = "";
 
@@ -3153,9 +3179,12 @@
         trackDriverName.textContent = order.driver.name || "Assigned Driver";
         trackDriverVehicle.textContent = order.driver.vehicle || "Delivery Motorbike";
         driverPhone = resolveDriverPhone(order) || order.driver.phone || "";
-        if (order.driver.currentLocation) {
-          driverLat = order.driver.currentLocation.lat;
-          driverLng = order.driver.currentLocation.lng;
+        if (order.driver.currentLocation && Number.isFinite(Number(order.driver.currentLocation.lat)) && Number.isFinite(Number(order.driver.currentLocation.lng))) {
+          driverLat = Number(order.driver.currentLocation.lat);
+          driverLng = Number(order.driver.currentLocation.lng);
+        } else if (order.driver.lat != null && order.driver.lng != null && Number.isFinite(Number(order.driver.lat)) && Number.isFinite(Number(order.driver.lng))) {
+          driverLat = Number(order.driver.lat);
+          driverLng = Number(order.driver.lng);
         }
         if (order.driver.speedKmh) driverSpeed = order.driver.speedKmh;
       }
@@ -3186,7 +3215,7 @@
           : "🛵";
       }
 
-      trackDriverSpeed.textContent = `${driverSpeed} km/h`;
+      trackDriverSpeed.textContent = driverLat === null ? "Waiting for GPS" : `${driverSpeed} km/h`;
       if (trackDriverLiveText) {
         trackDriverLiveText.textContent = order.driver && order.driver.lastUpdated
           ? `Live GPS · updated ${new Date(order.driver.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
@@ -3194,10 +3223,11 @@
       }
 
       // Live Driver ETA to target pickup point
-      const dist = calculateDistanceKm(driverLat, driverLng, targetLat, targetLng);
-      const etaMins = estimateEtaMinutes(driverLat, driverLng, targetLat, targetLng);
-      trackDriverEta.textContent = order.status === 'arrived' ? 'Arrived!' : (order.status === 'delivered' ? 'Delivered' : `~${etaMins} mins`);
-      if (trackDriverDistance) trackDriverDistance.textContent = `${dist.toFixed(2)} km away`;
+      const hasDriverLocation = driverLat !== null;
+      const dist = hasDriverLocation ? calculateDistanceKm(driverLat, driverLng, targetLat, targetLng) : null;
+      const etaMins = hasDriverLocation ? estimateEtaMinutes(driverLat, driverLng, targetLat, targetLng) : null;
+      trackDriverEta.textContent = order.status === 'arrived' ? 'Arrived!' : (order.status === 'delivered' ? 'Delivered' : (hasDriverLocation ? `~${etaMins} mins` : 'Waiting for rider GPS'));
+      if (trackDriverDistance) trackDriverDistance.textContent = hasDriverLocation ? `${dist.toFixed(2)} km away` : 'Live location pending';
 
       if (order.status === 'pending' || order.status === 'kitchen' || order.status === 'driver_assigned') {
         stepperProgressFill.style.width = order.status === 'kitchen' ? '33%' : '15%';
@@ -3220,7 +3250,9 @@
         trackSessionAlert.className = "session-callout session-callout-enroute";
         trackSessionIcon.textContent = "🛵";
         trackSessionHeading.textContent = "Order Session Ended — Delivery Driver En Route!";
-        trackSessionDetails.textContent = `Your driver is on the road streaming real-time GPS coordinates directly to your map just like Bolt or Yango! Real-time ETA: ${etaMins} mins to ${targetName}.`;
+        trackSessionDetails.textContent = hasDriverLocation
+          ? `Your driver is streaming live GPS. Estimated arrival: ${etaMins} mins to ${targetName}.`
+          : `Your driver is en route to ${targetName}. The live ETA will appear when rider GPS is available.`;
       } else if (order.status === 'arrived') {
         stepperProgressFill.style.width = '85%';
         stepNode1.className = 'step-node completed';
@@ -3252,11 +3284,17 @@
             ? `<b>📍 Shared pickup point</b><br>${targetName}`
             : `<b>🏠 Delivery address</b><br>${targetName}`
         );
-        trackDriverMarker.setLatLng([driverLat, driverLng]);
+        if (hasDriverLocation) {
+          trackDriverMarker.setLatLng([driverLat, driverLng]);
+          trackDriverMarker.setOpacity(1);
+        } else {
+          trackDriverMarker.setOpacity(0);
+          trackRouteLine.setLatLngs([]);
+        }
 
         // Draw road-following route (falls back to dashed line offline)
         import('./shared.js').then(({ drawRoadRoute, computeRoadEta }) => {
-          if (drawRoadRoute) {
+          if (hasDriverLocation && drawRoadRoute) {
             drawRoadRoute(trackMap,
               { lat: driverLat, lng: driverLng },
               { lat: targetLat, lng: targetLng },
@@ -3267,7 +3305,7 @@
               // Offline fallback already handled inside drawRoadRoute
             });
           }
-          if (computeRoadEta && order.status === 'enroute') {
+          if (hasDriverLocation && computeRoadEta && order.status === 'enroute') {
             const eta = computeRoadEta(
               { lat: driverLat, lng: driverLng },
               { lat: targetLat, lng: targetLng },
@@ -3278,11 +3316,12 @@
           }
         }).catch(() => {
           // shared.js not available as module — use the straight line
-          trackRouteLine.setLatLngs([[driverLat, driverLng], [targetLat, targetLng]]);
+          if (hasDriverLocation) trackRouteLine.setLatLngs([[driverLat, driverLng], [targetLat, targetLng]]);
         });
 
-        const bounds = L.latLngBounds([[driverLat, driverLng], [targetLat, targetLng]]);
-        trackMap.fitBounds(bounds, { padding: [40, 40] });
+        const bounds = L.latLngBounds([[targetLat, targetLng]]);
+        if (hasDriverLocation) bounds.extend([driverLat, driverLng]);
+        trackMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
       }
     }
 
@@ -4205,36 +4244,29 @@
       const toggle = document.getElementById('mobileNavToggle');
       const nav = document.getElementById('mainNav');
       if (!toggle || !nav) return;
-      toggle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (typeof window.toggleMobileNav === 'function') {
-          window.toggleMobileNav();
-        } else {
-          nav.classList.toggle('nav-open');
-        }
-      });
+
       nav.querySelectorAll('a, button').forEach(link => {
         link.addEventListener('click', () => {
           if (typeof window.toggleMobileNav === 'function') window.toggleMobileNav(false);
-          else nav.classList.remove('nav-open');
+          else nav.classList.remove('nav-open', 'active', 'open');
         });
       });
       document.addEventListener('click', (event) => {
         if (!nav.classList.contains('nav-open')) return;
         if (nav.contains(event.target) || toggle.contains(event.target)) return;
         if (typeof window.toggleMobileNav === 'function') window.toggleMobileNav(false);
-        else nav.classList.remove('nav-open');
+        else nav.classList.remove('nav-open', 'active', 'open');
       });
       document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
           if (typeof window.toggleMobileNav === 'function') window.toggleMobileNav(false);
-          else nav.classList.remove('nav-open');
+          else nav.classList.remove('nav-open', 'active', 'open');
         }
       });
       window.addEventListener('resize', () => {
         if (window.innerWidth > 820) {
           if (typeof window.toggleMobileNav === 'function') window.toggleMobileNav(false);
-          else nav.classList.remove('nav-open');
+          else nav.classList.remove('nav-open', 'active', 'open');
         }
       });
     })();

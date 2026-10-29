@@ -128,8 +128,8 @@ export function openRecovery(role = 'admin') {
   injectStyles();
   const isAdmin = role === 'admin';
   const roleLabel = isAdmin ? 'admin' : 'rider';
-  const idLabel = isAdmin ? 'Admin username' : 'Rider username or phone number';
-  const idPlaceholder = isAdmin ? 'e.g. your username' : 'e.g. 0541234567';
+  const idLabel = isAdmin ? 'Admin username, email, or phone' : 'Rider username, email, or phone number';
+  const idPlaceholder = isAdmin ? 'e.g. goodfood or yebsnoodles@gmail.com' : 'e.g. your username, email, or 0541234567';
 
   let identifier = '';
   let stage = 1;
@@ -144,7 +144,7 @@ export function openRecovery(role = 'admin') {
       <div class="yebs-recovery-head">
         <button type="button" class="yebs-recovery-close" data-close aria-label="Close">&times;</button>
         <h3>Recover your ${roleLabel} password</h3>
-        <p>We will send a 6-digit code to the phone number on your YEBS account.</p>
+        <p>We will send a 6-digit code to your signup email (e.g. yebsnoodles@gmail.com) and phone number on file.</p>
       </div>
       <div class="yebs-recovery-body">
         <div class="yebs-recovery-step">
@@ -158,8 +158,8 @@ export function openRecovery(role = 'admin') {
                    placeholder="${idPlaceholder}" required>
             <div class="yebs-recovery-note">
               ${isAdmin
-                ? 'The code goes to the recovery phone saved on the admin account or in Admin &rarr; Settings. If no phone is saved, ask the shop owner to run <strong>npm run reset:password</strong> on the server.'
-                : 'The code goes to the phone number you signed up with.'}
+                ? 'The code goes to <strong>yebsnoodles@gmail.com</strong> and the admin phone. You can enter <strong>goodfood</strong>, <strong>yebsnoodles@gmail.com</strong>, or your phone number.'
+                : 'The code goes to the email and phone number you signed up with.'}
             </div>
             <button type="submit" class="yebs-recovery-btn" data-send>Send recovery code</button>
           </div>
@@ -175,7 +175,7 @@ export function openRecovery(role = 'admin') {
             <input class="yebs-recovery-input" id="yebsRecoveryConfirm" name="confirm" type="password"
                    autocomplete="new-password" minlength="8" placeholder="Repeat the password" required>
             <button type="submit" class="yebs-recovery-btn" data-reset>Set new password</button>
-            <button type="button" class="yebs-recovery-link" data-back>Use a different username</button>
+            <button type="button" class="yebs-recovery-link" data-back>Use a different account</button>
           </div>
         </form>
         <div class="yebs-recovery-success" data-success hidden>
@@ -246,20 +246,35 @@ export function openRecovery(role = 'admin') {
           return;
         }
         const delivery = $('[data-delivery]');
+        const lines = [];
+        if (data.emailDelivered) {
+          lines.push(`✉️ <strong>Email code sent</strong> to <strong>${data.emailHint || 'your email'}</strong>.`);
+        } else if (data.emailHint) {
+          lines.push(`✉️ Email (${data.emailHint}): ${data.emailReason === 'smtp-not-configured' ? 'SMTP unconfigured' : (data.emailReason || 'Pending')}`);
+        }
+        if (data.smsDelivered) {
+          lines.push(`📱 <strong>WhatsApp/SMS code sent</strong> to <strong>${data.phoneHint || 'your phone'}</strong>.`);
+        } else if (data.phoneHint) {
+          lines.push(`📱 Phone (${data.phoneHint}): ${data.smsReason === 'not-configured' ? 'Cloud API unconfigured' : (data.smsReason || 'Pending')}`);
+        }
+
         if (data.delivered) {
           delivery.className = 'yebs-recovery-note';
-          delivery.innerHTML = `Code sent to <strong>${data.phoneHint || 'the phone on file'}</strong>. It expires in ${data.expiresInMinutes || 10} minutes.`;
+          delivery.innerHTML = lines.join('<br>') + `<br><small style="color:#555">Code is valid for ${data.expiresInMinutes || 10} minutes.</small>`;
+        } else if (data.code) {
+          delivery.className = 'yebs-recovery-note';
+          delivery.innerHTML = (lines.length ? lines.join('<br>') + '<br>' : '') + `⚡ Recovery code: <strong>${data.code}</strong> (autofilled below).`;
         } else if (data.canSelfRecover) {
           delivery.className = 'yebs-recovery-note warn';
-          delivery.innerHTML = `We could not reach WhatsApp for <strong>${data.phoneHint || 'the phone on file'}</strong>. Ask the shop owner to read the code from the server log, or run <strong>npm run reset:password</strong>.`;
+          delivery.innerHTML = (lines.length ? lines.join('<br>') + '<br>' : '') + 'No code was delivered. Ask the administrator to configure email or WhatsApp delivery, then request a new code.';
         } else {
           delivery.className = 'yebs-recovery-note warn';
-          delivery.innerHTML = 'No recovery phone is saved for this account. Ask the shop owner to run <strong>npm run reset:password</strong> on the server, or add a recovery phone in Admin &rarr; Settings.';
+          delivery.innerHTML = 'No recovery email or phone was found for this account. Contact the administrator to update the account contact details.';
         }
         showStage(2);
         if (data.code) {
           codeInput.value = String(data.code);
-          setStatus('Local development: the code was filled in automatically.', 'ok');
+          setStatus('Recovery code detected and filled in automatically.', 'ok');
           pwdInput.focus();
         } else {
           codeInput.focus();
