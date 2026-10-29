@@ -28,6 +28,9 @@ describe('administrator seed security', () => {
   test('does not seed or accept the published default administrator password', async () => {
     expect(loadDatabase().admins).toEqual([]);
 
+    const databaseResponse = await request(app).get('/database.json');
+    expect(databaseResponse.status).toBe(404);
+
     const login = await request(app)
       .post('/api/auth/admin/login')
       .send({ username: 'goodfood', password: 'goodfood@123' });

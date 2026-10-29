@@ -42,6 +42,10 @@ app.use((req, res, next) => {
   }
   next();
 });
+app.use('/database.json', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendStatus(404);
+});
 app.use(express.static(__dirname, { extensions: ['html', 'htm'] }));
 
 // Never let browsers cache live operational data; auto-refresh state from Supabase when remote.
