@@ -495,6 +495,7 @@ const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
 const ADMIN_PASSWORD_CONFIGURED = Boolean(
   DEFAULT_ADMIN_PASSWORD && DEFAULT_ADMIN_PASSWORD !== PUBLISHED_DEFAULT_ADMIN_PASSWORD
 );
+const ADMIN_CREDENTIAL_RESET_VERSION = String(process.env.ADMIN_CREDENTIAL_RESET_VERSION || '').trim();
 const DEFAULT_ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'yebsnoodles@gmail.com').trim();
 const DEFAULT_ADMIN_PHONE = String(process.env.ADMIN_RECOVERY_PHONE || '0559103452').trim();
 
@@ -781,6 +782,27 @@ function ensureSystemAccounts(db) {
         console.error('[security] Disabled a legacy default administrator password. Set ADMIN_USERNAME and a non-default ADMIN_PASSWORD to restore access.');
       }
     });
+
+    if (ADMIN_CREDENTIAL_RESET_VERSION && ADMIN_USERNAME_CONFIGURED && ADMIN_PASSWORD_CONFIGURED &&
+        String(db.settings.adminCredentialResetVersion || '') !== ADMIN_CREDENTIAL_RESET_VERSION) {
+      const desiredUsername = DEFAULT_ADMIN_USERNAME.toLowerCase();
+      const matchingAdmin = db.admins.find(admin =>
+        String(admin.username || '').toLowerCase() === desiredUsername
+      );
+      const resetAdmin = matchingAdmin || (db.admins.length === 1 ? db.admins[0] : null);
+      if (resetAdmin) {
+        resetAdmin.username = DEFAULT_ADMIN_USERNAME;
+        resetAdmin.password = hashPassword(DEFAULT_ADMIN_PASSWORD);
+        resetAdmin.passwordUpdatedAt = new Date().toISOString();
+        resetAdmin.sessionEpoch = (Number(resetAdmin.sessionEpoch) || 0) + 1;
+        delete resetAdmin.requiresPasswordSetup;
+        db.settings.adminCredentialResetVersion = ADMIN_CREDENTIAL_RESET_VERSION;
+        changed = true;
+        console.log(`[security] Applied one-time administrator credential reset version "${ADMIN_CREDENTIAL_RESET_VERSION}" to "${DEFAULT_ADMIN_USERNAME}".`);
+      } else {
+        console.error('[security] Administrator credential reset was not applied: set ADMIN_USERNAME to an existing account, or ensure exactly one administrator exists.');
+      }
+    }
 
     // Ensure the default admin has email and recoveryPhone configured
     const defaultAdm = db.admins.find(a => String(a.username || '').toLowerCase() === DEFAULT_ADMIN_USERNAME.toLowerCase());

@@ -53,6 +53,7 @@ a database key. Everything else is optional:
 | `NODE_ENV` | `production` | Production behaviour |
 | `ADMIN_USERNAME` | Your private administrator username | Initial administrator account |
 | `ADMIN_PASSWORD` | Unique, strong password (not `goodfood@123`) | Required to create or migrate the administrator |
+| `ADMIN_CREDENTIAL_RESET_VERSION` | A new label such as `recovery-1` | Optional, one-time reset of an existing administrator; see below |
 | `DATABASE_URL` | from `yebs-db` (automatic) | Orders, menu and drivers |
 | `WHATSAPP_TOKEN` | Meta permanent token | Automatic order alerts |
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp phone number ID | Automatic order alerts |
@@ -64,6 +65,27 @@ a database key. Everything else is optional:
 | `DATABASE_POOL_URL` | Supabase session-pooler URI | Optional PostgreSQL connection; takes precedence over `DATABASE_URL` when set |
 | `MOMO_SUBSCRIPTION_KEY` | MTN key | Optional automatic MoMo |
 | `MOMO_API_USER` | MTN API user | Optional automatic MoMo |
+
+### Recovering an existing administrator login
+
+`ADMIN_USERNAME` and `ADMIN_PASSWORD` seed a new database and migrate the
+published legacy account. They do not normally overwrite an already-configured
+administrator password. If the admin login is unavailable, set both variables
+to the credentials you want and add a new, unique `ADMIN_CREDENTIAL_RESET_VERSION`
+in Render (for example, `recovery-1`), then redeploy.
+
+On startup, the service applies that version once to the administrator whose
+username matches `ADMIN_USERNAME`. If there is exactly one administrator, it
+can apply the reset to that account and rename it. With multiple admins and no
+username match, the reset is refused; check the Render logs and use an existing
+admin username for the target before retrying with a new version label. The
+reset increments the session epoch, invalidating existing admin sessions.
+
+After confirming you can sign in, you may remove
+`ADMIN_CREDENTIAL_RESET_VERSION` from Render. The database remembers the
+applied version, so normal restarts and later GUI credential changes will not
+be overwritten. For another deliberate reset, set a different version label.
+Never put passwords in source control or chat.
 | `MOMO_API_KEY` | MTN API key | Optional automatic MoMo |
 | `MOMO_CALLBACK_HOST` | `https://your-service.onrender.com` | Optional automatic MoMo |
 | `MOMO_TARGET_ENV` | `sandbox` or `mtnghana` | MoMo environment |
