@@ -21,6 +21,11 @@ describe('admin menu persistence', () => {
 
   beforeAll(async () => {
     await start();
+    const defaultPasswordLogin = await request(app)
+      .post('/api/auth/admin/login')
+      .send({ username: process.env.ADMIN_USERNAME, password: 'goodfood@123' });
+    expect(defaultPasswordLogin.status).toBe(401);
+
     const login = await request(app)
       .post('/api/auth/admin/login')
       .send({ username: process.env.ADMIN_USERNAME, password: process.env.ADMIN_PASSWORD });

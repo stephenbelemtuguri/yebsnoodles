@@ -51,6 +51,8 @@ a database key. Everything else is optional:
 | Key | Value | Why |
 |---|---|---|
 | `NODE_ENV` | `production` | Production behaviour |
+| `ADMIN_USERNAME` | Your private administrator username | Initial administrator account |
+| `ADMIN_PASSWORD` | Unique, strong password (not `goodfood@123`) | Required to create or migrate the administrator |
 | `DATABASE_URL` | from `yebs-db` (automatic) | Orders, menu and drivers |
 | `WHATSAPP_TOKEN` | Meta permanent token | Automatic order alerts |
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp phone number ID | Automatic order alerts |
@@ -192,7 +194,8 @@ and write the same orders, menu and drivers — no Supabase key required.
 
 1. Open `https://<your-service>.onrender.com/admin.html`.
 2. Sign in with the `ADMIN_USERNAME` / `ADMIN_PASSWORD` you set in the
-   environment (the administrator is created on first boot).
+   environment (the administrator is created on first boot). There is no
+   built-in default administrator password; configure both values before sign-in.
 3. Go to **Settings → Shared Pickup Point**: search a landmark, drop the pin and
    set the delivery fee, then **Save & sync to all maps**.
 4. Go to **Noodles Menu & Photos** to edit prices, descriptions, prep times,

@@ -481,10 +481,16 @@ async function sendWhatsAppText(to, text) {
 const BCRYPT_ROUNDS = 10;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-// Built-in administrator created when the store has no admins yet.
-// Defaults guarantee goodfood / goodfood@123 works immediately out of the box.
-const DEFAULT_ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || 'goodfood').trim();
-const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || 'goodfood@123');
+// The published legacy password is only retained to identify and invalidate
+// old seeded accounts. New administrator credentials must come from env.
+const PUBLISHED_DEFAULT_ADMIN_PASSWORD = 'goodfood@123';
+const PUBLISHED_DEFAULT_ADMIN_USERNAME = 'goodfood';
+const ADMIN_USERNAME_CONFIGURED = Boolean(String(process.env.ADMIN_USERNAME || '').trim());
+const DEFAULT_ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || PUBLISHED_DEFAULT_ADMIN_USERNAME).trim();
+const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
+const ADMIN_PASSWORD_CONFIGURED = Boolean(
+  DEFAULT_ADMIN_PASSWORD && DEFAULT_ADMIN_PASSWORD !== PUBLISHED_DEFAULT_ADMIN_PASSWORD
+);
 const DEFAULT_ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'yebsnoodles@gmail.com').trim();
 const DEFAULT_ADMIN_PHONE = String(process.env.ADMIN_RECOVERY_PHONE || '0559103452').trim();
 
@@ -696,9 +702,8 @@ function rateSuccess(req, role, identity) {
 // DATABASE
 // ==========================================================
 
-// Guarantee the data file always has every collection and at least one
-// superadmin. Without this, a database.json that predates the accounts (or was
-// committed empty) leaves the platform with no way to sign in or approve drivers.
+// Ensure all collections exist and create an administrator only when a
+// non-default deployment password is explicitly configured.
 const DEFAULT_MOMO_SETTINGS = { payTo: '0559103452', accountName: 'MATHEW TIA' };
 const DEFAULT_PICKUP_POINT = {
   name: 'Circle Odo Rice Junction / VIP Station',
@@ -735,7 +740,7 @@ function ensureSystemAccounts(db) {
     if (!db.settings.momo.accountName) { db.settings.momo.accountName = DEFAULT_MOMO_SETTINGS.accountName; changed = true; }
   }
 
-  if (db.admins.length === 0) {
+  if (db.admins.length === 0 && ADMIN_PASSWORD_CONFIGURED) {
     db.admins.push({
       id: 'adm-1',
       username: DEFAULT_ADMIN_USERNAME,
@@ -748,7 +753,29 @@ function ensureSystemAccounts(db) {
     });
     changed = true;
     console.log(`[security] Seeded built-in administrator "${DEFAULT_ADMIN_USERNAME}" (${DEFAULT_ADMIN_EMAIL}).`);
+  } else if (db.admins.length === 0) {
+    console.error('[security] No administrator was created. Set a non-default ADMIN_PASSWORD before first sign-in.');
   } else {
+    const legacyAdmins = db.admins.filter(admin =>
+      admin.requiresPasswordSetup || verifyPassword(PUBLISHED_DEFAULT_ADMIN_PASSWORD, admin.password)
+    );
+    legacyAdmins.forEach(admin => {
+      if (ADMIN_PASSWORD_CONFIGURED) {
+        admin.password = hashPassword(DEFAULT_ADMIN_PASSWORD);
+        admin.passwordUpdatedAt = new Date().toISOString();
+        delete admin.requiresPasswordSetup;
+        if (ADMIN_USERNAME_CONFIGURED && String(admin.username || '').toLowerCase() === PUBLISHED_DEFAULT_ADMIN_USERNAME) {
+          admin.username = DEFAULT_ADMIN_USERNAME;
+        }
+        changed = true;
+      } else if (!admin.requiresPasswordSetup) {
+        admin.password = hashPassword(crypto.randomBytes(48).toString('hex'));
+        admin.requiresPasswordSetup = true;
+        changed = true;
+        console.error('[security] Disabled a legacy default administrator password. Set ADMIN_USERNAME and a non-default ADMIN_PASSWORD to restore access.');
+      }
+    });
+
     // Ensure the default admin has email and recoveryPhone configured
     const defaultAdm = db.admins.find(a => String(a.username || '').toLowerCase() === DEFAULT_ADMIN_USERNAME.toLowerCase());
     if (defaultAdm) {
@@ -1162,18 +1189,8 @@ app.post('/api/auth/admin/login', (req, res) => {
     (digitsUser.length >= 7 && String(a.recoveryPhone || a.phone || '').replace(/\D/g, '').endsWith(digitsUser.slice(-7)))
   );
 
-  // Robust check: accept if bcrypt verified, or if credentials match default embedded admin
-  let isValid = false;
-  if (admin && verifyPassword(password, admin.password)) {
-    isValid = true;
-  } else if ((lowerUser === DEFAULT_ADMIN_USERNAME.toLowerCase() || lowerUser === DEFAULT_ADMIN_EMAIL.toLowerCase()) && password === DEFAULT_ADMIN_PASSWORD) {
-    if (!admin && db.admins && db.admins.length > 0) admin = db.admins[0];
-    if (admin) {
-      admin.password = hashPassword(password);
-      isValid = true;
-      saveDatabase(db);
-    }
-  }
+  const isValid = password !== PUBLISHED_DEFAULT_ADMIN_PASSWORD
+    && Boolean(admin && !admin.requiresPasswordSetup && verifyPassword(password, admin.password));
 
   if (!admin || !isValid) {
     const record = rateFail(req, 'admin', username);
@@ -1212,7 +1229,7 @@ app.post('/api/auth/admin/login', (req, res) => {
 app.post('/api/auth/admin/unlock', (req, res) => {
   const { username, masterKey } = req.body || {};
   // Allow unlock if masterKey matches the original ADMIN_PASSWORD from env
-  if (!masterKey || masterKey !== DEFAULT_ADMIN_PASSWORD) {
+  if (!ADMIN_PASSWORD_CONFIGURED || !masterKey || masterKey !== DEFAULT_ADMIN_PASSWORD) {
     return res.status(401).json({ success: false, message: 'Invalid master key.' });
   }
   // Clear all rate limit records

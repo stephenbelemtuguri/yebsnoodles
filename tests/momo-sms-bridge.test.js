@@ -9,6 +9,8 @@ process.env.DATABASE_URL = '';
 process.env.DATABASE_POOL_URL = '';
 process.env.SUPABASE_URL = '';
 process.env.SUPABASE_SERVICE_ROLE_KEY = '';
+process.env.ADMIN_USERNAME = '';
+process.env.ADMIN_PASSWORD = '';
 process.env.MOMO_SMS_INGEST_TOKEN = 'a'.repeat(64);
 process.env.MOMO_SMS_ALLOWED_SENDERS = 'MTN, 12345';
 

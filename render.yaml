@@ -20,6 +20,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       # Render injects the connection string of the database below.
       - key: DATABASE_URL
         fromDatabase:

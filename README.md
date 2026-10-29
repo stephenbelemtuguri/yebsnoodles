@@ -84,8 +84,9 @@ npm run dev
 - **Reviews & Loyalty**: http://localhost:3000/public/customer-reviews.html
 
 ### Admin Login
-- Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env` (or your hosting
-  environment). The administrator is created automatically on first boot.
+- Set a private `ADMIN_USERNAME` and a unique, strong `ADMIN_PASSWORD` in `.env`
+  (or your hosting environment). There is no built-in default administrator
+  password; the account is created automatically only after credentials are set.
 - Change the password from **Admin → Settings** after the first login.
 
 ---
