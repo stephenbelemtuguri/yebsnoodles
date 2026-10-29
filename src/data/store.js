@@ -164,6 +164,10 @@ async function writeRemote(data) {
  */
 let lastError = null;
 let lastReadAt = 0;
+// False when the durable row could not be read at startup. While it is false we
+// must never write, otherwise a transient outage would replace the real menu,
+// orders and accounts with the local seed document.
+let remoteReadOk = !remoteEnabled;
 const READ_TTL_MS = Number(process.env.SUPABASE_STATE_TTL_MS || 1500);
 
 function init(loadLocal) {
@@ -177,11 +181,13 @@ function init(loadLocal) {
         const remote = await readRemote();
         lastReadAt = Date.now();
         if (remote && typeof remote === 'object') {
+          remoteReadOk = true;
           cache = remote;
           return cache;
         }
         const seed = loadLocal();
         cache = seed;
+        remoteReadOk = true;
         await writeRemote(seed);
         return cache;
       } catch (err) {
@@ -189,6 +195,7 @@ function init(loadLocal) {
         // whole site down: fall back to the seed document so the menu, admin
         // login and sign-ups still work, and surface the reason on /api/health.
         lastError = err.message;
+        remoteReadOk = false;
         console.error('[store] remote store unavailable, using in-memory seed:', err.message);
         cache = loadLocal();
         return cache;
@@ -211,7 +218,10 @@ async function refresh() {
   try {
     const remote = await readRemote();
     lastReadAt = Date.now();
-    if (remote && typeof remote === 'object') cache = remote;
+    if (remote && typeof remote === 'object') {
+      remoteReadOk = true;
+      cache = remote;
+    }
     lastError = null;
   } catch (err) {
     lastError = err.message;
@@ -225,19 +235,42 @@ function get() {
   return cache;
 }
 
-/** Update the in-memory state and queue a durable write. */
+/**
+ * Update the in-memory state and write it durably.
+ * Returns a promise with `{ ok, mode, error }` so callers can tell the admin
+ * the truth instead of reporting success for a write that never landed.
+ */
 function set(data) {
   cache = data;
-  if (remoteEnabled) {
-    pending = pending
-      .then(() => writeRemote(data))
-      .then(() => { lastError = null; })
-      .catch(err => {
-        lastError = err.message;
-        console.error('[store]', err.message);
-      });
-  }
-  return pending;
+  if (!remoteEnabled) return Promise.resolve({ ok: true, mode: 'local-file' });
+
+  const write = pending.then(async () => {
+    if (!remoteReadOk) {
+      // Try once more to read the real row. If it exists we refuse the write:
+      // the caller's copy was built from defaults and would erase live data.
+      const remote = await readRemote();
+      lastReadAt = Date.now();
+      if (remote && typeof remote === 'object') {
+        remoteReadOk = true;
+        cache = remote;
+        throw new Error('Live data could not be loaded when the server started, so this change was not saved over it. Reload the dashboard and try again.');
+      }
+      remoteReadOk = true;
+    }
+    await writeRemote(data);
+  });
+
+  pending = write
+    .then(() => { lastError = null; return true; })
+    .catch(err => {
+      lastError = err.message;
+      console.error('[store]', err.message);
+      return false;
+    });
+
+  return write
+    .then(() => ({ ok: true, mode: remoteMode }))
+    .catch(err => ({ ok: false, mode: remoteMode, error: err.message }));
 }
 
 /** Resolve once every queued write has reached its backend. */
@@ -247,6 +280,12 @@ function flush() {
 
 function isRemote() {
   return remoteEnabled && !lastError;
+}
+
+/** True when a save would actually reach durable storage. */
+function canPersist() {
+  if (!remoteEnabled) return false;
+  return remoteReadOk && !lastError;
 }
 
 /** Human-readable storage status for /api/health. */
@@ -263,6 +302,7 @@ module.exports = {
   set,
   flush,
   isRemote,
+  canPersist,
   status,
   remoteEnabled,
   remoteMode,

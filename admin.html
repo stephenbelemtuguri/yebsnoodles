@@ -1079,6 +1079,11 @@
 
     <!-- TAB 3: Food Cards & Poster Template Manager -->
     <div id="foodMenuTab" class="tab-content" style="display:none;">
+      <div id="menuStorageWarning" style="display:none; margin-bottom:18px; padding:12px 16px; border-radius:10px; background:#fff4e5; border:1px solid #f0b775; color:#7a4a12; font-size:0.86rem; line-height:1.55;">
+        <strong>⚠️ These changes are not being stored permanently.</strong>
+        The server is running without a database connection, so edits disappear when it restarts or redeploys.
+        Connect Supabase (<code>SUPABASE_SERVICE_ROLE_KEY</code>) to keep every change until you edit it again.
+      </div>
       <div class="card" style="margin-bottom:20px;">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
           <div>
@@ -4256,6 +4261,35 @@
       const modal = document.getElementById('kitchenDocketModal');
       if (modal) modal.style.display = 'none';
     };
+  </script>
+
+  <!-- Warn the admin when the server has no durable storage: without it every
+       card edit is lost on the next restart, which looks like an auto-reset. -->
+  <script>
+    (function watchMenuStorage() {
+      async function check() {
+        try {
+          const res = await fetch('/api/health', { cache: 'no-store' });
+          if (!res.ok) return;
+          const health = await res.json();
+          const db = health.database || {};
+          const box = document.getElementById('menuStorageWarning');
+          if (box && db.writable === false) box.style.display = 'block';
+        } catch (e) { /* offline — the save call reports its own error */ }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', check);
+      } else {
+        check();
+      }
+      // Re-check whenever the menu tab is opened so a reconnect is noticed.
+      document.addEventListener('click', function (event) {
+        const target = event.target;
+        if (target && target.closest && target.closest('[data-tab="foodMenuTab"]')) {
+          check();
+        }
+      });
+    })();
   </script>
 
   <!-- Kitchen Order Slip / Docket Modal -->

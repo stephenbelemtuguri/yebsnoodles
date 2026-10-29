@@ -48,7 +48,9 @@ app.use(express.static(__dirname, { extensions: ['html', 'htm'] }));
 app.use('/api', async (req, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.set('Pragma', 'no-cache');
-  if (store.isRemote()) {
+  // Refresh even after an error so a transient outage can recover instead of
+  // pinning the server to the seed document until the next restart.
+  if (store.remoteEnabled) {
     try { await store.refresh(); } catch (e) { /* non-fatal, fallback to memory */ }
   }
   next();
@@ -267,7 +269,7 @@ app.get('/api/settings/public', (req, res) => {
   });
 });
 
-app.put('/api/admin/settings/pickup', requireRole('admin'), (req, res) => {
+app.put('/api/admin/settings/pickup', requireRole('admin'), async (req, res) => {
   const body = req.body || {};
   const lat = Number(body.lat);
   const lng = Number(body.lng);
@@ -302,9 +304,10 @@ app.put('/api/admin/settings/pickup', requireRole('admin'), (req, res) => {
       o.pickupPointName = pickup.name;
     }
   });
-  saveDatabase(db);
+  const failure = await requireDurableSave(db);
+  if (failure) return res.status(503).json({ success: false, persisted: false, message: failure });
   logAction('PICKUP_POINT_UPDATED', pickup.setBy, pickup.name, { lat, lng, deliveryFee: db.settings.deliveryFee }, req);
-  res.json({ success: true, pickupPoint: pickup, deliveryFee: db.settings.deliveryFee });
+  res.json({ success: true, persisted: true, pickupPoint: pickup, deliveryFee: db.settings.deliveryFee });
 });
 
 // ==========================================================
@@ -746,13 +749,18 @@ function loadDatabase() {
         }
       ]
     };
-    try { fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2)); } catch (e) { /* read-only fs */ }
+    // Only touch the local mirror in local-file mode. In Supabase/Postgres mode
+    // this document is just a seed: writing it would copy the live admin hash
+    // (and customer data) onto the server's disk.
+    if (store.remoteMode === 'local') {
+      try { fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2)); } catch (e) { /* read-only fs */ }
+    }
     ensureSystemAccounts(initialData);
     return initialData;
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    if (ensureSystemAccounts(parsed)) {
+    if (ensureSystemAccounts(parsed) && store.remoteMode === 'local') {
       try { fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2)); } catch (e) { /* read-only fs */ }
     }
     return parsed;
@@ -767,19 +775,42 @@ function loadDatabase() {
   }
 }
 
+// Hosts whose filesystem is wiped on every restart/redeploy. Writing the state
+// file there looks successful but the data is gone minutes later.
+function isEphemeralHost() {
+  return Boolean(
+    process.env.RENDER ||
+    process.env.RENDER_SERVICE_ID ||
+    process.env.NETLIFY ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME
+  );
+}
+
 function saveDatabase(data) {
   // Memory + Supabase (when configured). The local file is only used when the
   // app is running in local-file mode: in production the remote row is the
   // source of truth, and mirroring it to disk would copy live customer data
   // (and bcrypt hashes) onto the server's filesystem for no benefit.
-  store.set(data);
-  if (store.remoteMode !== 'local') return;
-  try {
-    fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {
-    // Read-only filesystem — nothing else to persist.
+  const result = store.set(data);
+  if (store.remoteMode === 'local') {
+    try {
+      fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+    } catch (e) {
+      // Read-only filesystem — nothing else to persist.
+    }
   }
+  return result;
+}
+
+// Wrap a save for admin write routes: returns null when the change is durable,
+// or a message explaining why it was not, so the dashboard never says "saved"
+// for data that will disappear on the next restart.
+async function requireDurableSave(db) {
+  const result = await saveDatabase(db);
+  if (result && result.ok) return null;
+  const reason = (result && result.error) || 'the storage backend is unavailable';
+  return `This change was NOT saved permanently: ${reason}`;
 }
 
 // One-time upgrade of any legacy plaintext passwords to bcrypt.
@@ -2826,28 +2857,29 @@ const DEFAULT_POSTER_MENU = [
   }
 ];
 
-app.get('/api/menu', (req, res) => {
+app.get('/api/menu', async (req, res) => {
   const db = loadDatabase();
   if (!db.menuItems || !Array.isArray(db.menuItems) || db.menuItems.length === 0) {
-    db.menuItems = DEFAULT_POSTER_MENU;
-    saveDatabase(db);
+    db.menuItems = JSON.parse(JSON.stringify(DEFAULT_POSTER_MENU));
+    await saveDatabase(db);
   }
   res.json(db.menuItems);
 });
 
-app.post('/api/menu', requireRole('admin'), (req, res) => {
+app.post('/api/menu', requireRole('admin'), async (req, res) => {
   const { menuItems } = req.body || {};
   if (!Array.isArray(menuItems) || menuItems.length === 0) {
     return res.status(400).json({ success: false, message: "Invalid menuItems array." });
   }
   const db = loadDatabase();
   db.menuItems = menuItems.slice(0, 100);
-  saveDatabase(db);
+  const failure = await requireDurableSave(db);
+  if (failure) return res.status(503).json({ success: false, persisted: false, message: failure });
   logAction("MENU_UPDATED", req.auth.admin.username, "MENU", { count: db.menuItems.length }, req);
-  res.json({ success: true, menuItems: db.menuItems });
+  res.json({ success: true, persisted: true, menuItems: db.menuItems });
 });
 
-app.post('/api/menu/item', requireRole('admin'), (req, res) => {
+app.post('/api/menu/item', requireRole('admin'), async (req, res) => {
   const itemData = req.body || {};
   if (!itemData.name || !itemData.name.trim()) {
     return res.status(400).json({ success: false, message: "Dish title / name is required." });
@@ -2884,12 +2916,13 @@ app.post('/api/menu/item', requireRole('admin'), (req, res) => {
   };
 
   db.menuItems.push(newItem);
-  saveDatabase(db);
+  const failure = await requireDurableSave(db);
+  if (failure) return res.status(503).json({ success: false, persisted: false, message: failure });
   logAction("MENU_ITEM_CREATED", req.auth.admin.username, newItem.id, { name: newItem.name, price: newItem.price, status: newItem.status }, req);
-  res.json({ success: true, item: newItem, menuItems: db.menuItems });
+  res.json({ success: true, persisted: true, item: newItem, menuItems: db.menuItems });
 });
 
-app.put('/api/menu/:id', requireRole('admin'), (req, res) => {
+app.put('/api/menu/:id', requireRole('admin'), async (req, res) => {
   const { id } = req.params;
   const updates = req.body || {};
   const db = loadDatabase();
@@ -2901,12 +2934,13 @@ app.put('/api/menu/:id', requireRole('admin'), (req, res) => {
     return res.status(404).json({ success: false, message: "Menu item not found." });
   }
   db.menuItems[idx] = { ...db.menuItems[idx], ...updates };
-  saveDatabase(db);
+  const failure = await requireDurableSave(db);
+  if (failure) return res.status(503).json({ success: false, persisted: false, message: failure });
   logAction("MENU_ITEM_UPDATED", req.auth.admin.username, id, updates, req);
-  res.json({ success: true, item: db.menuItems[idx], menuItems: db.menuItems });
+  res.json({ success: true, persisted: true, item: db.menuItems[idx], menuItems: db.menuItems });
 });
 
-app.delete('/api/menu/:id', requireRole('admin'), (req, res) => {
+app.delete('/api/menu/:id', requireRole('admin'), async (req, res) => {
   const { id } = req.params;
   const db = loadDatabase();
   if (!db.menuItems || !Array.isArray(db.menuItems)) {
@@ -2917,17 +2951,19 @@ app.delete('/api/menu/:id', requireRole('admin'), (req, res) => {
   if (db.menuItems.length === prevCount) {
     return res.status(404).json({ success: false, message: "Dish not found." });
   }
-  saveDatabase(db);
+  const failure = await requireDurableSave(db);
+  if (failure) return res.status(503).json({ success: false, persisted: false, message: failure });
   logAction("MENU_ITEM_DELETED", req.auth.admin.username, id, { deletedId: id }, req);
-  res.json({ success: true, message: "Dish deleted successfully.", menuItems: db.menuItems });
+  res.json({ success: true, persisted: true, message: "Dish deleted successfully.", menuItems: db.menuItems });
 });
 
-app.post('/api/menu/reset', requireRole('admin'), (req, res) => {
+app.post('/api/menu/reset', requireRole('admin'), async (req, res) => {
   const db = loadDatabase();
   db.menuItems = JSON.parse(JSON.stringify(DEFAULT_POSTER_MENU));
-  saveDatabase(db);
+  const failure = await requireDurableSave(db);
+  if (failure) return res.status(503).json({ success: false, persisted: false, message: failure });
   logAction("MENU_RESET_TO_POSTER", req.auth.admin.username, "MENU", "Reset to original 15-60 Cedis poster template.", req);
-  res.json({ success: true, menuItems: db.menuItems });
+  res.json({ success: true, persisted: true, menuItems: db.menuItems });
 });
 
 // ==========================================================
@@ -3925,7 +3961,7 @@ app.get('/api/admin/settings/momo', requireRole('admin'), (req, res) => {
   res.json({ success: true, momo: getMomoSettings(db) });
 });
 
-app.put('/api/admin/settings/momo', requireRole('admin'), (req, res) => {
+app.put('/api/admin/settings/momo', requireRole('admin'), async (req, res) => {
   const body = req.body || {};
   const payTo = walletPhone(body.payTo);
   if (!payTo) {
@@ -3938,9 +3974,10 @@ app.put('/api/admin/settings/momo', requireRole('admin'), (req, res) => {
   const db = loadDatabase();
   db.settings = db.settings || {};
   db.settings.momo = { payTo, accountName };
-  saveDatabase(db);
+  const failure = await requireDurableSave(db);
+  if (failure) return res.status(503).json({ success: false, persisted: false, message: failure });
   logAction("MOMO_SETTINGS_UPDATED", req.auth.admin.username, "SETTINGS", { payTo, accountName }, req);
-  res.json({ success: true, momo: getMomoSettings(db) });
+  res.json({ success: true, persisted: true, momo: getMomoSettings(db) });
 });
 
 // Admin: driver payout requests created from the driver earnings page.
@@ -3981,7 +4018,10 @@ app.get('/api/health', (req, res) => {
           ? 'postgres'
           : 'supabase-rest',
       path: store.remoteMode === 'local' ? DB_FILE : null,
-      persistent: store.isRemote() || (store.remoteMode === 'local' && Boolean(process.env.DB_PATH))
+      persistent: store.isRemote() || (store.remoteMode === 'local' && Boolean(process.env.DB_PATH)),
+      // False means admin edits are held in memory only and will disappear on
+      // the next restart / redeploy.
+      writable: store.canPersist() || (store.remoteMode === 'local' && !isEphemeralHost())
     },
     pickupPoint: pickup,
     deliveryFee: Number(db.settings && db.settings.deliveryFee) || 15,

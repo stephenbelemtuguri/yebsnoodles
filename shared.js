@@ -1545,9 +1545,9 @@ export async function apiFetchMenu() {
 }
 
 export async function apiSaveMenu(menuItems) {
-  // Keep the local cache in step for instant UI, but only report success when
-  // the database actually accepted the change.
-  saveMenuItems(menuItems);
+  // Do not touch the local cache before the server confirms the write: showing
+  // an edit that the database rejected is exactly how "it changed back later"
+  // surprises happen.
   const token = authToken('admin');
   if (!token) {
     return { success: false, message: "Your admin session has expired. Sign in again to save menu changes." };
