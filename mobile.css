@@ -210,24 +210,23 @@
 
   /* Hamburger nav panel */
   .main-nav {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    display: none;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 4px;
-    padding: 14px 16px 20px;
-    background: #fffefa;
-    border-bottom: 2px solid #e8e5da;
-    box-shadow: 0 24px 48px rgba(23, 61, 48, 0.22);
-    z-index: 299;
-    max-height: calc(100vh - 65px);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    transform-origin: top;
-    animation: mobileNavSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    position: fixed !important;
+    top: 60px !important;
+    left: 0 !important;
+    right: 0 !important;
+    display: none !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 4px !important;
+    padding: 16px 18px 24px !important;
+    background: #ffffff !important;
+    border-bottom: 2px solid #e8e5da !important;
+    box-shadow: 0 24px 48px rgba(23, 61, 48, 0.25) !important;
+    z-index: 10000 !important;
+    max-height: calc(100vh - 65px) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    pointer-events: none !important;
   }
   @keyframes mobileNavSlide {
     from { opacity: 0; transform: translateY(-8px); }
@@ -237,6 +236,8 @@
   .main-nav.active,
   .main-nav.open {
     display: flex !important;
+    pointer-events: auto !important;
+    animation: mobileNavSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
   }
   .main-nav a,
   .main-nav .nav-track-btn,
@@ -264,7 +265,7 @@
 
   /* Hamburger icon */
   .nav-toggle {
-    display: inline-flex;
+    display: inline-flex !important;
     flex-direction: column;
     justify-content: center;
     gap: 5px;
@@ -276,6 +277,8 @@
     background: rgba(255,255,255,0.95);
     cursor: pointer;
     flex: 0 0 auto;
+    position: relative;
+    z-index: 10001 !important;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
@@ -308,19 +311,16 @@
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(10, 25, 18, 0.55);
+    background: rgba(10, 25, 18, 0.65);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-    z-index: 250;
+    z-index: 9998;
   }
   .mobile-nav-backdrop.active {
     display: block !important;
   }
 
-  /* Keep the header (and its close button) above the backdrop, otherwise the
-     dim layer swallows taps on the hamburger and the menu feels stuck open. */
-  .site-header { z-index: 320 !important; }
-  .nav-toggle { position: relative; z-index: 321; }
+  .site-header { z-index: 9999 !important; }
 
   /* Secondary links in hamburger menu */
   .main-nav a.nav-mobile-only {
@@ -341,7 +341,22 @@
 }
 /* Hidden on desktop; mobile rules above reveal them inside the menu */
 .nav-mobile-only { display: none; }
-@media (min-width: 821px) { .nav-toggle { display: none; } }
+@media (min-width: 821px) {
+  .nav-toggle { display: none !important; }
+  .mobile-nav-backdrop { display: none !important; }
+  .main-nav {
+    position: static !important;
+    display: flex !important;
+    flex-direction: row !important;
+    z-index: auto !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: transparent !important;
+    pointer-events: auto !important;
+    padding: 0 !important;
+  }
+}
 
 /* ----------------------------------------------------- SESSION BANNER ---- */
 @media (max-width: 820px) {

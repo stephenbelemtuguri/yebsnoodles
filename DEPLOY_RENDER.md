@@ -67,6 +67,8 @@ a database key. Everything else is optional:
 | `MOMO_TARGET_ENV` | `sandbox` or `mtnghana` | MoMo environment |
 | `MOMO_PAY_TO` | `0559103452` | Wallet that receives payment |
 | `MOMO_MERCHANT_NAME` | `MATHEW TIA` | Wallet account name |
+| `MOMO_SMS_INGEST_TOKEN` | Random secret, at least 32 characters | Authenticates the SMS bridge |
+| `MOMO_SMS_ALLOWED_SENDERS` | Comma-separated official MoMo sender IDs | Limits accepted SMS sources |
 | `SENDGRID_API_KEY` | SendGrid Mail Send API key | Password recovery email |
 | `SENDGRID_FROM_EMAIL` | Verified SendGrid sender address | Password recovery email |
 | `SENDGRID_FROM_NAME` | `YEBS Noodles` | Password recovery email sender label |
@@ -89,6 +91,54 @@ a database key. Everything else is optional:
 Recovery tries SendGrid then SMTP for email, and Twilio then WhatsApp for
 phone delivery. SendGrid requires a verified sender address. Add the actual
 secret values in Render's environment settings; do not commit them.
+
+### Optional: forward MoMo SMS from a phone
+
+The bridge accepts HTTPS `POST /api/payments/momo/sms/ingest` requests with a
+Bearer token and `{ "deviceId", "messageId", "sender", "sms" }`. It only
+accepts configured sender IDs, limits messages to 1,000 characters, deduplicates
+retries, and matches the SMS amount/reference against unpaid orders. Ambiguous
+or unmatched SMS messages are not marked paid.
+
+1. In Render, set `MOMO_SMS_INGEST_TOKEN` to a newly generated random secret
+   (for example, generate 32 random bytes with a trusted password manager or
+   `openssl rand -hex 32`). Set `MOMO_SMS_ALLOWED_SENDERS` to the exact sender
+   ID(s) used by the MoMo provider, comma-separated. Do not use a customer
+   phone number, and do not put the token in source control.
+2. On Android, install Termux and its matching Termux:API app from the same
+   trusted source. In Termux, install `bash`, `curl`, `jq`, and `termux-api`,
+   grant SMS permission to Termux:API, and copy `scripts/momo-sms-bridge.sh`
+   to the phone. Create `~/.config/yebs-momo-bridge.env` with:
+
+   ```sh
+   export MOMO_SMS_API_URL='https://your-service.onrender.com/api/payments/momo/sms/ingest'
+   export MOMO_SMS_INGEST_TOKEN='the-secret-configured-in-render'
+   export MOMO_SMS_ALLOWED_SENDERS='official-sender-id'
+   export MOMO_SMS_DEVICE_ID='a-stable-private-device-id'
+   ```
+
+   Restrict that file to the phone user's account; the script sets its
+   permissions to owner-only when run. Run `chmod +x momo-sms-bridge.sh` and
+   `./momo-sms-bridge.sh` in Termux; `--once` checks the inbox once, otherwise
+   it polls every five minutes. Keep Android's background/battery restrictions
+   in mind.
+3. iOS does not allow a shell script or Shortcut to silently read the SMS
+   inbox. For iPhone, create a personal Shortcut that asks for the copied SMS
+   text, generates a unique message ID, and uses **Get Contents of URL** to
+   POST JSON containing `deviceId`, `messageId`, `sender`, and `sms` to the
+   HTTPS endpoint. Add `Authorization: Bearer <token>` and
+   `Content-Type: application/json` headers. The sender must match the
+   configured allowlist. Store the bridge token in the Shortcut's private
+   configuration, not in a shared link. Run it manually after copying the
+   message; unattended inbox access is not supported on iOS.
+4. Check the order's payment status in the admin dashboard. Invalid, duplicate,
+   ambiguous, unmatched, or unavailable-server responses must not be treated
+   as proof of payment.
+
+The phone should use the deployed HTTPS origin (for example,
+`https://your-service.onrender.com`) and must never log or share the bearer
+token or full payment SMS. If the Render environment values are missing, the
+endpoint returns an explicit configuration error and does not verify payment.
 
 ### Optional: use Supabase instead of the Render database
 

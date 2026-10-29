@@ -1556,7 +1556,7 @@
               8492
             </div>
             <div style="font-size:0.78rem; color:var(--muted); line-height:1.45;">
-              <strong style="color:var(--forest);">This 4-digit PIN is the last 4 digits of your Order ID</strong> (e.g. Order <strong>YB-8492</strong> → PIN <strong>8492</strong>). It is unique to you. The rider checks it before handing over your food.
+              <strong style="color:var(--forest);">This is a private pickup PIN, separate from your Order ID.</strong> Show it to your assigned rider at handover.
             </div>
           </div>
           <div style="text-align:center;">
@@ -1573,6 +1573,11 @@
           </div>
           <div id="trackPaymentDetail" style="margin-top:4px; color:var(--muted); font-size:0.78rem;"></div>
         </div>
+        <div id="trackCancellationPanel" style="margin-top:10px; padding:12px 14px; border:1px solid #fed7aa; border-radius:10px; background:#fff7ed;">
+          <div style="font-size:0.8rem; color:#7c2d12; margin-bottom:8px;">Cancellation requests need admin approval. Approved refunds deduct a GH₵5.00 cancellation fee.</div>
+          <button type="button" id="trackCancelOrderBtn" class="button" style="min-height:36px; padding:0 12px; font-size:0.78rem; background:#fff; color:#9a3412; border:1px solid #fdba74;">Request order cancellation</button>
+          <div id="trackCancelStatus" style="font-size:0.78rem; margin-top:6px; color:#7c2d12;" role="status" aria-live="polite"></div>
+        </div>
 
         <!-- Ghana Mobile Money (MoMo) Fast Payment Box -->
         <div id="trackMomoBox" style="background:#f0fdf4; border:1.5px solid #bbf7d0; border-radius:12px; padding:16px; margin-top:14px;">
@@ -1580,7 +1585,7 @@
             <div style="display:flex; align-items:center; gap:8px;">
               <span style="font-size:1.4rem;">📱</span>
               <div>
-                <strong style="color:#166534; font-size:0.92rem;">Pay with Mobile Money — auto-verified</strong>
+                <strong style="color:#166534; font-size:0.92rem;">Pay with Mobile Money</strong>
                 <div style="font-size:0.78rem; color:#15803d;">MTN MoMo · Telecel Cash · AT Money</div>
               </div>
             </div>
@@ -1592,7 +1597,7 @@
           <div style="font-size:0.84rem; color:#14532d; line-height:1.55; background:rgba(255,255,255,0.75); padding:10px 12px; border-radius:8px;">
             Send <strong id="momoPayAmountLabel">GH₵0</strong> to <strong>055 910 3452</strong> (MATHEW TIA).
             Use your Order ID <strong id="momoPayRefLabel" style="font-family:ui-monospace,monospace;">YB----</strong> as the reference.
-            <div style="margin-top:4px; font-size:0.78rem; color:#166534;">⚡ Verification is automatic and instant — your order is not held up while paying.</div>
+            <div style="margin-top:4px; font-size:0.78rem; color:#166534;">Your payment is confirmed when it matches a provider transaction or an administrator approves the proof.</div>
           </div>
 
           <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
@@ -1612,18 +1617,18 @@
 
           <!-- Instant payment verification: transaction ID and/or receipt -->
           <div style="margin-top:12px; padding-top:12px; border-top:1px dashed #86efac;">
-            <div style="font-size:0.84rem; font-weight:800; color:#166534; margin-bottom:6px;">Already sent the money? Confirm it here — it verifies instantly</div>
+            <div style="font-size:0.84rem; font-weight:800; color:#166534; margin-bottom:6px;">Already sent the money? Submit your transaction ID or receipt for verification.</div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
               <input type="number" step="0.01" min="0" id="momoAmountInput" placeholder="Amount paid (GH₵)" style="flex:1; min-width:130px; min-height:38px; font-size:0.82rem; padding:6px 10px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
               <input type="text" id="momoRefInput" placeholder="Transaction ID (e.g. MP2404...)" style="flex:1.4; min-width:170px; min-height:38px; font-size:0.82rem; padding:6px 10px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px;">
-              <input type="file" id="momoReceiptFile" accept="image/*" capture="environment" style="flex:1; min-width:170px; font-size:0.75rem; padding:4px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
+              <input type="file" id="momoReceiptFile" accept="image/*" style="flex:1; min-width:170px; font-size:0.75rem; padding:4px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
               <button type="button" id="uploadMomoReceiptBtn" class="button" style="min-height:38px; padding:0 16px; font-size:0.82rem; background:#16a34a; color:white;">
-                ✅ Verify payment now
+                ✅ Submit payment proof
               </button>
             </div>
-            <div style="font-size:0.72rem; color:#15803d; margin-top:5px;">Provide the transaction ID, a receipt screenshot, or both. A screenshot alone is accepted when the amount matches.</div>
+            <div style="font-size:0.72rem; color:#15803d; margin-top:5px;">Transaction IDs and screenshots are proof only; payment is not marked paid until verified against a provider message or approved by an administrator.</div>
             <div id="momoReceiptStatus" style="font-size:0.8rem; margin-top:6px; color:#15803d; font-weight:600;"></div>
             <div id="momoReceiptPreview" style="margin-top:8px;"></div>
           </div>
@@ -1703,7 +1708,7 @@
           Driver is at your entrance/gate. Check the live GPS map to meet your rider.
         </div>
         <div id="arrivedPinLine" style="margin-top:10px; padding-top:10px; border-top:1px dashed #e6dcc6; font-size:0.85rem; color:var(--forest);">
-          🔐 <strong>Your 4-digit PIN is the last 4 digits of your Order ID.</strong> Show it to the rider to collect your food.
+          🔐 <strong>Your 4-digit pickup PIN is separate from your Order ID.</strong> Show it to your assigned rider to collect your food.
         </div>
       </div>
       <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
@@ -1772,6 +1777,7 @@
       resolveDriverPhone,
       apiUploadMomoReceipt,
       apiPayMomo,
+      apiRequestOrderCancellation,
       apiRequestMomo,
       apiMomoStatus,
       apiFetchPaymentNetworks,
@@ -1861,6 +1867,8 @@
     const trackPaymentStatusBadge = document.getElementById("trackPaymentStatusBadge");
     const trackPaymentDetail = document.getElementById("trackPaymentDetail");
     const trackPayAmount = document.getElementById("trackPayAmount");
+    const trackCancelOrderBtn = document.getElementById("trackCancelOrderBtn");
+    const trackCancelStatus = document.getElementById("trackCancelStatus");
     const momoPayAmountLabel = document.getElementById("momoPayAmountLabel");
     const momoPayRefLabel = document.getElementById("momoPayRefLabel");
     const momoAmountInput = document.getElementById("momoAmountInput");
@@ -1973,8 +1981,8 @@
         const pin = pinOrder && pinOrder.pickupPin ? pinOrder.pickupPin : null;
         const id = pinOrder && pinOrder.id ? pinOrder.id : (arrivalData.orderId || null);
         arrivedPinLine.innerHTML = pin
-          ? `🔐 <strong>Your 4-digit PIN is <span style="font-family:ui-monospace,monospace; font-size:1.05rem; color:var(--orange);">${pin}</span></strong> — the last 4 digits of Order <strong>${id}</strong>. Show it to the rider to collect your food.`
-          : `🔐 <strong>Your 4-digit PIN is the last 4 digits of your Order ID.</strong> Show it to the rider to collect your food.`;
+          ? `🔐 <strong>Your private pickup PIN is <span style="font-family:ui-monospace,monospace; font-size:1.05rem; color:var(--orange);">${pin}</span></strong>, separate from Order <strong>${id}</strong>. Show it only to your assigned rider.`
+          : '🔐 Your pickup PIN is unavailable here. Contact YEBS support before handover.';
       }
 
       if (photo && arrivedDriverPhotoWrap && arrivedDriverPhoto) {
@@ -2555,8 +2563,7 @@
       if (!order || !orderIdModal) return;
       pendingOrderIdForModal = order.id;
       if (orderIdModalValue) orderIdModalValue.textContent = order.id;
-      // The 4-digit PIN IS the last 4 digits of the Order ID — NOT a MoMo PIN
-      const pin = order.pickupPin || String(order.id).slice(-4);
+      const pin = String(order.pickupPin || '');
       if (orderIdModalPin) orderIdModalPin.textContent = pin;
       if (copyOrderIdStatus) copyOrderIdStatus.textContent = "";
 
@@ -2566,7 +2573,7 @@
         pinHintEl.innerHTML = `
           <div style="background:#fff8ec;border:1.5px solid #fbbf24;border-radius:10px;padding:14px 16px;margin-top:10px;font-size:0.88rem;line-height:1.6;">
             <strong>🔐 Your Collection PIN: <span style="font-family:monospace;font-size:1.2rem;color:#e57a45;letter-spacing:0.1em;">${pin}</span></strong><br>
-            <span style="color:#6b7280;">This is the <strong>last 4 digits of your Order ID</strong> — use it at the pickup point so the rider can identify your package.<br>
+            <span style="color:#6b7280;">This private pickup PIN is separate from your public Order ID. Share it only with your assigned rider at handover.<br>
             <strong style="color:#b91c1c;">This is NOT your MoMo PIN.</strong> Never share your MoMo PIN with anyone.</span>
           </div>`;
       }
@@ -2574,7 +2581,7 @@
       if (orderIdModalPayHint) {
         orderIdModalPayHint.innerHTML = order.paymentMode === "cash"
           ? `💵 Pay <strong>GH₵${order.total}</strong> cash to the rider when your food arrives.`
-          : `📱 To pay, send <strong>GH₵${order.total}</strong> to <strong>${MOMO_CONFIG.displayNumber}</strong>. Use <strong>${order.id}</strong> as the reference. Then submit proof on the tracking screen for instant verification.`;
+          : `📱 To pay, send <strong>GH₵${order.total}</strong> to <strong>${MOMO_CONFIG.displayNumber}</strong>. Use <strong>${order.id}</strong> as the reference. Then submit proof on the tracking screen for provider or admin verification.`;
       }
 
       orderIdModal.style.display = "flex";
@@ -2744,6 +2751,16 @@
         }
       }
 
+      if (isDelivery && (!customerGpsPin
+        || !Number.isFinite(Number(customerGpsPin.lat))
+        || !Number.isFinite(Number(customerGpsPin.lng)))) {
+        formFeedback.textContent = "Choose a delivery landmark from the suggestions or use your live GPS location so the rider can navigate to your address.";
+        formFeedback.style.color = "#b91c1c";
+        setLocationStatus("A delivery map pin is required. Select a suggested landmark or use live GPS.", "error");
+        if (locationInput) locationInput.focus();
+        return;
+      }
+
       const subtotal = entries.reduce((sum, item) => sum + (item.price * item.quantity), 0);
       const mealCount = entries.reduce((sum, item) => sum + item.quantity, 0);
       const originLat = (sharedPickupPoint && Number(sharedPickupPoint.lat)) || RESTAURANT_COORDS.lat;
@@ -2759,8 +2776,7 @@
         ? (typedLocation || (customerGpsPin ? `GPS Pin: ${customerGpsPin.lat.toFixed(4)}, ${customerGpsPin.lng.toFixed(4)}` : "Direct customer delivery"))
         : (customerGpsPin ? (typedLocation || "Customer selected pickup point") : (sharedPickupPoint.name || "Shared pickup point"));
 
-      // Always save customer's selected GPS pin or pickup point coordinates
-      const resolvedPin = (customerGpsPin && Number.isFinite(Number(customerGpsPin.lat)))
+      const resolvedPin = isDelivery
         ? { lat: Number(customerGpsPin.lat), lng: Number(customerGpsPin.lng), name: typedLocation || orderLocation }
         : { lat: Number(originLat), lng: Number(originLng), name: sharedPickupPoint.name || orderLocation };
 
@@ -2988,6 +3004,7 @@
       const statusMap = {
         pending:   { active: 0, pct: '5%',   icon: '⏳', heading: 'Your order has been received!', detail: 'The YEBS kitchen is being notified. Hang tight!' },
         kitchen:   { active: 1, pct: '33%',  icon: '👨‍🍳', heading: 'Your noodles are being prepared!', detail: 'The kitchen team is cooking your order fresh right now.' },
+        driver_assigned: { active: 1, pct: '45%', icon: '🛵', heading: 'A rider accepted your order', detail: 'Your rider is preparing to leave. Live tracking starts as soon as the rider begins moving.' },
         enroute:   { active: 2, pct: '66%',  icon: '🛵', heading: 'Driver en route — watch the map!', detail: 'Your rider is on the way. Track their exact position on the map.' },
         arrived:   { active: 3, pct: '90%',  icon: '📍', heading: 'Driver has arrived!', detail: 'Your rider is at the drop-off point. Come collect your order.' },
         delivered: { active: 3, pct: '100%', icon: '✅', heading: 'Delivered! Enjoy your noodles 🍜', detail: 'Order complete. Thank you for choosing YEBS Noodles!' },
@@ -3024,6 +3041,34 @@
         return;
       }
 
+      const cancellationPanel = document.getElementById('trackCancellationPanel');
+      const cancellation = order.cancellation;
+      const refund = order.refund;
+      if (cancellationPanel) cancellationPanel.hidden = order.status === 'delivered';
+      if (trackCancelOrderBtn) {
+        const cannotCancel = ['enroute', 'arrived', 'delivered', 'cancelled'].includes(order.status)
+          || (cancellation && ['pending', 'approved'].includes(cancellation.status));
+        trackCancelOrderBtn.disabled = cannotCancel;
+        trackCancelOrderBtn.textContent = cancellation && cancellation.status === 'pending'
+          ? 'Cancellation awaiting admin approval'
+          : (cancellation && cancellation.status === 'approved' ? 'Order cancelled' : 'Request order cancellation');
+      }
+      if (trackCancelStatus) {
+        if (cancellation && cancellation.status === 'pending') {
+          trackCancelStatus.textContent = refund
+            ? `Cancellation pending. Potential refund: GH₵${Number(refund.amount).toFixed(2)} after the GH₵${Number(refund.fee).toFixed(2)} fee.`
+            : 'Cancellation request sent. No payment refund is due for this unpaid order.';
+        } else if (cancellation && cancellation.status === 'approved') {
+          trackCancelStatus.textContent = refund
+            ? `Cancellation approved. Refund status: ${refund.status} · GH₵${Number(refund.amount).toFixed(2)} (GH₵${Number(refund.fee).toFixed(2)} fee).`
+            : 'Cancellation approved.';
+        } else if (cancellation && cancellation.status === 'rejected') {
+          trackCancelStatus.textContent = 'Cancellation request was not approved.';
+        } else {
+          trackCancelStatus.textContent = '';
+        }
+      }
+
       trackOrderIdDisplay.textContent = order.id;
       trackDestAddress.textContent = order.location || "Adabraka, Accra";
       trackOrderTotal.textContent = `GH₵${order.total}`;
@@ -3049,10 +3094,10 @@
       const trackPickupPinDisplay = document.getElementById("trackPickupPinDisplay");
       const trackQrCodeContainer = document.getElementById("trackQrCodeContainer");
       if (trackPickupPinDisplay) {
-        trackPickupPinDisplay.textContent = order.pickupPin || "8492";
+        trackPickupPinDisplay.textContent = order.pickupPin || "Unavailable";
       }
       if (trackQrCodeContainer) {
-        trackQrCodeContainer.innerHTML = generateSvgQrCode(`YEBS-${order.id}-PIN-${order.pickupPin || '8492'}`, 110);
+        trackQrCodeContainer.innerHTML = order.pickupPin ? generateSvgQrCode(`YEBS-${order.id}-PIN-${order.pickupPin}`, 110) : '';
       }
 
       const copyMomoBtn = document.getElementById("copyMomoNumberBtn");
@@ -3132,7 +3177,7 @@
           momoReceiptStatus.textContent = 'Cash on delivery selected — no MoMo payment needed now.';
           momoReceiptStatus.style.color = '#15803d';
         } else {
-          momoReceiptStatus.textContent = 'No payment submitted yet. Pay to 055 910 3452, then verify instantly below.';
+          momoReceiptStatus.textContent = 'No payment submitted yet. Pay to 055 910 3452, then submit proof for verification below.';
           momoReceiptStatus.style.color = '#15803d';
         }
         momoReceiptPreview.innerHTML = receipt && receipt.image
@@ -3140,7 +3185,8 @@
           : '';
       }
 
-      // Destination coordinates: ALWAYS prioritize customer's selected map pin or GPS location
+      // Delivery orders must use the customer's saved pin; collections use the shared pickup point.
+      const isCollectionOrder = /collect|pickup/i.test(String(order.fulfilment || ""));
       let targetLat = null;
       let targetLng = null;
       let targetName = order.location || "Customer Location";
@@ -3149,24 +3195,19 @@
         targetLat = Number(order.mapPin.lat);
         targetLng = Number(order.mapPin.lng);
         targetName = order.mapPin.name || order.location || "Selected Location";
-      } else if (order.pickupPoint && Number.isFinite(Number(order.pickupPoint.lat)) && Number.isFinite(Number(order.pickupPoint.lng))) {
+      } else if (isCollectionOrder && order.pickupPoint && Number.isFinite(Number(order.pickupPoint.lat)) && Number.isFinite(Number(order.pickupPoint.lng))) {
         targetLat = Number(order.pickupPoint.lat);
         targetLng = Number(order.pickupPoint.lng);
         targetName = order.pickupPoint.name || order.location || "Pickup Point";
-      } else if (sharedPickupPoint && Number.isFinite(Number(sharedPickupPoint.lat))) {
+      } else if (isCollectionOrder && sharedPickupPoint && Number.isFinite(Number(sharedPickupPoint.lat))) {
         targetLat = Number(sharedPickupPoint.lat);
         targetLng = Number(sharedPickupPoint.lng);
         targetName = sharedPickupPoint.name || "Circle Odo Rice Junction / VIP Station";
-      } else {
-        targetLat = RESTAURANT_COORDS.lat + 0.006;
-        targetLng = RESTAURANT_COORDS.lng + 0.005;
       }
 
-      const isCollectionOrder = /collect|pickup/i.test(String(order.fulfilment || ""));
+      const hasDestination = Number.isFinite(targetLat) && Number.isFinite(targetLng);
       if (trackDestAddress) {
-        trackDestAddress.innerHTML = isCollectionOrder
-          ? `<strong>📍 Pickup Point:</strong> ${targetName}`
-          : `<strong>🏠 Delivering to:</strong> ${targetName}`;
+        trackDestAddress.textContent = `${isCollectionOrder ? '📍 Pickup Point: ' : '🏠 Delivering to: '}${hasDestination ? targetName : 'Delivery pin unavailable — contact YEBS support.'}`;
       }
 
       // Driver position: prioritize live streaming currentLocation from the assigned driver
@@ -3224,12 +3265,16 @@
 
       // Live Driver ETA to target pickup point
       const hasDriverLocation = driverLat !== null;
-      const dist = hasDriverLocation ? calculateDistanceKm(driverLat, driverLng, targetLat, targetLng) : null;
-      const etaMins = hasDriverLocation ? estimateEtaMinutes(driverLat, driverLng, targetLat, targetLng) : null;
-      trackDriverEta.textContent = order.status === 'arrived' ? 'Arrived!' : (order.status === 'delivered' ? 'Delivered' : (hasDriverLocation ? `~${etaMins} mins` : 'Waiting for rider GPS'));
-      if (trackDriverDistance) trackDriverDistance.textContent = hasDriverLocation ? `${dist.toFixed(2)} km away` : 'Live location pending';
+      const dist = hasDriverLocation && hasDestination ? calculateDistanceKm(driverLat, driverLng, targetLat, targetLng) : null;
+      const etaMins = hasDriverLocation && hasDestination ? estimateEtaMinutes(driverLat, driverLng, targetLat, targetLng) : null;
+      trackDriverEta.textContent = order.status === 'arrived'
+        ? 'Arrived!'
+        : (order.status === 'delivered'
+          ? 'Delivered'
+          : (hasDriverLocation && hasDestination ? `~${etaMins} mins` : (hasDriverLocation ? 'Destination pin unavailable' : 'Waiting for rider GPS')));
+      if (trackDriverDistance) trackDriverDistance.textContent = hasDriverLocation && hasDestination ? `${dist.toFixed(2)} km away` : (hasDriverLocation ? 'Destination pin unavailable' : 'Live location pending');
 
-      if (order.status === 'pending' || order.status === 'kitchen' || order.status === 'driver_assigned') {
+      if (order.status === 'pending' || order.status === 'kitchen') {
         stepperProgressFill.style.width = order.status === 'kitchen' ? '33%' : '15%';
         stepNode1.className = 'step-node completed';
         stepNode2.className = 'step-node active';
@@ -3240,6 +3285,17 @@
         trackSessionIcon.textContent = "⏳";
         trackSessionHeading.textContent = "Order Preparation Session Active";
         trackSessionDetails.textContent = `Your noodles are being freshly prepared in our kitchen. This order session will automatically close once your delivery driver enters their real-time location data and presses Start Delivery!`;
+      } else if (order.status === 'driver_assigned') {
+        stepperProgressFill.style.width = '45%';
+        stepNode1.className = 'step-node completed';
+        stepNode2.className = 'step-node active';
+        stepNode3.className = 'step-node';
+        stepNode4.className = 'step-node';
+
+        trackSessionAlert.className = "session-callout session-callout-kitchen";
+        trackSessionIcon.textContent = "🛵";
+        trackSessionHeading.textContent = "A Rider Accepted Your Order";
+        trackSessionDetails.textContent = `Your rider ${order.driver && order.driver.name ? order.driver.name : ''} accepted the delivery. Live tracking and ETA will start when the rider begins moving.`;
       } else if (order.status === 'enroute') {
         stepperProgressFill.style.width = '66%';
         stepNode1.className = 'step-node completed';
@@ -3250,7 +3306,7 @@
         trackSessionAlert.className = "session-callout session-callout-enroute";
         trackSessionIcon.textContent = "🛵";
         trackSessionHeading.textContent = "Order Session Ended — Delivery Driver En Route!";
-        trackSessionDetails.textContent = hasDriverLocation
+        trackSessionDetails.textContent = hasDriverLocation && hasDestination
           ? `Your driver is streaming live GPS. Estimated arrival: ${etaMins} mins to ${targetName}.`
           : `Your driver is en route to ${targetName}. The live ETA will appear when rider GPS is available.`;
       } else if (order.status === 'arrived') {
@@ -3263,7 +3319,9 @@
         trackSessionAlert.className = "session-callout session-callout-enroute";
         trackSessionIcon.textContent = "📍";
         trackSessionHeading.textContent = "Your Driver Has Arrived at Pickup Point!";
-        trackSessionDetails.textContent = `Your delivery rider has reached ${targetName}. Show your 4-digit PIN ${order.pickupPin || '----'} (the last 4 digits of Order ${order.id}) to collect your fresh noodles.`;
+        trackSessionDetails.textContent = order.pickupPin
+          ? `Your rider reached ${targetName}. Show the private pickup PIN ${order.pickupPin} to your assigned rider.`
+          : `Your rider reached ${targetName}. Contact YEBS support before handover because this order has no pickup PIN.`;
       } else if (order.status === 'delivered') {
         stepperProgressFill.style.width = '100%';
         stepNode1.className = 'step-node completed';
@@ -3278,12 +3336,17 @@
       }
 
       if (trackMap && trackDriverMarker && trackCustMarker) {
-        trackCustMarker.setLatLng([targetLat, targetLng]);
-        trackCustMarker.bindPopup(
-          isCollectionOrder
-            ? `<b>📍 Shared pickup point</b><br>${targetName}`
-            : `<b>🏠 Delivery address</b><br>${targetName}`
-        );
+        if (hasDestination) {
+          trackCustMarker.setLatLng([targetLat, targetLng]);
+          trackCustMarker.setOpacity(1);
+          trackCustMarker.bindPopup(
+            isCollectionOrder
+              ? `<b>📍 Shared pickup point</b><br>${targetName}`
+              : `<b>🏠 Delivery address</b><br>${targetName}`
+          );
+        } else {
+          trackCustMarker.setOpacity(0);
+        }
         if (hasDriverLocation) {
           trackDriverMarker.setLatLng([driverLat, driverLng]);
           trackDriverMarker.setOpacity(1);
@@ -3291,10 +3354,11 @@
           trackDriverMarker.setOpacity(0);
           trackRouteLine.setLatLngs([]);
         }
+        if (hasDriverLocation && !hasDestination) trackRouteLine.setLatLngs([]);
 
         // Draw road-following route (falls back to dashed line offline)
         import('./shared.js').then(({ drawRoadRoute, computeRoadEta }) => {
-          if (hasDriverLocation && drawRoadRoute) {
+          if (hasDriverLocation && hasDestination && drawRoadRoute) {
             drawRoadRoute(trackMap,
               { lat: driverLat, lng: driverLng },
               { lat: targetLat, lng: targetLng },
@@ -3305,7 +3369,7 @@
               // Offline fallback already handled inside drawRoadRoute
             });
           }
-          if (hasDriverLocation && computeRoadEta && order.status === 'enroute') {
+          if (hasDriverLocation && hasDestination && computeRoadEta && order.status === 'enroute') {
             const eta = computeRoadEta(
               { lat: driverLat, lng: driverLng },
               { lat: targetLat, lng: targetLng },
@@ -3316,12 +3380,13 @@
           }
         }).catch(() => {
           // shared.js not available as module — use the straight line
-          if (hasDriverLocation) trackRouteLine.setLatLngs([[driverLat, driverLng], [targetLat, targetLng]]);
+          if (hasDriverLocation && hasDestination) trackRouteLine.setLatLngs([[driverLat, driverLng], [targetLat, targetLng]]);
         });
 
-        const bounds = L.latLngBounds([[targetLat, targetLng]]);
+        const bounds = L.latLngBounds([]);
+        if (hasDestination) bounds.extend([targetLat, targetLng]);
         if (hasDriverLocation) bounds.extend([driverLat, driverLng]);
-        trackMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+        if (hasDestination || hasDriverLocation) trackMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
       }
     }
 
@@ -3406,6 +3471,37 @@
         } finally {
           uploadMomoReceiptBtn.disabled = false;
           uploadMomoReceiptBtn.textContent = originalText;
+        }
+      });
+    }
+
+    if (trackCancelOrderBtn) {
+      trackCancelOrderBtn.addEventListener('click', async () => {
+        const order = getOrderById(currentlyTrackedOrderId);
+        if (!order) return;
+        const phone = window.prompt('Enter the phone number used for this order to confirm cancellation:');
+        if (phone === null) return;
+        const reason = window.prompt('Reason for cancellation (optional):', '') || '';
+        if (!window.confirm(order.paymentStatus === 'paid'
+          ? `Request cancellation of ${order.id}? If approved, GH₵5.00 will be deducted from the refund.`
+          : `Request cancellation of ${order.id}? An administrator must approve it.`)) return;
+
+        trackCancelOrderBtn.disabled = true;
+        trackCancelOrderBtn.textContent = 'Sending request…';
+        try {
+          const result = await apiRequestOrderCancellation(order.id, phone, reason);
+          if (trackCancelStatus) {
+            trackCancelStatus.textContent = result.message || 'Cancellation request submitted.';
+            trackCancelStatus.style.color = result.success ? '#166534' : '#b91c1c';
+          }
+          if (result.order) renderTrackingModal();
+          else trackCancelOrderBtn.disabled = false;
+        } catch (error) {
+          if (trackCancelStatus) {
+            trackCancelStatus.textContent = error.message || 'Could not submit the cancellation request.';
+            trackCancelStatus.style.color = '#b91c1c';
+          }
+          trackCancelOrderBtn.disabled = false;
         }
       });
     }
@@ -4078,7 +4174,7 @@
       set('payNowStepRef', order.id);
       set('payNowStepAmount', 'GH₵' + Number(order.total || 0).toFixed(2));
       const confirmBtn = document.getElementById('payNowConfirmBtn');
-      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'I have paid — verify now'; }
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'I have paid — submit proof'; }
       const laterBtn = document.getElementById('payNowLaterBtn');
       if (laterBtn) laterBtn.textContent = "I'll pay later on the tracking screen";
       const txn = document.getElementById('payNowTxn');
@@ -4207,7 +4303,7 @@
       } catch (err) {
         setPayNowStatus(err.message || 'Could not verify the payment. Please try again.', 'error');
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'I have paid — verify now'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'I have paid — submit proof'; }
       }
     }
 
@@ -4415,7 +4511,7 @@
       if (txn && ref) {
         txn.value = ref;
         txn.focus();
-        setPayNowStatus('Found transaction ' + ref + '. Tap “I have paid — verify now”.', 'ok');
+        setPayNowStatus('Found transaction ' + ref + '. Tap “I have paid — submit proof”.', 'ok');
       } else {
         setPayNowStatus('Could not find a transaction ID in that message. Copy the ID from the SMS and paste it into the box.', 'error');
       }
@@ -4496,7 +4592,7 @@
         </div>
         <div class="pay-step">
           <span class="num">3</span>
-          <div class="step-text">Enter the transaction ID from your MoMo SMS below (or upload the receipt) and confirm &mdash; verification is instant.</div>
+          <div class="step-text">Enter the transaction ID from your MoMo SMS below (or upload a receipt); proof is checked against a provider message or by an administrator.</div>
         </div>
 
         <div class="pay-actions">
@@ -4511,8 +4607,8 @@
           <div class="pay-paste-row">
             <button type="button" id="payNowPasteBtn" class="button" style="background:#eef5f0; color:var(--forest); border:1px solid #c9decb;">📋 Paste MoMo SMS</button>
           </div>
-          <input id="payNowReceipt" type="file" accept="image/*" capture="environment" style="margin-top:8px; font-size:.75rem; padding:4px;">
-          <button type="button" id="payNowConfirmBtn" class="button button-orange" style="width:100%; min-height:42px; margin-top:10px; font-size:.9rem;">I have paid &mdash; verify now</button>
+          <input id="payNowReceipt" type="file" accept="image/*" style="margin-top:8px; font-size:.75rem; padding:4px;">
+          <button type="button" id="payNowConfirmBtn" class="button button-orange" style="width:100%; min-height:42px; margin-top:10px; font-size:.9rem;">I have paid &mdash; submit proof</button>
           <div id="payNowStatus" style="font-size:.8rem; margin-top:8px; font-weight:600; color:#6b7280;" role="status" aria-live="polite"></div>
           <p style="font-size:.7rem; color:#6b7280; margin-top:8px;">Never share your MoMo PIN with anyone. YEBS will never ask for it.</p>
         </div>
@@ -4566,7 +4662,7 @@
           <button type="button" id="copyPinBtn" class="button" style="min-height:36px; padding:0 14px; font-size:0.82rem; background:#f59e0b; color:white;">📋 Copy PIN</button>
         </div>
         <div style="font-size:0.78rem; color:#92400e; margin-top:8px; line-height:1.5;">
-          ⚠️ <strong>This PIN is NOT your MoMo PIN.</strong> It is the last 4 digits of your Order ID.<br>
+          ⚠️ <strong>This pickup PIN is NOT your MoMo PIN.</strong> It is separate from your Order ID.<br>
           Show it to the rider at the pickup point to receive your food.
         </div>
         <div id="orderIdPinHint"></div>
@@ -4708,7 +4804,7 @@
         if (!modal || !order) return;
         currentOrder = order;
         var opts = options || {};
-        var pin = order.pickupPin || String(order.id || '').slice(-4);
+        var pin = String(order.pickupPin || '');
         var setText = function (id, text) {
           var el = document.getElementById(id);
           if (el) el.textContent = text;

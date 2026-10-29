@@ -1001,7 +1001,7 @@ export async function createOrder(orderData) {
   const paymentMode = /cash|pay on delivery|on arrival|upon delivery/i.test(paymentLabel) ? "cash" : "momo";
 
   // The server is the authority for the Order ID. It guarantees a unique
-  // YB-XXXX code for every customer (so the last 4 digits are never repeated).
+  // The server assigns a unique public YB-XXXX ID and a separate pickup PIN.
   let serverOrder = null;
   try {
     serverOrder = await apiCreateOrder({
@@ -1034,11 +1034,21 @@ export async function createOrder(orderData) {
       newId = `YB-${idNumber}`;
       guard += 1;
     }
+    const usedPins = new Set(orders.map(order => String(order.pickupPin || '')));
+    let pickupPin = '';
+    for (let attempt = 0; attempt < 9000; attempt++) {
+      const candidate = String(Math.floor(1000 + Math.random() * 9000));
+      if (!usedPins.has(candidate) && candidate !== String(idNumber)) {
+        pickupPin = candidate;
+        break;
+      }
+    }
+    if (!pickupPin) throw new Error('No unused pickup PIN is available while offline.');
     newOrder = {
       ...orderData,
       id: newId,
-      pickupPin: String(idNumber),
-      pickupPinIsOrderId: true,
+      pickupPin,
+      pickupPinIsOrderId: false,
       sessionNumber: currentSession.sessionNumber,
       createdAt: new Date().toISOString(),
       fulfilment: orderData.fulfilment || "Delivery",
@@ -1074,8 +1084,8 @@ export async function createOrder(orderData) {
     };
   }
 
-  newOrder.pickupPin = String(newOrder.pickupPin || String(newOrder.id).slice(-4));
-  newOrder.pickupPinIsOrderId = true;
+  newOrder.pickupPin = String(newOrder.pickupPin || '');
+  newOrder.pickupPinIsOrderId = false;
   newOrder.paymentRef = newOrder.paymentRef || newOrder.id;
   newOrder.paymentMode = newOrder.paymentMode || paymentMode;
   newOrder.paymentStatus = newOrder.paymentStatus || "unpaid";
@@ -1088,8 +1098,7 @@ export async function createOrder(orderData) {
   return newOrder;
 }
 
-// Verify the customer's code. The 4-digit PIN is the last 4 digits of the
-// Order ID, validated on the server when online.
+// Verify the customer's separate pickup PIN on the server when online.
 export async function verifyOrderPin(orderId, enteredPin) {
   const code = String(enteredPin || "").replace(/[^0-9]/g, "");
   try {
@@ -1108,12 +1117,12 @@ export async function verifyOrderPin(orderId, enteredPin) {
     }
     return { success: false, message: data.message || `Incorrect code for #${orderId}.` };
   } catch (e) {
-    // Offline fallback: order IDs and their last 4 digits are the same code.
+    // Offline fallback uses the PIN stored with the order; never derive it from its public ID.
     const orders = getOrders();
     const index = orders.findIndex(o => String(o.id).toUpperCase() === String(orderId).toUpperCase());
     if (index === -1) return { success: false, message: "Order not found" };
     const order = orders[index];
-    const expected = String(order.pickupPin || String(order.id).slice(-4));
+    const expected = String(order.pickupPin || '');
     if (expected === code) {
       order.verifiedByDriver = true;
       order.status = "arrived";
@@ -1169,22 +1178,21 @@ export function updateOrderStatus(orderId, newStatus, extraData = {}) {
 
   orders[index] = order;
   saveOrders(orders);
-  apiUpdateOrderStatus(orderId, {
-    status: newStatus,
-    driver: order.driver,
-    verifiedByDriver: order.verifiedByDriver
-  }).then(res => {
-    // Order only existed on this device (e.g. created before server sync was
-    // available). Seed it on the server, then apply the status again.
-    if (!res) {
-      apiCreateOrder(order).then(() => {
-        apiUpdateOrderStatus(orderId, {
-          status: newStatus,
-          driver: order.driver,
-          verifiedByDriver: order.verifiedByDriver
-        }).catch(() => {});
-      }).catch(() => {});
+  apiUpdateOrderStatus(orderId, { status: newStatus }).then(serverOrder => {
+    if (serverOrder && serverOrder.id) {
+      Object.assign(order, serverOrder);
+      saveOrders(orders);
+      broadcastEvent("ORDER_STATUS_CHANGED", { orderId, status: order.status, order });
+      return;
     }
+
+    apiFetchOrder(orderId).then(() => {
+      const authoritativeOrder = getOrderById(orderId);
+      if (!authoritativeOrder) return;
+      Object.assign(order, authoritativeOrder);
+      saveOrders(orders);
+      broadcastEvent("ORDER_STATUS_CHANGED", { orderId, status: order.status, order });
+    }).catch(() => {});
   }).catch(() => {});
   broadcastEvent("ORDER_STATUS_CHANGED", { orderId, status: newStatus, order });
   return order;
@@ -1836,6 +1844,51 @@ export async function apiReviewPayment(orderId, paid, reason = "") {
     return { ...data, httpStatus: res.status };
   } catch (e) {
     return { success: false, message: "Could not update the payment." };
+  }
+}
+
+export async function apiRequestOrderCancellation(orderId, phone, reason = "") {
+  try {
+    const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/cancellation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, reason })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data && data.order) mergeServerOrders([data.order]);
+    return { ...data, httpStatus: res.status };
+  } catch (e) {
+    return { success: false, message: "Could not submit the cancellation request. Check the server connection." };
+  }
+}
+
+export async function apiReviewOrderCancellation(orderId, approved, reason = "") {
+  try {
+    const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/cancellation/review`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ approved, reason })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data && data.order) mergeServerOrders([data.order]);
+    return { ...data, httpStatus: res.status };
+  } catch (e) {
+    return { success: false, message: "Could not review the cancellation request." };
+  }
+}
+
+export async function apiReviewOrderRefund(orderId, approved, reason = "") {
+  try {
+    const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/refund/review`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ approved, reason })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data && data.order) mergeServerOrders([data.order]);
+    return { ...data, httpStatus: res.status };
+  } catch (e) {
+    return { success: false, message: "Could not review the refund request." };
   }
 }
 

@@ -698,7 +698,7 @@
           <strong id="activePickupPointName">Circle Odo Rice Junction / VIP Station</strong>
         </div>
         <div style="font-size:0.84rem; opacity:0.9; margin-top:4px;">
-          All customer food packages are bundled for collective delivery. Hand over each order with the customer's Order ID (its last 4 digits are their PIN).
+          Accept an available package, use its Go button for directions, and hand over only after payment and the customer's private pickup PIN are verified.
         </div>
       </div>
       <div style="display:flex; gap:12px; align-items:center;">
@@ -744,11 +744,10 @@
         </div>
       </div>
       <p style="font-size:0.82rem; color:var(--muted); margin:0 0 12px; line-height:1.45;">
-        Type the customer's <strong>Order ID</strong> (e.g. <strong>YB-3041</strong>) or its <strong>last 4 digits</strong>.
-        The order is fetched and checked instantly — the last 4 digits are the customer's PIN.
+        Fetch an order using its <strong>Order ID</strong> or the customer's separate <strong>4-digit pickup PIN</strong>.
       </p>
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-        <input id="driverLookupInput" type="text" inputmode="text" autocomplete="off" placeholder="e.g. YB-3041 or 3041"
+        <input id="driverLookupInput" type="text" inputmode="text" autocomplete="off" placeholder="Order ID or pickup PIN"
           style="flex:1; min-width:200px; padding:11px 13px; border:1px solid var(--line); border-radius:8px; font-size:0.95rem; font-family:ui-monospace, monospace; letter-spacing:0.05em;">
         <button id="driverLookupBtn" class="btn btn-orange" style="min-height:44px;">🔎 Fetch order</button>
       </div>
@@ -766,7 +765,7 @@
             <span id="sessionBatchOrdersBadge" style="background:var(--orange); color:white; font-size:0.75rem; font-weight:700; padding:3px 10px; border-radius:999px;">0 Orders</span>
           </div>
           <p style="font-size:0.82rem; color:var(--muted); margin:0 0 16px; line-height:1.4;">
-            Each customer's <strong>4-digit PIN is the last 4 digits of their Order ID</strong> (e.g. Order YB-3041 → PIN 3041). Ask for it, verify it below, then hand over the food. Cash orders are recorded here too.
+            Riders choose and accept one available order at a time. Verify payment, mark arrival at its destination, then enter the customer's private pickup PIN for handover.
           </p>
 
           <!-- Driver Order Selection & Filtering -->
@@ -802,8 +801,8 @@
 
           <div style="font-size:0.78rem; color:var(--muted); margin-top:8px; margin-bottom:4px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;">
             <span>🟢 Kitchen: Adabraka</span>
-            <span>📍 Pickup: <span id="mapPickupPointLabel">Circle Odo Rice</span></span>
-            <span>🛵 Rider GPS: <span id="riderGpsCoords">Live</span></span>
+            <span>📍 Route destination: <span id="mapPickupPointLabel">Circle Odo Rice</span></span>
+            <span>🛵 Rider GPS: <span id="riderGpsCoords">Waiting for GPS</span></span>
           </div>
           <!-- Live ETA display -->
           <div id="driverEtaDisplay" style="display:none; font-size:0.82rem; font-weight:700; color:#173d30; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:6px 12px; margin-bottom:10px;"></div>
@@ -819,23 +818,6 @@
             </button>
           </div>
 
-          <!-- Synchronous Action Panel -->
-          <div class="action-panel-buttons">
-            <!-- 1. En Route to Pickup Point -->
-            <button id="driverStartEnRouteBtn" class="btn btn-orange">
-              🚀 1. Start En Route to Pickup Point (Begins 3-Min Loop)
-            </button>
-
-            <!-- 2. Arrived at Pickup Point: Alerts all customers in the session -->
-            <button id="driverArrivedPickupPointBtn" class="btn btn-forest" style="display:none;">
-              📍 2. Arrived at Pickup Point (Notify Customers & Play Voice)
-            </button>
-
-            <!-- 3. Delivery Successful: Complete all deliveries, log in admin, send WhatsApp to owner -->
-            <button id="driverCompleteDeliveryBtn" class="btn btn-success" style="display:none;">
-              ✅ 3. All Deliveries Accounted — Mark Delivery Successful & Notify Owner on WhatsApp
-            </button>
-          </div>
         </div>
 
         <div class="card">
@@ -1004,8 +986,8 @@
       updateDriverLocationOnAllOrders,
       getSessionState,
       setSessionPickupPoint,
-      notifySessionArrivalAtPickupPoint,
-      completeSessionDeliveriesAndNotifyOwner,
+      drawRoadRoute,
+      computeRoadEta,
       isKitchenOpen,
       DEFAULT_PICKUP_POINTS,
       RESTAURANT_COORDS,
@@ -1065,7 +1047,10 @@
     let map = null;
     let driverMarker = null;
     let pickupMarker = null;
+    let routeLine = null;
     let currentCoords = { lat: RESTAURANT_COORDS.lat, lng: RESTAURANT_COORDS.lng };
+    let hasLiveGpsFix = false;
+    let navigationOrderId = null;
     let watchId = null;
     let lastPickupAppliedAt = 0;
 
@@ -1084,9 +1069,6 @@
     const riderGpsCoords = document.getElementById('riderGpsCoords');
     const openGoogleMapsAppBtn = document.getElementById('openGoogleMapsAppBtn');
     const playVoiceBroadcastBtn = document.getElementById('playVoiceBroadcastBtn');
-    const driverStartEnRouteBtn = document.getElementById('driverStartEnRouteBtn');
-    const driverArrivedPickupPointBtn = document.getElementById('driverArrivedPickupPointBtn');
-    const driverCompleteDeliveryBtn = document.getElementById('driverCompleteDeliveryBtn');
     const riderSelectDropdown = document.getElementById('riderSelectDropdown');
     const riderNameDisplay = document.getElementById('riderNameDisplay');
     const kitchenStatusText = document.getElementById('kitchenStatusText');
@@ -1166,7 +1148,7 @@
           lastPickupAppliedAt = point.updatedAt ? Date.parse(point.updatedAt) : Date.now();
           setSessionPickupPoint(point.name, { lat: point.lat, lng: point.lng });
           updatePickupMarker(point.lat, point.lng, point.name);
-          drawRouteToPickup(point.lat, point.lng);
+          drawRouteToTarget(point.lat, point.lng);
           if (customPickupWrap) customPickupWrap.style.display = 'none';
           if (customPickupInput) customPickupInput.value = '';
           // Clear the map-click draft
@@ -1280,24 +1262,25 @@
         iconAnchor: [19, 19]
       });
       pickupMarker = L.marker([targetPoint.lat, targetPoint.lng], { icon: pickupIcon }).addTo(map)
-        .bindPopup(`<b>Target Pickup Point</b><br>${targetPoint.name}`);
+        .bindPopup(`<b>Route destination</b><br>${targetPoint.name}`);
 
       const riderIcon = L.divIcon({
         html: `<div style="background:#e57a45; color:white; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; border:2px solid white; box-shadow:0 3px 12px rgba(229,122,69,0.5); font-size:18px;">🛵</div>`,
         iconSize: [36, 36],
         iconAnchor: [18, 18]
       });
-      driverMarker = L.marker([currentCoords.lat, currentCoords.lng], { icon: riderIcon }).addTo(map);
+      driverMarker = L.marker([currentCoords.lat, currentCoords.lng], { icon: riderIcon, opacity: hasLiveGpsFix ? 1 : 0 }).addTo(map);
 
       updateGoogleMapsAppLink(targetPoint.lat, targetPoint.lng);
     }
 
     function updatePickupMarker(lat, lng, name) {
       if (pickupMarker) {
-        pickupMarker.setLatLng([lat, lng]).bindPopup(`<b>Target Pickup Point</b><br>${name}`).openPopup();
+        pickupMarker.setLatLng([lat, lng]).bindPopup(`<b>Route destination</b><br>${name}`).openPopup();
         map.setView([lat, lng], 14);
         updateGoogleMapsAppLink(lat, lng);
       }
+      if (mapPickupPointLabel) mapPickupPointLabel.textContent = name;
     }
 
     function updateGoogleMapsAppLink(lat, lng) {
@@ -1328,19 +1311,68 @@
           || (driver.name && String(orderDriver.name || '').toLowerCase() === driver.name.toLowerCase());
       });
       assigned.sort((a, b) => Number(b.status === 'enroute') - Number(a.status === 'enroute'));
-      const order = assigned[0];
+      const order = assigned.find(item => item.id === navigationOrderId) || assigned[0];
       const session = getSessionState();
-      const point = order && (order.mapPin || order.pickupPoint)
-        ? (order.mapPin || order.pickupPoint)
+      const point = order
+        ? destinationForOrder(order)
         : ((session && session.pickupPoint) || DEFAULT_PICKUP_POINTS[0]);
+      if (!point) return null;
       return Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))
         ? { lat: Number(point.lat), lng: Number(point.lng), name: (order && order.location) || point.name || 'Order destination' }
         : DEFAULT_PICKUP_POINTS[0];
     }
 
+    function destinationForOrder(order) {
+      const isCollection = order && /collect|pickup/i.test(String(order.fulfilment || ''));
+      const point = order && order.mapPin && Number.isFinite(Number(order.mapPin.lat)) && Number.isFinite(Number(order.mapPin.lng))
+        ? order.mapPin
+        : (isCollection && order && order.pickupPoint);
+      return point && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))
+        ? { lat: Number(point.lat), lng: Number(point.lng), name: point.name || order.location || order.customer || 'Order destination' }
+        : null;
+    }
+
+    function drawRouteToTarget(lat, lng) {
+      if (!map || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return;
+      const from = hasLiveGpsFix ? currentCoords : { lat: RESTAURANT_COORDS.lat, lng: RESTAURANT_COORDS.lng };
+      drawRoadRoute(map, from, { lat: Number(lat), lng: Number(lng) }, {
+        color: '#e57a45',
+        weight: 5,
+        previousLayer: routeLine
+      }).then(layer => {
+        if (layer) routeLine = layer;
+      }).catch(err => console.warn('Could not draw the delivery route:', err));
+    }
+
+    function navigateToOrder(orderId) {
+      const order = getOrders().find(item => String(item.id) === String(orderId));
+      const target = destinationForOrder(order);
+      if (!target) {
+        alert('This order has no saved map pin. Ask the customer to add a delivery location before navigating.');
+        return;
+      }
+      navigationOrderId = order.id;
+      if (map) {
+        updatePickupMarker(target.lat, target.lng, target.name);
+        const bounds = L.latLngBounds([[target.lat, target.lng]]);
+        if (hasLiveGpsFix) bounds.extend([currentCoords.lat, currentCoords.lng]);
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+        drawRouteToTarget(target.lat, target.lng);
+      }
+      const etaEl = document.getElementById('driverEtaDisplay');
+      if (etaEl && hasLiveGpsFix) {
+        const eta = computeRoadEta(currentCoords, target);
+        etaEl.textContent = `🛵 ETA to ${target.name}: ~${eta.etaMinutes} min · ${eta.distanceKm} km road distance`;
+        etaEl.style.display = 'block';
+      }
+    }
+
     function publishDriverLocation(speed) {
       riderGpsCoords.textContent = `${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)} (${speed} km/h)`;
-      if (driverMarker) driverMarker.setLatLng([currentCoords.lat, currentCoords.lng]);
+      if (driverMarker) {
+        driverMarker.setLatLng([currentCoords.lat, currentCoords.lng]);
+        driverMarker.setOpacity(1);
+      }
       const driver = getCurrentDriver();
       updateDriverLocationOnAllOrders(driver.name, {
         lat: currentCoords.lat,
@@ -1371,57 +1403,51 @@
         const now = Date.now();
         if (!window._lastEtaUpdate || now - window._lastEtaUpdate > 5000) {
           window._lastEtaUpdate = now;
-          import('./shared.js').then(({ computeRoadEta }) => {
-            if (!computeRoadEta) return;
-            const eta = computeRoadEta(
-              { lat: currentCoords.lat, lng: currentCoords.lng },
-              { lat: target.lat, lng: target.lng },
-              { speedKmh: speed }
-            );
-            const etaEl = document.getElementById('driverEtaDisplay');
-            if (etaEl) {
-              const icon = eta.wrongTurn ? '⚠️ Wrong turn — ' : (eta.improving ? '✅ On track · ' : '🛵 ');
-              etaEl.textContent = `${icon}ETA to ${target.name}: ~${eta.etaMinutes} min · ${eta.distanceKm} km road distance`;
-              etaEl.style.display = 'block';
-              etaEl.style.background = eta.wrongTurn ? '#fef3c7' : '#f0fdf4';
-              etaEl.style.borderColor = eta.wrongTurn ? '#fbbf24' : '#bbf7d0';
-              etaEl.style.color = eta.wrongTurn ? '#92400e' : '#166534';
-            }
-          }).catch(() => {});
+          const eta = computeRoadEta(currentCoords, target, { speedKmh: speed });
+          const etaEl = document.getElementById('driverEtaDisplay');
+          if (etaEl) {
+            const icon = eta.wrongTurn ? '⚠️ Wrong turn — ' : (eta.improving ? '✅ On track · ' : '🛵 ');
+            etaEl.textContent = `${icon}ETA to ${target.name}: ~${eta.etaMinutes} min · ${eta.distanceKm} km road distance`;
+            etaEl.style.display = 'block';
+            etaEl.style.background = eta.wrongTurn ? '#fef3c7' : '#f0fdf4';
+            etaEl.style.borderColor = eta.wrongTurn ? '#fbbf24' : '#bbf7d0';
+            etaEl.style.color = eta.wrongTurn ? '#92400e' : '#166534';
+          }
         }
         if (!window._lastRouteUpdate || now - window._lastRouteUpdate > 15000) {
           window._lastRouteUpdate = now;
-          drawRouteToPickup(target.lat, target.lng);
+          drawRouteToTarget(target.lat, target.lng);
         }
       }
     }
 
-    function startSimulatedGps() {
-      if (watchId === 'sim') return;
-      watchId = 'sim';
-      setInterval(() => {
-        const target = getDriverNavigationTarget();
-        currentCoords.lat += (target.lat - currentCoords.lat) * 0.12;
-        currentCoords.lng += (target.lng - currentCoords.lng) * 0.12;
-        publishDriverLocation(22);
-      }, 2500);
+    function showGpsUnavailable() {
+      watchId = 'unavailable';
+      riderGpsCoords.textContent = 'GPS unavailable';
+      const etaEl = document.getElementById('driverEtaDisplay');
+      if (etaEl) {
+        etaEl.textContent = 'Allow device location to share live rider tracking.';
+        etaEl.style.display = 'block';
+      }
     }
 
     function startGpsStreaming() {
       if (watchId) return;
       if (!navigator.geolocation) {
-        startSimulatedGps();
+        showGpsUnavailable();
         return;
       }
       watchId = navigator.geolocation.watchPosition(
         pos => {
           currentCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          const speed = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 22;
+          hasLiveGpsFix = true;
+          const speed = Number.isFinite(pos.coords.speed) ? Math.max(0, Math.round(pos.coords.speed * 3.6)) : 0;
           publishDriverLocation(speed);
         },
         err => {
           console.warn("GPS watch:", err.message);
-          startSimulatedGps();
+          if (typeof watchId === 'number') navigator.geolocation.clearWatch(watchId);
+          showGpsUnavailable();
         },
         { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 }
       );
@@ -1457,7 +1483,9 @@
       const session = getSessionState();
       const driver = getCurrentDriver();
 
-      const activeOrders = orders.filter(o => o.status !== 'cancelled');
+      const activeOrders = orders.filter(o =>
+        o.status !== 'cancelled' && !(o.cancellation && o.cancellation.status === 'pending')
+      );
       sessionBatchOrdersBadge.textContent = `${activeOrders.length} Packages`;
       sessionBatchTitle.textContent = `Session #${session.sessionNumber || 1}: All Foods Delivery`;
 
@@ -1503,6 +1531,7 @@
       sessionPackagesList.innerHTML = displayedOrders.map(order => {
         const isVerified = order.verifiedByDriver || order.status === 'delivered';
         const isDirect = order.fulfilment === 'Delivery';
+        const orderDestination = destinationForOrder(order);
         const isMyOrder = myOrders.some(m => m.id === order.id);
         const isUnassigned = availableOrders.some(a => a.id === order.id);
         const assignedDriverName = order.driverName || (order.driver && order.driver.name) || '';
@@ -1537,12 +1566,12 @@
             ${isDirect ? `
               <div style="margin:8px 0; padding:8px 10px; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; font-size:0.8rem;">
                 <div>📍 <strong>Customer Delivery Address:</strong> ${order.location || 'Direct address'}</div>
-                ${order.mapPin && Number.isFinite(Number(order.mapPin.lat)) ? `
+                ${orderDestination ? `
                   <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
-                    <a href="https://www.google.com/maps/dir/?api=1&destination=${order.mapPin.lat},${order.mapPin.lng}" target="_blank" class="btn btn-sm" style="background:#ea580c; color:white; text-decoration:none; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
-                      🗺️ Open in Google Maps
-                    </a>
-                    <button type="button" class="btn btn-sm view-on-map-btn" data-lat="${order.mapPin.lat}" data-lng="${order.mapPin.lng}" data-name="${order.customer}" style="background:#fff; color:#ea580c; border:1px solid #ea580c; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
+                    <button type="button" class="btn btn-sm go-to-delivery-btn" data-id="${order.id}" style="background:#ea580c; color:white; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
+                      🧭 Go to delivery
+                    </button>
+                    <button type="button" class="btn btn-sm view-on-map-btn" data-lat="${orderDestination.lat}" data-lng="${orderDestination.lng}" data-name="${orderDestination.name}" style="background:#fff; color:#ea580c; border:1px solid #ea580c; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
                       📍 Show on Driver Map
                     </button>
                   </div>
@@ -1550,14 +1579,14 @@
               </div>
             ` : `
               <div style="margin:8px 0; padding:8px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:0.8rem;">
-                <div>📍 <strong>Collection Point:</strong> ${order.pickupPointName || (order.pickupPoint && order.pickupPoint.name) || 'VIP Station Pickup'}</div>
+                <div>📍 <strong>Collection Point:</strong> ${orderDestination ? orderDestination.name : (order.pickupPointName || 'Pickup location unavailable')}</div>
                 <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
-                  <a href="https://www.google.com/maps/dir/?api=1&destination=${(order.mapPin && order.mapPin.lat) || (order.pickupPoint && order.pickupPoint.lat) || 5.5612},${(order.mapPin && order.mapPin.lng) || (order.pickupPoint && order.pickupPoint.lng) || -0.2155}" target="_blank" class="btn btn-sm" style="background:#16a34a; color:white; text-decoration:none; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
-                    🗺️ Navigate to Pickup Point
-                  </a>
-                  <button type="button" class="btn btn-sm view-on-map-btn" data-lat="${(order.mapPin && order.mapPin.lat) || (order.pickupPoint && order.pickupPoint.lat) || 5.5612}" data-lng="${(order.mapPin && order.mapPin.lng) || (order.pickupPoint && order.pickupPoint.lng) || -0.2155}" data-name="${order.customer} Pickup" style="background:#fff; color:#16a34a; border:1px solid #16a34a; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
-                    📍 Show on Driver Map
+                  <button type="button" class="btn btn-sm go-to-delivery-btn" data-id="${order.id}" style="background:#16a34a; color:white; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
+                    🧭 Go to pickup
                   </button>
+                  ${orderDestination ? `<button type="button" class="btn btn-sm view-on-map-btn" data-lat="${orderDestination.lat}" data-lng="${orderDestination.lng}" data-name="${orderDestination.name}" style="background:#fff; color:#16a34a; border:1px solid #16a34a; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
+                    📍 Show on Driver Map
+                  </button>` : ''}
                 </div>
               </div>
             `}
@@ -1585,16 +1614,12 @@
                 <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:10px 12px;">
                   <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;">
                     <span style="font-size:0.8rem; color:#166534; font-weight:700;">✅ Assigned to You (${order.status.toUpperCase()})</span>
-                    <button type="button" class="btn btn-outline btn-sm unclaim-delivery-btn" data-id="${order.id}" style="padding:3px 8px; font-size:0.72rem; color:#b91c1c; border-color:#fca5a5;">
-                      Release
-                    </button>
+                    ${order.status === 'driver_assigned' ? `<button type="button" class="btn btn-outline btn-sm unclaim-delivery-btn" data-id="${order.id}" style="padding:3px 8px; font-size:0.72rem; color:#b91c1c; border-color:#fca5a5;">Release</button>` : ''}
                   </div>
                   <!-- Direct Rider Status Controls -->
                   <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    ${order.status !== 'enroute' && order.status !== 'arrived' && !isVerified ? `
-                      <button type="button" class="btn btn-orange btn-sm mark-enroute-btn" data-id="${order.id}" style="font-size:0.75rem; padding:6px 12px; font-weight:700; flex:1;">
-                        🛵 Hit the Road (En Route)
-                      </button>
+                    ${order.status === 'driver_assigned' ? `
+                      <span style="font-size:0.78rem; color:#64748b; font-weight:700;">Waiting for live GPS movement…</span>
                     ` : ''}
                     ${order.status === 'enroute' ? `
                       <button type="button" class="btn btn-forest btn-sm mark-arrived-btn" data-id="${order.id}" style="font-size:0.75rem; padding:6px 12px; font-weight:700; flex:1;">
@@ -1623,7 +1648,7 @@
                   ? `⚠️ <strong style="color:#b45309;">Payment needs a check</strong> · GH₵${Number(order.total || 0).toFixed(2)}`
                   : (order.paymentMode === 'cash' || /cash|pay on delivery/i.test(order.payment || ''))
                     ? `💵 <strong style="color:#92400e;">Cash due on delivery</strong> · GH₵${Number(order.total || 0).toFixed(2)}
-                       <button type="button" class="btn btn-orange btn-sm cash-collected-btn" data-id="${order.id}" style="margin-left:6px; min-height:28px; font-size:0.72rem;">💵 Cash received</button>`
+                       ${isMyOrder && order.status === 'arrived' ? `<button type="button" class="btn btn-orange btn-sm cash-collected-btn" data-id="${order.id}" style="margin-left:6px; min-height:28px; font-size:0.72rem;">💵 Cash received</button>` : ''}`
                     : `💳 <strong style="color:#92400e;">MoMo unpaid</strong> · ask customer to verify on their tracking screen`
               }
             </div>
@@ -1631,52 +1656,26 @@
             <!-- 4-Digit Pickup PIN Security Verification -->
             <div class="pin-verification-box" style="margin-top:8px;">
               <div>
-                <strong style="font-size:0.85rem; color:var(--forest);">🔐 Customer PIN = last 4 of Order ID:</strong>
-                <div style="font-size:0.72rem; color:var(--muted);">e.g. YB-3041 → PIN 3041</div>
+                <strong style="font-size:0.85rem; color:var(--forest);">🔐 Private pickup PIN:</strong>
+                <div style="font-size:0.72rem; color:var(--muted);">Ask the customer to show their separate 4-digit code.</div>
               </div>
               <div style="display:flex; align-items:center; gap:8px;">
                 ${isVerified ? `
                   <span style="font-family:monospace; font-weight:800; color:#166534; font-size:1.1rem; background:#dcfce7; padding:4px 10px; border-radius:6px;">
-                    PIN: ${order.pickupPin || 'OK'} ✓
+                    Handover verified ✓
                   </span>
-                ` : `
+                ` : isMyOrder && order.status === 'arrived' && order.paymentStatus === 'paid' ? `
                   <input type="text" maxlength="4" placeholder="PIN" class="pin-input" data-id="${order.id}" id="pinInput-${order.id}">
                   <button type="button" class="btn btn-orange btn-sm verify-pin-btn" data-id="${order.id}">
                     Verify PIN
                   </button>
-                  <button type="button" class="btn btn-outline btn-sm quick-verify-btn" data-id="${order.id}" title="Quick override verification">
-                    ✓
-                  </button>
-                `}
+                ` : `<span style="font-size:0.75rem; color:#64748b;">Available after assignment, arrival, and payment.</span>`}
               </div>
             </div>
           </div>
         `;
       }).join('');
 
-      // Manage Action Buttons State
-      const anyEnroute = activeOrders.some(o => o.status === 'enroute');
-      const anyArrived = activeOrders.some(o => o.status === 'arrived');
-      const allDelivered = activeOrders.length > 0 && activeOrders.every(o => o.status === 'delivered');
-
-      if (!anyEnroute && !anyArrived && !allDelivered) {
-        driverStartEnRouteBtn.style.display = 'inline-flex';
-        driverArrivedPickupPointBtn.style.display = 'none';
-        driverCompleteDeliveryBtn.style.display = 'none';
-      } else if (anyEnroute && !anyArrived) {
-        driverStartEnRouteBtn.style.display = 'none';
-        driverArrivedPickupPointBtn.style.display = 'inline-flex';
-        driverCompleteDeliveryBtn.style.display = 'none';
-      } else if (anyArrived || anyEnroute) {
-        driverStartEnRouteBtn.style.display = 'none';
-        driverArrivedPickupPointBtn.style.display = 'none';
-        driverCompleteDeliveryBtn.style.display = 'inline-flex';
-      } else if (allDelivered) {
-        driverStartEnRouteBtn.style.display = 'none';
-        driverArrivedPickupPointBtn.style.display = 'none';
-        driverCompleteDeliveryBtn.style.display = 'inline-flex';
-        driverCompleteDeliveryBtn.textContent = '✅ Deliveries Completed (Send Report to Owner WhatsApp)';
-      }
     }
 
     // PIN Verification Button Listener
@@ -1687,7 +1686,7 @@
         const enteredPin = input ? input.value.trim() : '';
 
         if (!enteredPin || enteredPin.length !== 4) {
-          alert("Please enter the customer's 4-digit Order ID PIN (the last 4 digits of their Order ID).");
+          alert("Ask the customer for their separate 4-digit pickup PIN.");
           return;
         }
 
@@ -1699,17 +1698,6 @@
           if (lookedUpOrderId === orderId) renderLookupResult(getOrders().find(o => o.id === orderId));
         } else {
           alert(res.message);
-        }
-      }
-
-      if (e.target.classList.contains('quick-verify-btn')) {
-        const orderId = e.target.dataset.id;
-        const order = getOrders().find(o => o.id === orderId);
-        if (order) {
-          const pin = order.pickupPin || String(order.id).slice(-4);
-          const res = await verifyOrderPin(orderId, pin);
-          if (!res.success) alert(res.message);
-          renderSessionPackages();
         }
       }
 
@@ -1760,15 +1748,6 @@
         }
       }
 
-      if (e.target.classList.contains('mark-enroute-btn')) {
-        const orderId = e.target.dataset.id;
-        e.target.disabled = true;
-        e.target.textContent = 'Updating...';
-        updateOrderStatus(orderId, 'enroute');
-        if (typeof playChime === 'function') playChime('general');
-        setTimeout(renderSessionPackages, 350);
-      }
-
       if (e.target.classList.contains('mark-arrived-btn')) {
         const orderId = e.target.dataset.id;
         e.target.disabled = true;
@@ -1778,21 +1757,24 @@
         setTimeout(renderSessionPackages, 350);
       }
 
+      const goButton = e.target.closest('.go-to-delivery-btn');
+      if (goButton) {
+        navigateToOrder(goButton.dataset.id);
+      }
+
       if (e.target.classList.contains('view-on-map-btn')) {
         const lat = parseFloat(e.target.dataset.lat);
         const lng = parseFloat(e.target.dataset.lng);
         const name = e.target.dataset.name || 'Customer';
-        if (Number.isFinite(lat) && Number.isFinite(lng) && driverMap) {
-          driverMap.setView([lat, lng], 16);
+        if (Number.isFinite(lat) && Number.isFinite(lng) && map) {
+          map.setView([lat, lng], 16);
           if (typeof L !== 'undefined') {
             L.popup()
               .setLatLng([lat, lng])
               .setContent(`<b>📍 Delivery Destination</b><br>${name}`)
-              .openOn(driverMap);
+              .openOn(map);
           }
-          if (typeof drawRouteToPickup === 'function') {
-            drawRouteToPickup(lat, lng);
-          }
+          drawRouteToTarget(lat, lng);
         }
       }
     });
@@ -1974,7 +1956,7 @@
       driverLookupBtn.addEventListener('click', () => {
         const code = driverLookupInput ? driverLookupInput.value.trim() : '';
         if (!code) {
-          if (driverLookupStatus) { driverLookupStatus.textContent = 'Type an Order ID like YB-3041, or just its 4 digits.'; driverLookupStatus.style.color = '#b91c1c'; }
+          if (driverLookupStatus) { driverLookupStatus.textContent = "Enter the Order ID or the customer's separate 4-digit pickup PIN."; driverLookupStatus.style.color = '#b91c1c'; }
           return;
         }
         lookupOrderByCode(code);
@@ -1991,71 +1973,11 @@
       });
     }
 
-    // 1. START EN ROUTE TO PICKUP POINT
-    driverStartEnRouteBtn.addEventListener('click', () => {
-      const orders = getOrders().filter(o => o.status !== 'cancelled' && o.status !== 'delivered');
-      if (orders.length === 0) {
-        alert("No active orders in this session to deliver.");
-        return;
-      }
-
-      const driver = getCurrentDriver();
-      orders.forEach(o => {
-        updateOrderStatus(o.id, 'enroute', {
-          driver: {
-            id: driver.id,
-            name: driver.name,
-            phone: driver.phone,
-            vehicle: driver.vehicle,
-            photo: driver.photo,
-            currentLocation: { ...currentCoords },
-            speedKmh: 22,
-            lastUpdated: new Date().toISOString()
-          }
-        });
-      });
-
-      playChime('general');
-      renderSessionPackages();
-      alert(`Driver en route with all ${orders.length} food packages to the pickup point! 3-minute intermission countdown has begun.`);
-    });
-
-    // 2. ARRIVED AT PICKUP POINT
-    driverArrivedPickupPointBtn.addEventListener('click', () => {
-      const session = getSessionState();
-      const pickupName = session.pickupPoint ? session.pickupPoint.name : activePickupPointName.textContent;
-      const driver = getCurrentDriver();
-
-      notifySessionArrivalAtPickupPoint(pickupName, driver.name, currentCoords, {
-        phone: driver.phone,
-        photo: driver.photo,
-        vehicle: driver.vehicle
-      });
-      renderSessionPackages();
-
-      alert(`📍 Arrival announced at "${pickupName}"! Voice alert (English + Twi) played, customers were notified, and your call button now shows ${driver.phone || 'your registered number'}.`);
-    });
-
     // Megaphone Voice Broadcast Button
     playVoiceBroadcastBtn.addEventListener('click', () => {
       const session = getSessionState();
       const pickupName = session.pickupPoint ? session.pickupPoint.name : activePickupPointName.textContent;
       playVoiceArrivalAnnouncement(pickupName);
-    });
-
-    // 3. DELIVERY SUCCESSFUL & NOTIFY OWNER VIA WHATSAPP
-    driverCompleteDeliveryBtn.addEventListener('click', () => {
-      const session = getSessionState();
-      const pickupName = session.pickupPoint ? session.pickupPoint.name : activePickupPointName.textContent;
-
-      if (confirm(`Confirm batch delivery complete for all packages at "${pickupName}"? This will log in Admin panel and open WhatsApp to the owner.`)) {
-        const result = completeSessionDeliveriesAndNotifyOwner(session.sessionNumber, getCurrentDriver().name, pickupName);
-        playChime('neworder');
-        renderSessionPackages();
-
-        window.open(result.whatsappUrl, '_blank');
-        alert("Batch delivery successfully completed, archived in Admin records, and WhatsApp report sent to the owner!");
-      }
     });
 
     riderSelectDropdown.addEventListener('change', () => {

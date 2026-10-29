@@ -878,7 +878,7 @@
           <div class="card-header" style="margin-bottom:14px;">
             <div>
               <h2 class="card-title">Action Panel</h2>
-              <div class="action-meta">Pick an order → assign a rider → call → dispatch.</div>
+              <div class="action-meta">Online riders choose available orders themselves. Select an order to monitor, call, and review.</div>
             </div>
           </div>
 
@@ -886,9 +886,8 @@
             <div class="action-selected" id="actionSelectedSummary">No order selected. Click any row in the data panel.</div>
 
             <div class="action-section">
-              <div class="action-section-title">1 · Assign rider</div>
-              <select id="actionDriverSelect" style="width:100%; padding:10px; border:1px solid var(--line); border-radius:6px;"></select>
-              <button type="button" id="actionAssignDriverBtn" class="btn btn-forest">Assign selected rider</button>
+              <div class="action-section-title">Rider availability</div>
+              <div class="action-meta">Set riders online in Driver Management. Online riders choose and accept available orders in their portal.</div>
             </div>
 
             <div class="action-section">
@@ -901,18 +900,12 @@
             </div>
 
             <div class="action-section">
-              <div class="action-section-title">3 · Advance delivery status</div>
-              <div class="pill-btn-row">
-                <button type="button" class="btn btn-outline btn-sm status-advance-btn" data-status="kitchen">🍳 Kitchen</button>
-                <button type="button" class="btn btn-orange btn-sm status-advance-btn" data-status="enroute">🛵 Dispatch</button>
-                <button type="button" class="btn btn-forest btn-sm status-advance-btn" data-status="arrived">📍 Arrived</button>
-                <button type="button" class="btn btn-success btn-sm status-advance-btn" data-status="delivered">✅ Delivered</button>
-              </div>
-              <div class="action-meta" id="actionEtaText">ETA appears when a rider is on the map.</div>
+              <div class="action-section-title">Delivery status</div>
+              <div class="action-meta" id="actionEtaText">Riders claim available orders. Live tracking starts with rider GPS and handover requires the customer PIN.</div>
             </div>
 
             <div class="action-section">
-              <div class="action-section-title">4 · Payment (auto-verified, no waiting)</div>
+              <div class="action-section-title">4 · Payment verification</div>
               <div id="actionPaymentSummary" style="font-size:0.8rem; color:var(--muted); background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; margin-bottom:8px;">
                 Select an order to see its payment state.
               </div>
@@ -921,6 +914,7 @@
                 <button type="button" id="actionRejectPaymentBtn" class="btn btn-outline btn-sm">✖ Flag / reject</button>
               </div>
               <div class="receipt-review" id="actionReceiptReview"></div>
+              <div id="actionOrderResolution" style="margin-top:10px; padding:10px; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; font-size:0.78rem;"></div>
 
               <div style="margin-top:12px; padding-top:10px; border-top:1px dashed var(--line);">
                 <div class="action-section-title" style="margin-bottom:6px;">Auto-match a MoMo SMS</div>
@@ -1817,6 +1811,8 @@
       apiVerifyMomoReceipt,
       apiVerifyMomoSms,
       apiReviewPayment,
+      apiReviewOrderCancellation,
+      apiReviewOrderRefund,
       apiPayCash,
       apiSavePickupSettings,
       apiFetchPublicSettings,
@@ -1866,6 +1862,7 @@
     const actionPaymentSummary = document.getElementById('actionPaymentSummary');
     const actionVerifyMomoBtn = document.getElementById('actionVerifyMomoBtn');
     const actionRejectPaymentBtn = document.getElementById('actionRejectPaymentBtn');
+    const actionOrderResolution = document.getElementById('actionOrderResolution');
     const momoSmsInput = document.getElementById('momoSmsInput');
     const momoSmsVerifyBtn = document.getElementById('momoSmsVerifyBtn');
     const momoSmsStatus = document.getElementById('momoSmsStatus');
@@ -2072,7 +2069,11 @@
               <small style="color:var(--muted);">${o.location || 'Adabraka'}</small>
             </td>
             <td><small>${itemsSummary}</small><br><strong>GH₵${o.total || 0}</strong>${receiptTag}</td>
-            <td><span class="badge badge-${o.status}">${String(o.status || '').toUpperCase()}</span></td>
+            <td>
+              <span class="badge badge-${o.status}">${String(o.status || '').toUpperCase()}</span>
+              ${o.cancellation && o.cancellation.status === 'pending' ? `<br><small style="color:#b45309;font-weight:800;">Cancellation approval pending</small>` : ''}
+              ${o.refund && o.refund.status === 'pending' ? `<br><small style="color:#b45309;font-weight:800;">Refund approval pending · GH₵${Number(o.refund.amount || 0).toFixed(2)}</small>` : ''}
+            </td>
             <td>
               <div style="display:flex; align-items:center; gap:8px;">
                 <span class="roster-photo" style="width:30px;height:30px;font-size:0.9rem;border-width:1px;">
@@ -2171,7 +2172,7 @@
       const driverPhone = resolveDriverPhone(order) || "the number shown on your live tracking page";
       const trackingUrl = `${window.location.origin}${window.location.pathname.replace(/admin\.html.*$/, 'index.html')}?track=${order.id}`;
 
-      const pin = order.pickupPin || String(order.id).slice(-4);
+      const pin = order.pickupPin || 'unavailable';
       let msg = "";
       if (activeTemplate === 'confirmed') {
         msg = `Hello ${order.customer}! 🍜\n\nYour YEBS Noodles order #${order.id} has been CONFIRMED and is now being freshly prepared in our kitchen.\n\nCollection PIN: ${pin}\nItems: ${order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}\nTotal: GH₵${order.total}\n\nWe will update you as soon as your delivery driver hits the road!`;
@@ -2201,9 +2202,10 @@
       const mapPoints = [];
 
       ongoingOrders.forEach(o => {
+        const isCollection = /collect|pickup/i.test(String(o.fulfilment || ''));
         const pin = (o.mapPin && Number.isFinite(Number(o.mapPin.lat)) && Number.isFinite(Number(o.mapPin.lng)))
           ? o.mapPin
-          : (o.pickupPoint && Number.isFinite(Number(o.pickupPoint.lat)) && Number.isFinite(Number(o.pickupPoint.lng)) ? o.pickupPoint : null);
+          : (isCollection && o.pickupPoint && Number.isFinite(Number(o.pickupPoint.lat)) && Number.isFinite(Number(o.pickupPoint.lng)) ? o.pickupPoint : null);
         if (pin) {
           mapPoints.push([Number(pin.lat), Number(pin.lng)]);
           const custIcon = L.divIcon({
@@ -2226,6 +2228,12 @@
           L.marker([o.driver.currentLocation.lat, o.driver.currentLocation.lng], { icon: driverIcon })
             .bindPopup(`<b>Driver: ${o.driver.name}</b><br>${o.driver.vehicle || ''}<br>Order: ${o.id}<br>${o.driver.statusText || 'En route'}`)
             .addTo(markersLayer);
+          if (pin) {
+            L.polyline(
+              [[Number(o.driver.currentLocation.lat), Number(o.driver.currentLocation.lng)], [Number(pin.lat), Number(pin.lng)]],
+              { color: '#e57a45', weight: 3, dashArray: '7, 7', opacity: 0.75 }
+            ).addTo(markersLayer);
+          }
         }
       });
       (liveDrivers || []).forEach(d => {
@@ -2242,9 +2250,10 @@
       });
       const selectedOrder = ongoingOrders.find(order => order.id === selectedOrderId);
       if (selectedOrder) {
+        const selectedIsCollection = /collect|pickup/i.test(String(selectedOrder.fulfilment || ''));
         const selectedPin = (selectedOrder.mapPin && Number.isFinite(Number(selectedOrder.mapPin.lat)) && Number.isFinite(Number(selectedOrder.mapPin.lng)))
           ? selectedOrder.mapPin
-          : selectedOrder.pickupPoint;
+          : (selectedIsCollection ? selectedOrder.pickupPoint : null);
         const selectedPoints = [];
         if (selectedPin && Number.isFinite(Number(selectedPin.lat)) && Number.isFinite(Number(selectedPin.lng))) {
           selectedPoints.push([Number(selectedPin.lat), Number(selectedPin.lng)]);
@@ -2263,19 +2272,11 @@
     }
 
     function refreshActionPanel() {
-      const driverSelect = document.getElementById('actionDriverSelect');
       const summary = document.getElementById('actionSelectedSummary');
       const callCust = document.getElementById('actionCallCustomerBtn');
       const callDrv = document.getElementById('actionCallDriverBtn');
       const etaText = document.getElementById('actionEtaText');
-      if (!driverSelect || !summary || !callCust || !callDrv) return;
-
-      const drivers = (liveDrivers && liveDrivers.length) ? liveDrivers : getDispatchDrivers();
-      driverSelect.innerHTML = `<option value="">— Choose rider —</option>` + drivers.map(d => {
-        const name = d.name || `${d.fname || ''} ${d.lname || ''}`.trim();
-        const state = isDriverOnline(d) ? 'online' : 'offline';
-        return `<option value="${name}">${name} · ${d.vehicle || 'Rider'} · ${d.phone || 'no phone'} (${state})</option>`;
-      }).join('');
+      if (!summary || !callCust || !callDrv) return;
 
       const order = selectedOrderId ? getOrderById(selectedOrderId) : null;
       if (!order) {
@@ -2292,6 +2293,7 @@
         if (actionPaymentSummary) actionPaymentSummary.textContent = 'Select an order to see its payment state.';
         if (actionVerifyMomoBtn) { actionVerifyMomoBtn.disabled = true; actionVerifyMomoBtn.textContent = '✅ Approve payment'; }
         if (actionRejectPaymentBtn) { actionRejectPaymentBtn.disabled = true; }
+        if (actionOrderResolution) actionOrderResolution.textContent = '';
         return;
       }
 
@@ -2341,9 +2343,7 @@
       } else {
         etaText.textContent = order.driver ? `${driverName} assigned. Waiting for live GPS.` : 'Assign a rider to start tracking.';
       }
-      if (order.driver && order.driver.name) driverSelect.value = order.driver.name;
-
-      // Payment state — transparent, auto-verified, conflict-free.
+      // Payment state — only provider-matched transactions or admin-reviewed proof count as paid.
       const paid = order.paymentStatus === 'paid';
       const review = order.paymentStatus === 'review';
       const mode = order.paymentMode === 'cash' ? 'Cash on delivery' : 'Mobile Money';
@@ -2370,6 +2370,19 @@
       if (actionRejectPaymentBtn) {
         actionRejectPaymentBtn.disabled = !order.paymentStatus || order.paymentStatus === 'unpaid';
         actionRejectPaymentBtn.textContent = '✖ Flag / reject';
+      }
+      if (actionOrderResolution) {
+        const cancellation = order.cancellation || {};
+        const refund = order.refund || {};
+        const cancellationPending = cancellation.status === 'pending';
+        const refundPending = order.status === 'cancelled' && refund.status === 'pending';
+        actionOrderResolution.innerHTML = `
+          <strong>Order resolution</strong>
+          <div style="margin-top:4px;">Cancellation: ${cancellation.status || 'none'}${cancellation.reason ? ` · ${cancellation.reason.replace(/[<>&]/g, '')}` : ''}</div>
+          ${cancellationPending ? `<div class="call-row" style="margin-top:8px;"><button type="button" class="btn btn-success btn-sm" data-resolution="approve-cancellation">Approve cancellation</button><button type="button" class="btn btn-outline btn-sm" data-resolution="reject-cancellation">Reject cancellation</button></div>` : ''}
+          ${refund.status ? `<div style="margin-top:6px;">Refund: ${refund.status} · GH₵${Number(refund.amount || 0).toFixed(2)} (GH₵${Number(refund.fee || 0).toFixed(2)} fee)</div>` : ''}
+          ${refundPending ? `<div class="call-row" style="margin-top:8px;"><button type="button" class="btn btn-success btn-sm" data-resolution="approve-refund">Approve refund</button><button type="button" class="btn btn-outline btn-sm" data-resolution="reject-refund">Reject refund</button></div><div style="margin-top:5px;color:var(--muted);">Approval authorizes the refund; send it through MoMo separately.</div>` : (refund.status === 'approved' ? `<div style="margin-top:5px;color:var(--muted);">Approved — send the refund through MoMo separately.</div>` : '')}
+        `;
       }
 
       // MoMo receipt reviewer (the proof itself)
@@ -2453,34 +2466,6 @@
       }
     });
 
-    document.getElementById('actionAssignDriverBtn').addEventListener('click', () => {
-      if (!selectedOrderId) return alert('Select an order in the data panel first.');
-      const driverName = document.getElementById('actionDriverSelect').value;
-      const driverObj = (liveDrivers.length ? liveDrivers : getDispatchDrivers()).find(d => (d.name || `${d.fname || ''} ${d.lname || ''}`.trim()) === driverName);
-      if (!driverObj) return alert('Choose a rider.');
-      updateOrderStatus(selectedOrderId, 'kitchen', {
-        driver: {
-          id: driverObj.id,
-          name: driverObj.name || driverName,
-          phone: driverObj.phone,
-          vehicle: driverObj.vehicle,
-          photo: driverObj.photo || null,
-          currentLocation: (driverObj.lat && driverObj.lng)
-            ? { lat: driverObj.lat, lng: driverObj.lng }
-            : { lat: RESTAURANT_COORDS.lat, lng: RESTAURANT_COORDS.lng }
-        }
-      });
-      renderDashboard();
-    });
-
-    document.querySelectorAll('.status-advance-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (!selectedOrderId) return alert('Select an order first.');
-        updateOrderStatus(selectedOrderId, btn.dataset.status);
-        renderDashboard();
-      });
-    });
-
     if (actionVerifyMomoBtn) {
       actionVerifyMomoBtn.addEventListener('click', async () => {
         if (!selectedOrderId) return alert('Select an order first.');
@@ -2513,6 +2498,36 @@
           loadAuditLogs();
         } else {
           alert((res && res.message) || 'Could not flag the payment.');
+        }
+      });
+    }
+
+    if (actionOrderResolution) {
+      actionOrderResolution.addEventListener('click', async (event) => {
+        const button = event.target.closest('button[data-resolution]');
+        if (!button || !selectedOrderId) return;
+        const action = button.dataset.resolution;
+        const approved = action.startsWith('approve-');
+        const reason = approved ? '' : (prompt('Reason for rejection:', '') || '');
+        if (action === 'approve-refund') {
+          const order = getOrderById(selectedOrderId);
+          const amount = Number(order && order.refund && order.refund.amount || 0);
+          if (!confirm(`Approve GH₵${amount.toFixed(2)} refund for ${selectedOrderId}? This records approval only; send the MoMo refund separately.`)) return;
+        } else if (action === 'approve-cancellation' && !confirm(`Approve cancellation for ${selectedOrderId}?`)) {
+          return;
+        }
+
+        button.disabled = true;
+        const result = action.includes('cancellation')
+          ? await apiReviewOrderCancellation(selectedOrderId, approved, reason)
+          : await apiReviewOrderRefund(selectedOrderId, approved, reason);
+        if (result && result.success) {
+          renderDashboard();
+          refreshActionPanel();
+          loadAuditLogs();
+        } else {
+          button.disabled = false;
+          alert((result && result.message) || 'Could not update the cancellation or refund.');
         }
       });
     }

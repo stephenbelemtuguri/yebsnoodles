@@ -86,6 +86,12 @@ services:
         value: "0559103452"
       - key: MOMO_MERCHANT_NAME
         value: MATHEW TIA
+      # Optional Android/iOS-assisted inbox bridge. Generate a random secret
+      # of at least 32 characters and list only the official MoMo sender IDs.
+      - key: MOMO_SMS_INGEST_TOKEN
+        sync: false
+      - key: MOMO_SMS_ALLOWED_SENDERS
+        sync: false
 
 databases:
   - name: yebs-db

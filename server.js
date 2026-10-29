@@ -1,5 +1,5 @@
 // YEBS Noodles - Unified Express API Backend & Database Server
-// Secure auth (bcrypt + HMAC signed sessions), instant payment verification,
+// Secure auth (bcrypt + HMAC signed sessions), provider-confirmed payments,
 // unified order IDs and shared pickup-point state.
 
 // Load .env for local development and self-hosted deployments. On Render,
@@ -919,20 +919,39 @@ function toAmount(value) {
 // ORDER IDS — YB-XXXX where XXXX is the unique pickup PIN
 // ==========================================================
 
+function newPickupPin(db, orderId = '') {
+  const usedPins = new Set((db.orders || []).map(o => String(o.pickupPin || '')));
+  const publicIdSuffix = String(orderId).slice(-4);
+  for (let i = 0; i < 20000; i++) {
+    const pin = String(crypto.randomInt(1000, 10000));
+    if (!usedPins.has(pin) && pin !== publicIdSuffix) return pin;
+  }
+  for (let n = 1000; n <= 9999; n++) {
+    const pin = String(n);
+    if (!usedPins.has(pin) && pin !== publicIdSuffix) return pin;
+  }
+  return null;
+}
+
 function newOrderId(db) {
   const used = new Set((db.orders || []).map(o => String(o.id || '').toUpperCase()));
-  const usedPins = new Set((db.orders || []).map(o => String(o.pickupPin || '')));
   for (let i = 0; i < 20000; i++) {
     const n = crypto.randomInt(1000, 10000);
     const id = `YB-${n}`;
-    if (!used.has(id) && !usedPins.has(String(n))) return { id, pin: String(n) };
+    if (!used.has(id)) {
+      const pin = newPickupPin(db, id);
+      if (pin) return { id, pin };
+    }
   }
-  // Extremely unlikely: deterministic scan for a free 4-digit code.
+  // Extremely unlikely: deterministic scan for a free public order ID.
   for (let n = 1000; n <= 9999; n++) {
     const id = `YB-${n}`;
-    if (!used.has(id) && !usedPins.has(String(n))) return { id, pin: String(n) };
+    if (!used.has(id)) {
+      const pin = newPickupPin(db, id);
+      if (pin) return { id, pin };
+    }
   }
-  return { id: `YB-${Date.now().toString().slice(-4)}`, pin: Date.now().toString().slice(-4) };
+  throw new Error('No unused order ID and pickup PIN are available.');
 }
 
 function normalizeOrderId(raw) {
@@ -977,7 +996,6 @@ function paymentFieldsFor(order) {
 function projectOrder(order, viewer = 'public') {
   const base = {
     id: order.id,
-    pickupPin: order.pickupPin,
     sessionNumber: order.sessionNumber,
     createdAt: order.createdAt,
     customer: order.customer,
@@ -998,6 +1016,21 @@ function projectOrder(order, viewer = 'public') {
     pickupPointName: order.pickupPointName || null,
     pickupPoint: order.pickupPoint || null,
     notificationStatus: order.notificationStatus || null,
+    cancellation: order.cancellation ? {
+      status: order.cancellation.status || null,
+      reason: order.cancellation.reason || null,
+      requestedAt: order.cancellation.requestedAt || null,
+      reviewedAt: order.cancellation.reviewedAt || null,
+      reviewReason: order.cancellation.reviewReason || null
+    } : null,
+    refund: order.refund ? {
+      status: order.refund.status || null,
+      amount: Number(order.refund.amount) || 0,
+      fee: Number(order.refund.fee) || 0,
+      requestedAt: order.refund.requestedAt || null,
+      reviewedAt: order.refund.reviewedAt || null,
+      reviewReason: order.refund.reviewReason || null
+    } : null,
     driver: order.driver ? {
       id: order.driver.id || null,
       name: order.driver.name || null,
@@ -1011,6 +1044,8 @@ function projectOrder(order, viewer = 'public') {
     } : null,
     ...paymentFieldsFor(order)
   };
+
+  if (viewer === 'admin' || viewer === 'checkout') base.pickupPin = order.pickupPin || null;
 
   if (viewer === 'admin' || viewer === 'driver') {
     base.phone = order.phone;
@@ -1400,14 +1435,17 @@ async function sendRecoverySms(toPhone, text) {
   const to = digits.startsWith('233') ? `+${digits}` : (digits.startsWith('0') ? `+233${digits.slice(1)}` : `+${digits}`);
   try {
     const body = new URLSearchParams({ To: to, From: from, Body: String(text).slice(0, 1500) });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(accountSid)}/Messages.json`, {
       method: 'POST',
       headers: {
         Authorization: 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body
-    });
+      body,
+      signal: controller.signal
+    }).finally(() => clearTimeout(timer));
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.message || `Twilio API ${response.status}`);
     return { ok: true, providerId: payload.sid || null };
@@ -1668,11 +1706,18 @@ app.post('/api/drivers/:id/location', (req, res) => {
       || (o.driver && (o.driver.phone || '').replace(/\s+/g, '') === (driver.phone || '').replace(/\s+/g, ''));
     if (sameDriver && o.status !== 'delivered' && o.status !== 'cancelled') {
       if (!o.driver) o.driver = {};
+      const previousLocation = o.driver.currentLocation;
       o.driver.id = driver.id;
       o.driver.name = driver.name || `${driver.fname || ''} ${driver.lname || ''}`.trim() || driver.username;
       o.driver.currentLocation = { lat: driver.lat, lng: driver.lng };
       o.driver.speedKmh = driver.speedKmh;
       o.driver.lastUpdated = driver.lastLocationUpdate;
+      if (o.status === 'driver_assigned' && previousLocation
+        && Number.isFinite(Number(previousLocation.lat)) && Number.isFinite(Number(previousLocation.lng))
+        && calculateDistanceKm(Number(previousLocation.lat), Number(previousLocation.lng), driver.lat, driver.lng) >= 0.02) {
+        o.status = 'enroute';
+        o.enrouteAt = new Date().toISOString();
+      }
       if (driver.photo) o.driver.photo = driver.photo;
       if (driver.phone) o.driver.phone = driver.phone;
       if (driver.vehicle) o.driver.vehicle = driver.vehicle;
@@ -2005,7 +2050,11 @@ function extractCoordinates(text) {
 
 // Core MoMo verification used by customer proof, admin SMS matching and receipts.
 function applyMomoPayment(db, order, opts) {
-  const { transactionRef, amount, sender, receiptImage, method, actor, note } = opts;
+  const { transactionRef, amount, sender, receiptImage, method, actor, note, providerVerified } = opts;
+
+  if (order.status === 'cancelled') {
+    return { ok: false, status: 409, order, message: "This order is cancelled and cannot accept a payment." };
+  }
 
   if (order.paymentStatus === 'paid') {
     return {
@@ -2082,6 +2131,25 @@ function applyMomoPayment(db, order, opts) {
     return { ok: false, status: 400, order, message: "Enter the MoMo transaction ID or upload the payment receipt." };
   }
 
+  if (providerVerified !== true) {
+    order.paymentStatus = 'review';
+    order.paymentVerified = false;
+    order.paidAt = null;
+    order.momoReceipt.verified = false;
+    addPaymentAudit(order, 'MOMO_PROOF_SUBMITTED', actor, {
+      transactionRef: order.momoTransactionRef,
+      amount: paidAmount,
+      note: note || 'Awaiting administrator verification'
+    });
+    return {
+      ok: false,
+      status: 202,
+      order,
+      needsReview: true,
+      message: 'Payment proof received. The order will be marked paid after the transaction is confirmed.'
+    };
+  }
+
   order.paymentStatus = 'paid';
   order.paymentVerified = true;
   order.paidAt = new Date().toISOString();
@@ -2100,7 +2168,7 @@ function applyMomoPayment(db, order, opts) {
   };
 }
 
-// Customer submits proof: instant verification, order is never blocked.
+// Customer submits proof for verification; the server never trusts a client-side paid flag.
 app.post('/api/orders/:id/pay/momo', (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
@@ -2160,6 +2228,7 @@ app.post('/api/orders/:id/pay/request', async (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+  if (order.status === 'cancelled') return res.status(409).json({ success: false, message: "This order is cancelled and cannot accept a payment request." });
 
   if (order.paymentStatus === 'paid') {
     return res.status(200).json({
@@ -2267,6 +2336,7 @@ app.get('/api/orders/:id/pay/status', async (req, res) => {
           amount: Number(order.total),
           sender: order.momoPayerPhone,
           method: 'mtn-api',
+          providerVerified: true,
           actor: 'MTN MOMO API',
           note: 'Settled by MTN Collections API'
         });
@@ -2293,6 +2363,13 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), (req, res) 
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+  if (order.status === 'cancelled') return res.status(409).json({ success: false, message: "This order is cancelled and cannot accept a payment." });
+  if (req.auth.payload.role === 'driver' && order.driverId !== req.auth.driver.id && !(order.driver && order.driver.id === req.auth.driver.id)) {
+    return res.status(403).json({ success: false, message: "You can only record cash for a delivery assigned to you." });
+  }
+  if (req.auth.payload.role === 'driver' && order.paymentMode !== 'cash' && !/cash|pay on delivery/i.test(order.payment || '')) {
+    return res.status(409).json({ success: false, message: "This order is set for Mobile Money, not cash collection." });
+  }
 
   if (order.paymentStatus === 'paid') {
     return res.status(409).json({
@@ -2321,15 +2398,15 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), (req, res) 
   order.cashCollectedBy = actorName;
   order.cashCollectedAt = new Date().toISOString();
 
-  if (Math.abs(received - total) > 0.009 && received < total) {
+  if (Math.abs(received - total) > 0.009) {
     order.paymentStatus = 'review';
-    addPaymentAudit(order, 'CASH_SHORT', actorName, { expected: total, received });
+    addPaymentAudit(order, received < total ? 'CASH_SHORT' : 'CASH_OVERPAYMENT', actorName, { expected: total, received });
     saveDatabase(db);
-    logAction('CASH_PAYMENT_SHORT', actorName, order.id, { expected: total, received }, req);
+    logAction(received < total ? 'CASH_PAYMENT_SHORT' : 'CASH_PAYMENT_OVERPAYMENT', actorName, order.id, { expected: total, received }, req);
     return res.status(202).json({
       success: false,
       needsReview: true,
-      message: `Cash received GH₵${received.toFixed(2)} is less than the GH₵${total.toFixed(2)} total. Ask for the balance or flag it to the admin.`,
+      message: `Cash received GH₵${received.toFixed(2)} does not match the GH₵${total.toFixed(2)} total. The payment is flagged for admin review.`,
       order: projectOrder(order, req.auth.payload.role)
     });
   }
@@ -2357,6 +2434,7 @@ app.post('/api/orders/:id/pay/review', requireRole('admin'), (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+  if (order.status === 'cancelled') return res.status(409).json({ success: false, message: "A cancelled order cannot be marked paid." });
 
   const paid = (req.body || {}).paid !== false;
   const reason = cleanString((req.body || {}).reason, 240);
@@ -2379,6 +2457,9 @@ app.post('/api/orders/:id/pay/review', requireRole('admin'), (req, res) => {
 
   saveDatabase(db);
   logAction(paid ? 'PAYMENT_APPROVED_BY_ADMIN' : 'PAYMENT_REJECTED_BY_ADMIN', actor, order.id, { reason }, req);
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'payment-review', order: projectOrder(order, 'customer') });
+  }
   res.json({ success: true, message: paid ? 'Payment approved.' : 'Payment rejected and flagged for review.', order: projectOrder(order, 'admin') });
 });
 
@@ -2397,16 +2478,66 @@ function parseMomoSms(raw) {
   };
 }
 
-app.post('/api/payments/momo/sms', requireRole('admin'), (req, res) => {
-  const parsed = parseMomoSms((req.body || {}).sms);
+function momoSmsIngestKey(deviceId, messageId) {
+  return crypto.createHash('sha256')
+    .update(`${deviceId}\0${messageId}`)
+    .digest('hex');
+}
+
+function isAllowedMomoSmsSender(sender) {
+  const allowedSenders = String(process.env.MOMO_SMS_ALLOWED_SENDERS || '')
+    .split(',')
+    .map(value => cleanString(value, 80).toLowerCase().replace(/[\s-]/g, ''))
+    .filter(Boolean);
+  const normalizedSender = cleanString(sender, 80).toLowerCase().replace(/[\s-]/g, '');
+  return allowedSenders.length > 0 && !!normalizedSender && allowedSenders.includes(normalizedSender);
+}
+
+function hasValidMomoSmsIngestToken(req) {
+  const expected = String(process.env.MOMO_SMS_INGEST_TOKEN || '');
+  const supplied = bearerFrom(req);
+  if (expected.length < 32 || !supplied) return false;
+  const expectedBytes = Buffer.from(expected);
+  const suppliedBytes = Buffer.from(supplied);
+  return expectedBytes.length === suppliedBytes.length
+    && crypto.timingSafeEqual(expectedBytes, suppliedBytes);
+}
+
+async function processMomoSms(req, res, actor, ingestionKey = null) {
+  const body = req.body || {};
+  const rawSms = typeof body.sms === 'string' ? body.sms : '';
+  if (!rawSms || rawSms.length > 1000) {
+    return res.status(400).json({ success: false, message: "Provide the full MoMo transaction message (maximum 1000 characters)." });
+  }
+  const parsed = parseMomoSms(rawSms);
   if (!parsed.amount) {
     return res.status(400).json({ success: false, message: "Could not read an amount from that message. Paste the full MoMo confirmation SMS." });
   }
+  if (!parsed.transactionRef) {
+    return res.status(400).json({ success: false, message: "The message must contain the MoMo transaction ID before it can verify a payment." });
+  }
 
   const db = loadDatabase();
+  if (ingestionKey) {
+    db.momoSmsIngestedMessages = Array.isArray(db.momoSmsIngestedMessages) ? db.momoSmsIngestedMessages : [];
+    const previous = db.momoSmsIngestedMessages.find(entry => entry.key === ingestionKey);
+    if (previous) {
+      const previousOrder = db.orders.find(order => order.id === previous.orderId);
+      return res.status(200).json({
+        success: previous.success,
+        duplicate: true,
+        terminal: true,
+        needsReview: previous.needsReview,
+        conflict: previous.conflict,
+        message: previous.message,
+        order: previousOrder ? projectOrder(previousOrder, 'admin') : null
+      });
+    }
+  }
+
   let order = parsed.orderId ? db.orders.find(o => String(o.id).toUpperCase() === parsed.orderId) : null;
 
-  if (!order && parsed.transactionRef) {
+  if (!order) {
     order = db.orders.find(o => String(o.momoTransactionRef || '').toLowerCase() === parsed.transactionRef.toLowerCase());
   }
 
@@ -2422,7 +2553,7 @@ app.post('/api/payments/momo/sms', requireRole('admin'), (req, res) => {
         success: false,
         ambiguous: true,
         message: `Amount GH₵${parsed.amount.toFixed(2)} matches ${candidates.length} unpaid orders (${candidates.map(o => o.id).join(', ')}). Include the order ID or reference in the SMS.`,
-        parsed
+        ...(ingestionKey ? { retryable: true } : { parsed })
       });
     }
   }
@@ -2430,43 +2561,101 @@ app.post('/api/payments/momo/sms', requireRole('admin'), (req, res) => {
   if (!order) {
     return res.status(404).json({
       success: false,
+      ...(ingestionKey ? { retryable: true } : {}),
       message: "No unpaid order matches this message. Check the amount, or include the order ID / transaction reference.",
-      parsed
+      ...(ingestionKey ? {} : { parsed })
     });
   }
 
   const result = applyMomoPayment(db, order, {
     transactionRef: parsed.transactionRef,
     amount: parsed.amount,
-    sender: (req.body || {}).sender,
+    sender: body.sender,
     receiptImage: null,
     method: 'auto-sms',
-    actor: req.auth.admin.name || req.auth.admin.username,
+    providerVerified: true,
+    actor,
     note: 'Verified from forwarded MoMo SMS'
   });
 
-  saveDatabase(db);
-  logAction(result.ok ? 'MOMO_SMS_AUTO_VERIFIED' : 'MOMO_SMS_REVIEW', req.auth.admin.username, order.id, {
+  if (ingestionKey && (result.ok || result.needsReview || result.conflict)) {
+    db.momoSmsIngestedMessages.push({
+      key: ingestionKey,
+      orderId: order.id,
+      success: result.ok,
+      needsReview: !!result.needsReview,
+      conflict: !!result.conflict,
+      message: result.message,
+      receivedAt: new Date().toISOString()
+    });
+    if (db.momoSmsIngestedMessages.length > 1000) {
+      db.momoSmsIngestedMessages.splice(0, db.momoSmsIngestedMessages.length - 1000);
+    }
+  }
+
+  if (ingestionKey) {
+    const persistenceError = await requireDurableSave(db);
+    if (persistenceError) {
+      return res.status(503).json({ success: false, retryable: true, message: persistenceError });
+    }
+  } else {
+    saveDatabase(db);
+  }
+  logAction(result.ok ? 'MOMO_SMS_AUTO_VERIFIED' : 'MOMO_SMS_REVIEW', actor, order.id, {
     amount: parsed.amount,
     transactionRef: parsed.transactionRef,
     status: order.paymentStatus
   }, req);
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'payment', order: projectOrder(order, 'customer') });
+  }
 
-  res.status(result.ok ? 200 : (result.status || 400)).json({
+  const terminalConflict = !!(ingestionKey && result.conflict);
+  res.status(terminalConflict ? 200 : (result.ok ? 200 : (result.status || 400))).json({
     success: result.ok,
     needsReview: !!result.needsReview,
     conflict: !!result.conflict,
+    ...(ingestionKey ? { terminal: !!(result.ok || result.needsReview || result.conflict) } : {}),
     message: result.message,
-    parsed,
+    ...(ingestionKey ? {} : { parsed }),
     order: projectOrder(order, 'admin')
   });
+}
+
+app.post('/api/payments/momo/sms', requireRole('admin'), (req, res) => {
+  const admin = req.auth.admin;
+  return processMomoSms(req, res, admin.name || admin.username);
 });
 
-// Legacy receipt upload kept for compatibility; now auto-verifies when valid.
+app.post('/api/payments/momo/sms/ingest', async (req, res) => {
+  if (!process.env.MOMO_SMS_INGEST_TOKEN || String(process.env.MOMO_SMS_INGEST_TOKEN).length < 32) {
+    return res.status(503).json({ success: false, message: "The MoMo SMS bridge is not configured on this server." });
+  }
+  if (!hasValidMomoSmsIngestToken(req)) {
+    return res.status(401).json({ success: false, message: "Invalid MoMo SMS bridge credentials." });
+  }
+
+  const body = req.body || {};
+  if (!isAllowedMomoSmsSender(body.sender)) {
+    return res.status(403).json({ success: false, message: "This SMS sender is not on the configured MoMo sender allowlist." });
+  }
+  const deviceId = cleanString(body.deviceId, 100);
+  const messageId = cleanString(body.messageId, 200);
+  if (!deviceId || !messageId) {
+    return res.status(400).json({ success: false, message: "A stable device ID and SMS message ID are required for safe retries." });
+  }
+
+  const sender = cleanString(body.sender, 80);
+  req.body = { ...body, sender };
+  await processMomoSms(req, res, `MOMO_SMS_BRIDGE:${sender}`, momoSmsIngestKey(deviceId, messageId));
+});
+
+// Legacy receipt upload kept for compatibility; proof remains unverified until reviewed.
 app.post('/api/orders/:id/receipt', (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+  if (order.status === 'cancelled') return res.status(409).json({ success: false, message: "This order is cancelled and cannot accept payment proof." });
 
   const body = req.body || {};
   const result = applyMomoPayment(db, order, {
@@ -2492,6 +2681,7 @@ app.post('/api/orders/:id/receipt/verify', requireRole('admin'), (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+  if (order.status === 'cancelled') return res.status(409).json({ success: false, message: "A cancelled order cannot be marked paid." });
 
   const verified = req.body.verified !== false;
   order.paymentStatus = verified ? 'paid' : 'review';
@@ -2501,6 +2691,9 @@ app.post('/api/orders/:id/receipt/verify', requireRole('admin'), (req, res) => {
   addPaymentAudit(order, verified ? 'RECEIPT_APPROVED' : 'RECEIPT_REJECTED', req.auth.admin.username, null);
   saveDatabase(db);
   logAction("MOMO_RECEIPT_VERIFIED", req.auth.admin.username, order.id, { verified }, req);
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'payment-review', order: projectOrder(order, 'customer') });
+  }
   res.json({ success: true, order: projectOrder(order, 'admin') });
 });
 
@@ -2528,7 +2721,7 @@ app.get('/api/orders/lookup/:code', requireRole('driver', 'admin'), (req, res) =
   );
 
   if (!matches.length) {
-    return res.status(404).json({ success: false, message: `No order found for "${raw}". Ask the customer for their Order ID (e.g. YB-1234) or its last 4 digits.` });
+    return res.status(404).json({ success: false, message: `No order found for "${raw}". Ask the customer for their Order ID or separate 4-digit pickup PIN.` });
   }
   if (matches.length > 1) {
     return res.status(409).json({
@@ -2608,7 +2801,12 @@ app.post('/api/orders', async (req, res) => {
   const requested = normalizeOrderId(body.id || '');
   if (requested) {
     const existing = db.orders.find(o => String(o.id).toUpperCase() === requested);
-    if (existing) return res.status(200).json(projectOrder(existing, 'public'));
+    if (existing) {
+      const submittedPhone = String(phone).replace(/\D/g, '').slice(-9);
+      const existingPhone = String(existing.phone || '').replace(/\D/g, '').slice(-9);
+      const sameCustomerPhone = submittedPhone.length === 9 && submittedPhone === existingPhone;
+      return res.status(200).json(projectOrder(existing, sameCustomerPhone ? 'checkout' : 'public'));
+    }
   }
 
   const items = Array.isArray(body.items) ? body.items.slice(0, 30).map(item => {
@@ -2636,7 +2834,8 @@ app.post('/api/orders', async (req, res) => {
   let id = requested;
   let pin;
   if (id && /^YB-\d{4}$/.test(id)) {
-    pin = id.slice(-4);
+    pin = newPickupPin(db, id);
+    if (!pin) return res.status(503).json({ success: false, message: "Could not reserve a unique pickup PIN. Please try again." });
   } else {
     const generated = newOrderId(db);
     id = generated.id;
@@ -2653,7 +2852,11 @@ app.post('/api/orders', async (req, res) => {
   // (pasted Google/Apple Maps link), then the Adabraka kitchen default.
   const sharedPickup = currentSession.pickupPoint || (db.settings && db.settings.pickup) || null;
   const pinFromAddress = extractCoordinates(body.location);
-  const hasPin = body.mapPin && Number.isFinite(Number(body.mapPin.lat)) && Number.isFinite(Number(body.mapPin.lng));
+  const hasPin = body.mapPin
+    && Number.isFinite(Number(body.mapPin.lat))
+    && Number.isFinite(Number(body.mapPin.lng))
+    && Math.abs(Number(body.mapPin.lat)) <= 90
+    && Math.abs(Number(body.mapPin.lng)) <= 180;
   const customerPin = hasPin
     ? {
       lat: Number(body.mapPin.lat),
@@ -2664,10 +2867,16 @@ app.post('/api/orders', async (req, res) => {
   const sharedPin = sharedPickup && Number.isFinite(Number(sharedPickup.lat)) && Number.isFinite(Number(sharedPickup.lng))
     ? { lat: Number(sharedPickup.lat), lng: Number(sharedPickup.lng), name: sharedPickup.name }
     : { ...DEFAULT_PICKUP_POINT };
-  const orderPin = customerPin || sharedPin;
+  if (isDelivery && !customerPin) {
+    return res.status(400).json({
+      success: false,
+      message: "Choose a delivery landmark or share your GPS pin so the rider can navigate to the correct address."
+    });
+  }
+  const orderPin = isDelivery ? customerPin : sharedPin;
   const orderLocation = customerPin
     ? cleanString(body.location || customerPin.name || 'Customer selected location', 200)
-    : (!isDelivery ? (sharedPin.name || DEFAULT_PICKUP_POINT.name) : cleanString(body.location || 'Adabraka, Accra', 200));
+    : (sharedPin.name || DEFAULT_PICKUP_POINT.name);
 
   // The server owns delivery pricing so a client cannot submit a lower fee.
   const deliveryCalc = calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup);
@@ -2677,8 +2886,7 @@ app.post('/api/orders', async (req, res) => {
   const newOrder = {
     id,
     pickupPin: pin,
-    // The 4-digit PIN is literally the last 4 digits of the Order ID.
-    pickupPinIsOrderId: true,
+    pickupPinIsOrderId: false,
     sessionNumber: body.sessionNumber || currentSession.sessionNumber,
     createdAt: body.createdAt || new Date().toISOString(),
     customer,
@@ -2712,7 +2920,7 @@ app.post('/api/orders', async (req, res) => {
     momoReceipt: null,
     paymentAudit: [],
     notes: cleanString(body.notes, 500),
-    status: body.status || "pending",
+    status: "pending",
     verifiedByDriver: false,
     pickupPoint: sharedPickup,
     pickupPointName: sharedPickup ? sharedPickup.name : null,
@@ -2722,7 +2930,10 @@ app.post('/api/orders', async (req, res) => {
       startedAt: new Date().toISOString(),
       endedAt: null
     },
-    driver: body.driver || null
+    driver: null,
+    driverId: null,
+    driverName: null,
+    driverPhone: null
   };
 
   db.orders.unshift(newOrder);
@@ -2745,7 +2956,7 @@ app.post('/api/orders', async (req, res) => {
     pushOrderUpdate(newOrder.id, { type: 'created', order: projectOrder(newOrder, 'customer') });
   }
 
-  res.status(201).json(projectOrder(newOrder, 'public'));
+  res.status(201).json(projectOrder(newOrder, 'checkout'));
 });
 
 app.patch('/api/orders/:id/status', requireRole('driver', 'admin'), (req, res) => {
@@ -2754,14 +2965,39 @@ app.patch('/api/orders/:id/status', requireRole('driver', 'admin'), (req, res) =
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
-  const { status, driver, verifiedByDriver } = req.body || {};
-  const allowed = ['pending', 'kitchen', 'enroute', 'arrived', 'delivered', 'cancelled'];
+  const { status, driver } = req.body || {};
+  const allowed = ['pending', 'kitchen', 'enroute', 'arrived', 'delivered'];
   if (status && !allowed.includes(status)) {
     return res.status(400).json({ success: false, message: "Unknown order status." });
   }
+  if (req.auth.payload.role === 'driver') {
+    const driverOwnsOrder = order.driverId === req.auth.driver.id
+      || (order.driver && order.driver.id === req.auth.driver.id);
+    if (!driverOwnsOrder) {
+      return res.status(403).json({ success: false, message: "Accept this delivery before updating its status." });
+    }
+  }
+  if (driver) {
+    return res.status(409).json({ success: false, message: "Driver assignment is managed by accepting an available delivery." });
+  }
+  if (status === 'enroute') {
+    return res.status(409).json({ success: false, message: "En-route tracking starts automatically after the assigned rider moves with live GPS." });
+  }
+  if (status === 'arrived' && req.auth.payload.role !== 'driver') {
+    return res.status(403).json({ success: false, message: "Only the assigned rider can mark arrival." });
+  }
+  if (status === 'arrived' && order.status !== 'enroute') {
+    return res.status(409).json({ success: false, message: "The rider must start live tracking before marking arrival." });
+  }
+  const paymentIsPaid = order.paymentStatus === 'paid' || order.paymentVerified === true;
+  if (status === 'delivered' && !paymentIsPaid) {
+    return res.status(409).json({ success: false, message: "Record and verify the payment before marking this delivery complete." });
+  }
+  if (status === 'delivered') {
+    return res.status(409).json({ success: false, message: "Use the assigned rider's customer PIN verification to complete this delivery." });
+  }
   if (status) order.status = status;
   if (driver) order.driver = { ...(order.driver || {}), ...driver };
-  if (verifiedByDriver !== undefined) order.verifiedByDriver = !!verifiedByDriver;
 
   if (order.status === 'kitchen') order.kitchenAt = order.kitchenAt || new Date().toISOString();
   if (order.status === 'enroute') order.enrouteAt = new Date().toISOString();
@@ -2779,41 +3015,186 @@ app.patch('/api/orders/:id/status', requireRole('driver', 'admin'), (req, res) =
   res.json(projectOrder(order, req.auth.payload.role === 'admin' ? 'admin' : 'driver'));
 });
 
+app.post('/api/orders/:id/cancellation', (req, res) => {
+  const db = loadDatabase();
+  const id = normalizeOrderId(req.params.id);
+  const order = db.orders.find(o => String(o.id).toUpperCase() === id);
+  if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+
+  const submittedPhone = cleanString((req.body || {}).phone, 30).replace(/\D/g, '').slice(-9);
+  const orderPhone = String(order.phone || '').replace(/\D/g, '').slice(-9);
+  if (submittedPhone.length !== 9 || orderPhone.length !== 9 || submittedPhone !== orderPhone) {
+    return res.status(403).json({ success: false, message: "Enter the phone number used for this order." });
+  }
+  if (['enroute', 'arrived', 'delivered', 'cancelled'].includes(order.status)) {
+    return res.status(409).json({ success: false, message: "This order can no longer be cancelled online. Please contact YEBS support." });
+  }
+  if (order.cancellation && order.cancellation.status === 'pending') {
+    return res.json({ success: true, message: "Your cancellation request is already awaiting admin approval.", order: projectOrder(order, 'customer') });
+  }
+
+  const paid = order.paymentStatus === 'paid' && order.paymentVerified === true;
+  const refundFee = 5;
+  order.cancellation = {
+    status: 'pending',
+    reason: cleanString((req.body || {}).reason || 'Customer requested cancellation', 240),
+    requestedAt: new Date().toISOString()
+  };
+  order.refund = paid ? {
+    status: 'awaiting_cancellation',
+    amount: Math.max(0, Math.round((Number(order.total || 0) - refundFee) * 100) / 100),
+    fee: refundFee,
+    requestedAt: new Date().toISOString()
+  } : null;
+
+  saveDatabase(db);
+  logAction('ORDER_CANCELLATION_REQUESTED', order.customer, order.id, {
+    paid,
+    refundAmount: order.refund ? order.refund.amount : 0,
+    reason: order.cancellation.reason
+  }, req);
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'cancellation-request', order: projectOrder(order, 'customer') });
+  }
+  res.status(202).json({
+    success: true,
+    message: paid
+      ? `Cancellation request sent for admin approval. If approved, the refund will be GH₵${order.refund.amount.toFixed(2)} after the GH₵5.00 cancellation fee.`
+      : "Cancellation request sent for admin approval.",
+    order: projectOrder(order, 'customer')
+  });
+});
+
+app.post('/api/orders/:id/cancellation/review', requireRole('admin'), (req, res) => {
+  const db = loadDatabase();
+  const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
+  if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+  if (!order.cancellation || order.cancellation.status !== 'pending') {
+    return res.status(409).json({ success: false, message: "There is no pending cancellation request for this order." });
+  }
+
+  const approved = (req.body || {}).approved === true;
+  const reason = cleanString((req.body || {}).reason, 240);
+  const actor = req.auth.admin.name || req.auth.admin.username;
+  if (approved && ['enroute', 'arrived', 'delivered', 'cancelled'].includes(order.status)) {
+    return res.status(409).json({ success: false, message: "This order has already entered delivery or reached a terminal state; cancellation cannot be approved." });
+  }
+  order.cancellation.status = approved ? 'approved' : 'rejected';
+  order.cancellation.reviewedAt = new Date().toISOString();
+  order.cancellation.reviewReason = reason || null;
+  if (approved) {
+    order.status = 'cancelled';
+    order.cancelledAt = order.cancellation.reviewedAt;
+    if (order.refund) order.refund.status = 'pending';
+  } else if (order.refund) {
+    order.refund.status = 'rejected';
+    order.refund.reviewedAt = order.cancellation.reviewedAt;
+    order.refund.reviewReason = reason || null;
+  }
+
+  saveDatabase(db);
+  logAction(approved ? 'ORDER_CANCELLATION_APPROVED' : 'ORDER_CANCELLATION_REJECTED', actor, order.id, { reason }, req);
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'cancellation-review', order: projectOrder(order, 'customer') });
+  }
+  res.json({ success: true, message: approved ? "Cancellation approved." : "Cancellation request rejected.", order: projectOrder(order, 'admin') });
+});
+
+app.post('/api/orders/:id/refund/review', requireRole('admin'), (req, res) => {
+  const db = loadDatabase();
+  const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
+  if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+  if (order.status !== 'cancelled' || !order.refund || order.refund.status !== 'pending') {
+    return res.status(409).json({ success: false, message: "There is no pending refund approval for this cancelled order." });
+  }
+
+  const approved = (req.body || {}).approved === true;
+  const reason = cleanString((req.body || {}).reason, 240);
+  const actor = req.auth.admin.name || req.auth.admin.username;
+  order.refund.status = approved ? 'approved' : 'rejected';
+  order.refund.reviewedAt = new Date().toISOString();
+  order.refund.reviewReason = reason || null;
+
+  saveDatabase(db);
+  logAction(approved ? 'ORDER_REFUND_APPROVED' : 'ORDER_REFUND_REJECTED', actor, order.id, {
+    amount: order.refund.amount,
+    reason
+  }, req);
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'refund-review', order: projectOrder(order, 'customer') });
+  }
+  res.json({
+    success: true,
+    message: approved
+      ? `Refund of GH₵${Number(order.refund.amount).toFixed(2)} approved. Send it through the MoMo provider and update the customer.`
+      : "Refund request rejected.",
+    order: projectOrder(order, 'admin')
+  });
+});
+
 // Driver or Admin claims / accepts an order for delivery
-app.post('/api/orders/:id/claim', requireRole('driver', 'admin'), (req, res) => {
+app.post('/api/orders/:id/claim', requireRole('driver'), async (req, res) => {
   const db = loadDatabase();
   const id = normalizeOrderId(req.params.id);
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
-  const role = req.auth.payload.role;
-  const driverObj = role === 'driver' ? req.auth.driver : (req.body.driver || { id: 'admin-dispatch', name: req.auth.admin.name || req.auth.admin.username, phone: req.auth.admin.phone || '' });
+  if (order.status === 'delivered' || order.status === 'cancelled') {
+    return res.status(409).json({ success: false, message: "This order is no longer available for delivery." });
+  }
+  if (order.cancellation && order.cancellation.status === 'pending') {
+    return res.status(409).json({ success: false, message: "This order has a pending cancellation request and is temporarily unavailable." });
+  }
+
+  const driverObj = req.auth.driver;
+  if (driverObj.isActive === false || driverObj.approvalStatus === 'pending' || driverObj.approvalStatus === 'rejected') {
+    return res.status(403).json({ success: false, message: "Your rider account must be active and approved before accepting deliveries." });
+  }
+  const lastGpsAt = Date.parse(driverObj.lastLocationUpdate || '');
+  if (!Number.isFinite(lastGpsAt) || Date.now() - lastGpsAt > 120000) {
+    return res.status(409).json({ success: false, message: "Turn on device location and wait for a live GPS fix before accepting a delivery." });
+  }
+  const currentDriverId = order.driverId || (order.driver && order.driver.id);
+  if (currentDriverId && currentDriverId !== driverObj.id) {
+    return res.status(409).json({ success: false, message: "Another rider has already accepted this delivery." });
+  }
+  if (currentDriverId === driverObj.id) {
+    return res.json({ success: true, message: "You already accepted this delivery.", order: projectOrder(order, 'driver') });
+  }
   const driverName = driverObj.name || `${driverObj.fname || ''} ${driverObj.lname || ''}`.trim() || driverObj.username || 'YEBS Rider';
 
   order.driverId = driverObj.id || null;
   order.driverName = driverName;
   order.driverPhone = driverObj.phone || null;
+  if (order.status !== 'driver_assigned') order.statusBeforeAssignment = order.status || 'pending';
   order.driver = {
     id: driverObj.id || null,
     name: driverName,
     phone: driverObj.phone || null,
     vehicle: driverObj.vehicle || null,
     photo: driverObj.photo || null,
-    currentLocation: (driverObj.lat && driverObj.lng) ? { lat: Number(driverObj.lat), lng: Number(driverObj.lng) } : (order.driver && order.driver.currentLocation ? order.driver.currentLocation : null)
+    currentLocation: Number.isFinite(Number(driverObj.lat)) && Number.isFinite(Number(driverObj.lng))
+      ? { lat: Number(driverObj.lat), lng: Number(driverObj.lng) }
+      : null
   };
-  if (order.status === 'Received' || order.status === 'pending' || order.status === 'kitchen' || !order.status) {
-    order.status = 'enroute';
-    order.enrouteAt = new Date().toISOString();
+  order.assignedAt = order.assignedAt || new Date().toISOString();
+  if (['Received', 'pending', 'kitchen', ''].includes(String(order.status || ''))) {
+    order.status = 'driver_assigned';
   }
 
   saveDatabase(db);
   logAction("ORDER_CLAIMED", driverName, order.id, { driverId: driverObj.id, status: order.status }, req);
 
   if (typeof pushOrderUpdate === 'function') {
-    pushOrderUpdate(order.id, { type: 'status', order: projectOrder(order, 'customer') });
+    pushOrderUpdate(order.id, { type: 'assignment', order: projectOrder(order, 'customer') });
   }
 
-  res.json({ success: true, message: `Delivery assigned to ${driverName}.`, order: projectOrder(order, role) });
+  const customerNotice = await sendRecoveryPhone(order.phone,
+    `YEBS: Rider ${driverName} accepted your order ${order.id}. Live GPS tracking will start when the rider begins moving.`);
+  order.driverNoticeStatus = customerNotice.ok ? 'sent' : 'not-delivered';
+  saveDatabase(db);
+
+  res.json({ success: true, message: `Delivery accepted by ${driverName}. Live tracking starts when the rider moves.`, order: projectOrder(order, 'driver') });
 });
 
 // Driver or Admin releases / unclaims an order
@@ -2823,14 +3204,21 @@ app.post('/api/orders/:id/unclaim', requireRole('driver', 'admin'), (req, res) =
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
+  if (req.auth.payload.role === 'driver' && order.driverId !== req.auth.driver.id && !(order.driver && order.driver.id === req.auth.driver.id)) {
+    return res.status(403).json({ success: false, message: "You can only release a delivery assigned to you." });
+  }
+  if (['enroute', 'arrived', 'delivered'].includes(order.status)) {
+    return res.status(409).json({ success: false, message: "This delivery cannot be released after the rider has started moving." });
+  }
+
   const prevDriver = order.driverName || (order.driver && order.driver.name) || 'Rider';
+  const restoredStatus = order.statusBeforeAssignment || 'pending';
   order.driverId = null;
   order.driverName = null;
   order.driverPhone = null;
   order.driver = null;
-  if (order.status === 'enroute') {
-    order.status = 'Received';
-  }
+  order.status = restoredStatus;
+  delete order.statusBeforeAssignment;
 
   saveDatabase(db);
   logAction("ORDER_UNCLAIMED", prevDriver, order.id, {}, req);
@@ -2842,15 +3230,25 @@ app.post('/api/orders/:id/unclaim', requireRole('driver', 'admin'), (req, res) =
   res.json({ success: true, message: "Order unassigned and available for any rider to claim.", order: projectOrder(order, req.auth.payload.role) });
 });
 
-// Handover validation: the customer's code must be the last 4 digits of the ID.
+// Handover validation uses the separate pickup PIN stored on the order.
 app.post('/api/orders/:id/verify-pin', requireRole('driver', 'admin'), (req, res) => {
   const db = loadDatabase();
   const id = normalizeOrderId(req.params.id);
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
+  if (req.auth.payload.role === 'driver' && order.driverId !== req.auth.driver.id && !(order.driver && order.driver.id === req.auth.driver.id)) {
+    return res.status(403).json({ success: false, message: "You can only verify the PIN for a delivery assigned to you." });
+  }
+  if (order.paymentStatus !== 'paid' && order.paymentVerified !== true) {
+    return res.status(409).json({ success: false, message: "Payment must be verified before the order can be handed over." });
+  }
+  if (order.status !== 'arrived') {
+    return res.status(409).json({ success: false, message: "Mark arrival at the order destination before verifying the handover PIN." });
+  }
+
   const entered = cleanString((req.body || {}).pin, 20).replace(/[^0-9]/g, '');
-  const expected = String(order.pickupPin || String(order.id).slice(-4));
+  const expected = String(order.pickupPin || '');
 
   if (entered && entered === expected) {
     order.verifiedByDriver = true;
@@ -2871,7 +3269,7 @@ app.post('/api/orders/:id/verify-pin', requireRole('driver', 'admin'), (req, res
 
   return res.status(400).json({
     success: false,
-    message: `That code does not match ${order.id}. The customer's PIN is the last 4 digits of their Order ID.`
+    message: `That code does not match ${order.id}. Ask the customer to show their separate 4-digit pickup PIN.`
   });
 });
 
