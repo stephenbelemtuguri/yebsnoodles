@@ -1283,7 +1283,7 @@ app.post('/api/auth/admin/unlock', (req, res) => {
 });
 
 // DRIVER SIGN UP
-app.post('/api/auth/driver/signup', (req, res) => {
+app.post('/api/auth/driver/signup', async (req, res) => {
   const fname = cleanString(req.body && req.body.fname, 60);
   const lname = cleanString(req.body && req.body.lname, 60);
   const phone = cleanString(req.body && req.body.phone, 30);
@@ -1336,10 +1336,27 @@ app.post('/api/auth/driver/signup', (req, res) => {
     createdAt: new Date().toISOString()
   };
 
+  const previousAuditLogs = Array.isArray(db.auditLogs) ? db.auditLogs.slice() : db.auditLogs;
   db.drivers.push(newDriver);
-  saveDatabase(db);
+  db.auditLogs = db.auditLogs || [];
+  db.auditLogs.unshift({
+    id: "log-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+    timestamp: new Date().toISOString(),
+    action: "DRIVER_SIGNUP",
+    actor: username,
+    entity: "DRIVER_PORTAL",
+    details: JSON.stringify({ name: newDriver.name, phone, vehicle }),
+    ipOrAgent: (req.headers['x-forwarded-for'] || req.socket.remoteAddress || "LOCAL").toString()
+  });
+  if (db.auditLogs.length > 500) db.auditLogs.pop();
 
-  logAction("DRIVER_SIGNUP", username, "DRIVER_PORTAL", { name: newDriver.name, phone, vehicle }, req);
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) {
+    db.drivers = db.drivers.filter(driver => driver.id !== newDriver.id);
+    if (previousAuditLogs === undefined) delete db.auditLogs;
+    else db.auditLogs = previousAuditLogs;
+    return res.status(503).json({ success: false, message: persistenceError });
+  }
 
   // No token on signup — driver must wait for admin approval before they can log in
   res.status(201).json({

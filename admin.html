@@ -3632,7 +3632,7 @@
       e.preventDefault();
       adminAuthError.style.display = 'none';
       const username = adminUsernameInput.value.trim();
-      const password = adminPasswordInput.value.trim();
+      const password = adminPasswordInput.value;
 
       if (!username || !password) {
         adminAuthError.textContent = 'Enter both the admin username and password.';
