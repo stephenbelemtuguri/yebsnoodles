@@ -880,7 +880,7 @@
           <form id="driverLoginForm">
             <div class="auth-form-group">
               <label for="driverLoginUsername">Driver Username or Phone</label>
-              <input type="text" id="driverLoginUsername" class="auth-input" placeholder="e.g. kwamemensah1 or 0541234567" required autocomplete="username">
+              <input type="text" id="driverLoginUsername" class="auth-input" placeholder="Username from registration, or your phone number" required autocomplete="username">
             </div>
             <div class="auth-form-group">
               <label for="driverLoginPassword">Password</label>
@@ -2130,7 +2130,7 @@
         bootDriverDashboard();
       } else if (res.pending) {
         // Account pending admin approval — show waiting screen
-        showApprovalPendingScreen(res.driverId, res.driverName || username);
+        showApprovalPendingScreen(res.driverId, res.driverName || username, username);
       } else if (res.rejected) {
         driverAuthError.textContent = res.message || 'Your registration was not approved. Contact YEBS Noodles for assistance.';
         driverAuthError.style.display = 'block';
@@ -2331,7 +2331,7 @@
             <span style="font-size:0.8rem;">Waiting for admin approval before you can log in…</span>
           `;
           driverSignupSuccessBox.style.display = 'block';
-          setTimeout(() => showApprovalPendingScreen(res.driverId, res.driverName || ''), 1400);
+          setTimeout(() => showApprovalPendingScreen(res.driverId, res.driverName || '', res.username), 1400);
         } else {
           // Legacy path (pre-approved driver — should not happen with new system)
           const username = res.driver ? res.driver.username : res.username;
@@ -2383,8 +2383,9 @@
 
     // ── Approval-Pending Screen ─────────────────────────────────────────────
     let _approvalPollTimer = null;
+    let _approvalEventSource = null;
 
-    function showApprovalPendingScreen(driverId, driverName) {
+    function showApprovalPendingScreen(driverId, driverName, loginUsername = '') {
       if (driverAuthModal) driverAuthModal.style.display = 'none';
       let overlay = document.getElementById('approvalPendingOverlay');
       if (!overlay) {
@@ -2426,6 +2427,7 @@
 
       function onApprovalGranted() {
         if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
+        if (_approvalEventSource) { _approvalEventSource.close(); _approvalEventSource = null; }
         const banner = document.getElementById('approvalApprovedBanner');
         const goBtn  = document.getElementById('approvalGoToLoginBtn');
         const ind    = document.getElementById('approvalStatusIndicator');
@@ -2503,21 +2505,32 @@
         _approvalPollTimer = setInterval(checkApproval, 5000);
         // SSE real-time push
         if (typeof EventSource !== 'undefined') {
-          const es = new EventSource(`/api/sse/driver/${encodeURIComponent(driverId)}`);
-          es.onmessage = e => { try { const m=JSON.parse(e.data); if(m.type==='approved') onApprovalGranted(); } catch(_){} };
-          es.onerror = () => es.close();
+          _approvalEventSource = new EventSource(`/api/sse/driver/${encodeURIComponent(driverId)}`);
+          _approvalEventSource.onmessage = e => { try { const m=JSON.parse(e.data); if(m.type==='approved') onApprovalGranted(); } catch(_){} };
+          _approvalEventSource.onerror = () => {
+            if (_approvalEventSource) _approvalEventSource.close();
+            _approvalEventSource = null;
+          };
         }
       }
 
       document.getElementById('approvalCheckNowBtn').onclick = () => checkApproval(true);
-      document.getElementById('approvalGoToLoginBtn').onclick = () => {
+      function goToLogin() {
         if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
+        if (_approvalEventSource) { _approvalEventSource.close(); _approvalEventSource = null; }
         overlay.style.display = 'none';
         if (driverAuthModal) driverAuthModal.style.display = 'flex';
         if (typeof driverAuthTabLogin !== 'undefined') driverAuthTabLogin.click();
-      };
+        const usernameInput = document.getElementById('driverLoginUsername');
+        if (usernameInput && loginUsername) {
+          usernameInput.value = loginUsername;
+          document.getElementById('driverLoginPassword').focus();
+        }
+      }
+      document.getElementById('approvalGoToLoginBtn').onclick = goToLogin;
       document.getElementById('approvalBackBtn').onclick = () => {
         if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
+        if (_approvalEventSource) { _approvalEventSource.close(); _approvalEventSource = null; }
         overlay.style.display = 'none';
         if (driverAuthModal) driverAuthModal.style.display = 'flex';
         if (typeof driverAuthTabLogin !== 'undefined') driverAuthTabLogin.click();
