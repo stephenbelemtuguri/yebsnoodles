@@ -362,8 +362,10 @@ app.put('/api/admin/settings/pickup', requireRole('admin'), async (req, res) => 
 // missing instead of the customer being bounced to wa.me.
 function whatsappConfig() {
   return {
-    token: process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_CLOUD_TOKEN || '',
-    phoneId: process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID || '',
+    token: process.env.WHATSAPP_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN ||
+      process.env.WHATSAPP_CLOUD_TOKEN || process.env.META_WHATSAPP_TOKEN || '',
+    phoneId: process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID ||
+      process.env.META_WHATSAPP_PHONE_NUMBER_ID || process.env.META_PHONE_NUMBER_ID || '',
     to: String(process.env.WHATSAPP_TO || process.env.YEBS_WHATSAPP_TO || '233559103452').replace(/[^\d]/g, ''),
     version: process.env.WHATSAPP_API_VERSION || 'v20.0'
   };
@@ -385,6 +387,89 @@ function orderWhatsAppText(order) {
   return lines.join('\n');
 }
 
+// A free WhatsApp relay the owner can activate without a Meta developer
+// account: send "I allow callmebot to send me messages" to +34 644 51 95 23
+// once from the shop phone, then set WHATSAPP_CALLMEBOT_APIKEY=<key you receive>.
+function callmebotConfig() {
+  return {
+    apiKey: String(process.env.WHATSAPP_CALLMEBOT_APIKEY || process.env.CALLMEBOT_APIKEY || '').replace(/[^A-Za-z0-9]/g, ''),
+    phone: String(process.env.WHATSAPP_CALLMEBOT_PHONE || process.env.CALLMEBOT_PHONE || '').replace(/[^\d]/g, '')
+      || whatsappConfig().to
+  };
+}
+
+async function sendOwnerWhatsApp(text) {
+  const cfg = whatsappConfig();
+  const results = [];
+
+  // 1. Official WhatsApp Cloud API (Meta business number) when configured.
+  if (cfg.token && cfg.phoneId) {
+    try {
+      let providerError = null;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 10000);
+          const response = await fetch('https://graph.facebook.com/' + cfg.version + '/' + cfg.phoneId + '/messages', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + cfg.token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: cfg.to,
+              type: 'text',
+              text: { preview_url: false, body: String(text).slice(0, 3800) }
+            }),
+            signal: controller.signal
+          }).finally(() => clearTimeout(timer));
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error((payload.error && payload.error.message) || ('WhatsApp API ' + response.status));
+          return {
+            ok: true,
+            provider: 'whatsapp-cloud',
+            providerId: payload.messages && payload.messages[0] ? payload.messages[0].id : null
+          };
+        } catch (err) {
+          providerError = err;
+          if (attempt < 3) await new Promise(resolve => {
+            setTimeout(resolve, attempt * 750);
+          });
+        }
+      }
+      throw providerError || new Error('WhatsApp delivery failed.');
+    } catch (err) {
+      results.push('cloud: ' + err.message);
+    }
+  } else {
+    results.push('cloud: not-configured (set WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID on Render)');
+  }
+
+  // 2. CallMeBot fallback so the kitchen still gets the alert in background.
+  const bot = callmebotConfig();
+  if (bot.apiKey && bot.phone) {
+    try {
+      const url = 'https://api.callmebot.com/whatsapp.php?phone=%2B' + encodeURIComponent(bot.phone)
+        + '&text=' + encodeURIComponent(String(text).slice(0, 1000))
+        + '&apikey=' + encodeURIComponent(bot.apiKey);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch(url, { signal: controller.signal })
+        .finally(() => clearTimeout(timer));
+      const body = await response.text().catch(() => '');
+      if (!response.ok || /error|invalid/i.test(body.slice(0, 200))) {
+        throw new Error(body.slice(0, 160) || ('CallMeBot ' + response.status));
+      }
+      return { ok: true, provider: 'callmebot', providerId: null };
+    } catch (err) {
+      results.push('callmebot: ' + err.message);
+    }
+  } else {
+    results.push('callmebot: not-configured (set WHATSAPP_CALLMEBOT_APIKEY)');
+  }
+
+  return { ok: false, reason: results.filter(Boolean).join('; ') };
+}
+
 async function notifyOrderCreated(db, order) {
   db.notifications = db.notifications || [];
   const cfg = whatsappConfig();
@@ -398,41 +483,23 @@ async function notifyOrderCreated(db, order) {
     message: orderWhatsAppText(order)
   };
 
-  if (!cfg.token || !cfg.phoneId) {
-    entry.status = 'not-configured';
-    entry.reason = 'Set WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID to send kitchen alerts automatically.';
+  const delivered = await sendOwnerWhatsApp(entry.message);
+  if (delivered.ok) {
+    entry.status = 'sent';
+    entry.provider = delivered.provider;
+    entry.providerId = delivered.providerId || null;
+    entry.sentAt = new Date().toISOString();
   } else {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
-      const response = await fetch('https://graph.facebook.com/' + cfg.version + '/' + cfg.phoneId + '/messages', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + cfg.token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: cfg.to,
-          type: 'text',
-          text: { preview_url: false, body: entry.message }
-        }),
-        signal: controller.signal
-      }).finally(() => clearTimeout(timer));
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error((payload.error && payload.error.message) || ('WhatsApp API ' + response.status));
-      entry.status = 'sent';
-      entry.providerId = payload.messages && payload.messages[0] ? payload.messages[0].id : null;
-      entry.sentAt = new Date().toISOString();
-    } catch (err) {
-      entry.status = 'failed';
-      entry.reason = err.message;
-      console.warn('[whatsapp] order notification failed:', err.message);
-    }
+    entry.status = 'not-configured';
+    entry.reason = delivered.reason;
+    console.warn('[whatsapp] order notification not delivered:', delivered.reason);
   }
 
   order.notificationStatus = entry.status;
   db.notifications.unshift(entry);
   if (db.notifications.length > 500) db.notifications.length = 500;
-  saveDatabase(db);
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) throw new Error(persistenceError);
   return entry;
 }
 
@@ -3154,7 +3221,11 @@ app.post('/api/orders', async (req, res) => {
   };
 
   db.orders.unshift(newOrder);
-  saveDatabase(db);
+  const orderPersistenceError = await requireDurableSave(db);
+  if (orderPersistenceError) {
+    db.orders.shift();
+    return res.status(503).json({ success: false, persisted: false, message: orderPersistenceError });
+  }
 
   logAction("ORDER_CREATED", customer, newOrder.id, {
     total: newOrder.total,
@@ -3466,10 +3537,6 @@ app.post('/api/orders/:id/claim', requireRole('driver'), async (req, res) => {
   if (driverObj.isActive === false || driverObj.approvalStatus === 'pending' || driverObj.approvalStatus === 'rejected') {
     return res.status(403).json({ success: false, message: "Your rider account must be active and approved before accepting deliveries." });
   }
-  const lastGpsAt = Date.parse(driverObj.lastLocationUpdate || '');
-  if (!Number.isFinite(lastGpsAt) || Date.now() - lastGpsAt > 120000) {
-    return res.status(409).json({ success: false, message: "Turn on device location and wait for a live GPS fix before accepting a delivery." });
-  }
   const currentDriverId = order.driverId || (order.driver && order.driver.id);
   if (currentDriverId && currentDriverId !== driverObj.id) {
     return res.status(409).json({ success: false, message: "Another rider has already accepted this delivery." });
@@ -3478,6 +3545,7 @@ app.post('/api/orders/:id/claim', requireRole('driver'), async (req, res) => {
     return res.json({ success: true, message: "You already accepted this delivery.", order: projectOrder(order, 'driver') });
   }
   const driverName = driverObj.name || `${driverObj.fname || ''} ${driverObj.lname || ''}`.trim() || driverObj.username || 'YEBS Rider';
+  const previousOrder = JSON.parse(JSON.stringify(order));
 
   order.driverId = driverObj.id || null;
   order.driverName = driverName;
@@ -3498,7 +3566,12 @@ app.post('/api/orders/:id/claim', requireRole('driver'), async (req, res) => {
     order.status = 'driver_assigned';
   }
 
-  saveDatabase(db);
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) {
+    Object.keys(order).forEach(key => delete order[key]);
+    Object.assign(order, previousOrder);
+    return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+  }
   logAction("ORDER_CLAIMED", driverName, order.id, { driverId: driverObj.id, status: order.status }, req);
 
   if (typeof pushOrderUpdate === 'function') {
@@ -3508,7 +3581,10 @@ app.post('/api/orders/:id/claim', requireRole('driver'), async (req, res) => {
   const customerNotice = await sendRecoveryPhone(order.phone,
     `YEBS: Rider ${driverName} accepted your order ${order.id}. Live GPS tracking will start when the rider begins moving.`);
   order.driverNoticeStatus = customerNotice.ok ? 'sent' : 'not-delivered';
-  saveDatabase(db);
+  const noticePersistenceError = await requireDurableSave(db);
+  if (noticePersistenceError) {
+    return res.status(503).json({ success: false, persisted: false, message: noticePersistenceError });
+  }
 
   res.json({ success: true, message: `Delivery accepted by ${driverName}. Live tracking starts when the rider moves.`, order: projectOrder(order, 'driver') });
 });
@@ -5007,7 +5083,10 @@ app.get('/api/health', (req, res) => {
       provider: store.databaseProvider,
       path: store.remoteMode === 'local' ? DB_FILE : null,
       persistent: databasePersistent,
-      writable: databaseWritable
+      writable: databaseWritable,
+      // So "Supabase and Render are not talking to each other" can be seen at a
+      // glance: which connection strings exist and which backend is in use.
+      connections: store.diagnostics()
     },
     pickupPoint: pickup,
     deliveryFee: Number(db.settings && db.settings.deliveryFee) || 15,

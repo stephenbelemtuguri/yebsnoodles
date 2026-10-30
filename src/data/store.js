@@ -33,24 +33,22 @@ const RAW_DB_PASSWORD = String(
   ''
 ).trim();
 
-function resolveDatabaseUrl() {
-  const renderUrl = String(process.env.DATABASE_URL || '').trim();
-  const alternateUrl = String(
-    process.env.DATABASE_POOL_URL ||
-    process.env.SUPABASE_DB_URL ||
-    ''
-  ).trim();
-  const raw = alternateUrl || renderUrl;
-  if (!raw) return '';
+/**
+ * Every Postgres connection string the host may have configured, in the order
+ * they should be tried. A deployment used to pick exactly one and fail hard
+ * with "password authentication failed" when the stale one won; now every
+ * candidate is attempted in turn so one bad credential never takes the store
+ * down and a backup backend can take over.
+ */
+function normalizeDatabaseUrl(raw) {
+  if (!raw || !String(raw).trim()) return '';
   try {
-    const url = new URL(raw);
-    if (
-      alternateUrl &&
-      url.hostname.endsWith('.pooler.supabase.com') &&
-      url.username === 'postgres'
-    ) {
-      const projectHost = new URL(SUPABASE_URL).hostname;
-      const projectRef = projectHost.match(/^([a-z0-9]+)\.supabase\.co$/i)?.[1];
+    const url = new URL(String(raw).trim());
+    if (url.hostname.endsWith('.pooler.supabase.com') && url.username === 'postgres') {
+      // Supabase poolers want the project ref after the role:
+      // postgres.<project-ref>@...
+      const projectRef = String(SUPABASE_URL || '')
+        .match(/^https:\/\/([a-z0-9]+)\.supabase\.co/i)?.[1];
       if (projectRef) url.username = `postgres.${projectRef}`;
     }
     // Accept the raw password separately so characters like @ : # / do not
@@ -58,27 +56,36 @@ function resolveDatabaseUrl() {
     if (RAW_DB_PASSWORD) url.password = RAW_DB_PASSWORD;
     return url.toString();
   } catch {
-    return raw;
+    return String(raw).trim();
   }
 }
 
-const DATABASE_URL = resolveDatabaseUrl();
+// Pooler first (IPv4-friendly and works on hosts without direct connections),
+// then the direct database URL, then Render's own injected database.
+const DATABASE_URL_CANDIDATES = [
+  normalizeDatabaseUrl(process.env.DATABASE_POOL_URL),
+  normalizeDatabaseUrl(process.env.SUPABASE_DB_URL),
+  normalizeDatabaseUrl(process.env.DATABASE_URL)
+].filter((value, index, all) => value && all.indexOf(value) === index);
+
+const DATABASE_URL = DATABASE_URL_CANDIDATES[0] || '';
 const TABLE = String(process.env.SUPABASE_STATE_TABLE || 'yebs_state').replace(/[^a-zA-Z0-9_]/g, '') || 'yebs_state';
 const ROW_ID = 'main';
 
-const postgresEnabled = Boolean(DATABASE_URL);
-const restEnabled = !postgresEnabled && Boolean(SUPABASE_URL && SUPABASE_KEY);
-const remoteEnabled = restEnabled || postgresEnabled;
-const remoteMode = restEnabled ? 'supabase' : postgresEnabled ? 'postgres' : 'local';
+const restConfigured = Boolean(SUPABASE_URL && SUPABASE_KEY);
+const postgresEnabled = DATABASE_URL_CANDIDATES.length > 0;
+const remoteEnabled = restConfigured || postgresEnabled;
+let remoteMode = postgresEnabled ? 'postgres' : restConfigured ? 'supabase' : 'local';
 let databaseProvider = remoteMode;
-if (postgresEnabled) {
-  try {
-    databaseProvider = /supabase\.(com|co)$/i.test(new URL(DATABASE_URL).hostname)
+try {
+  if (postgresEnabled) {
+    databaseProvider = /supabase\.co$/i.test(new URL(DATABASE_URL).hostname) ||
+      /supabase\.com$/i.test(new URL(DATABASE_URL).hostname)
       ? 'supabase-postgres'
       : 'postgres';
-  } catch {
-    databaseProvider = 'postgres';
   }
+} catch {
+  databaseProvider = postgresEnabled ? 'postgres' : databaseProvider;
 }
 
 let cache = null;
@@ -87,6 +94,9 @@ let pending = Promise.resolve();
 let restMutationTail = Promise.resolve();
 let pgPool = null;
 let pgReady = null;
+// Flipped to 'rest' once a Postgres connection attempt fails and the Supabase
+// REST key is available, so reads and writes stay on one backend.
+let failoverBackend = null;
 
 function headers(extra = {}) {
   return {
@@ -163,34 +173,78 @@ function loadPg() {
   }
 }
 
+let activeConnectionString = DATABASE_URL || '';
+
+function describeProvider(connectionString) {
+  try {
+    const host = new URL(connectionString).hostname;
+    return /supabase\.co$/i.test(host) || /supabase\.com$/i.test(host)
+      ? 'supabase-postgres'
+      : 'postgres';
+  } catch {
+    return 'postgres';
+  }
+}
+
+function pgPoolFor(connectionString) {
+  const { Pool } = loadPg();
+  const pool = new Pool({
+    connectionString,
+    // Hosted Postgres (Supabase/Render) requires TLS.
+    ssl: /supabase|pooler|render\.com|dpg-/i.test(connectionString) ? { rejectUnauthorized: false } : undefined,
+    max: Number(process.env.PG_POOL_MAX || 2),
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 20000),
+    query_timeout: Number(process.env.PG_QUERY_TIMEOUT_MS || 20000),
+    statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS || 20000),
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000
+  });
+  pool.on('error', err => console.error('[store] Postgres pool error:', err.message));
+  return pool;
+}
+
+/**
+ * Connect once, create the state table if it is missing, then reuse the pool.
+ * Every configured connection string is tried in turn — a stale password on
+ * one of them (Render's own database, an old pooler URL) must not stop the
+ * store from reaching the Supabase row.
+ */
+async function connectPostgres() {
+  let lastError = null;
+  const candidates = activeConnectionString
+    ? [activeConnectionString, ...DATABASE_URL_CANDIDATES.filter(u => u !== activeConnectionString)]
+    : DATABASE_URL_CANDIDATES;
+  for (const candidate of candidates) {
+    let pool = null;
+    try {
+      pool = pgPoolFor(candidate);
+      await pool.query(
+        `create table if not exists public.${TABLE} (
+           id text primary key,
+           data jsonb not null,
+           updated_at timestamptz not null default now()
+         )`
+      );
+      await pool.query(`alter table public.${TABLE} enable row level security`).catch(() => {});
+      activeConnectionString = candidate;
+      remoteMode = 'postgres';
+      databaseProvider = describeProvider(candidate);
+      console.log(`[store] Postgres connected via ${describeProvider(candidate)} (${new URL(candidate).host}).`);
+      return pool;
+    } catch (err) {
+      lastError = err;
+      console.warn(`[store] Postgres candidate failed (${err.code || err.message}): dropping ${new URL(candidate).host}.`);
+      if (pool) await pool.end().catch(() => {});
+    }
+  }
+  throw lastError || new Error('No Postgres connection string is configured.');
+}
+
 /** Connect once, create the state table if it is missing, then reuse the pool. */
 function ensurePostgres() {
   if (pgReady) return pgReady;
-  pgReady = (async () => {
-    const { Pool } = loadPg();
-    pgPool = new Pool({
-      connectionString: DATABASE_URL,
-      // Hosted Postgres (Supabase/Render) requires TLS.
-      ssl: /supabase|pooler|render\.com|dpg-/i.test(DATABASE_URL) ? { rejectUnauthorized: false } : undefined,
-      max: Number(process.env.PG_POOL_MAX || 2),
-      idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 20000),
-      query_timeout: Number(process.env.PG_QUERY_TIMEOUT_MS || 20000),
-      statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS || 20000),
-      keepAlive: true,
-      keepAliveInitialDelayMillis: 10000
-    });
-    pgPool.on('error', err => console.error('[store] Postgres pool error:', err.message));
-    await pgPool.query(
-      `create table if not exists public.${TABLE} (
-         id text primary key,
-         data jsonb not null,
-         updated_at timestamptz not null default now()
-       )`
-    );
-    await pgPool.query(`alter table public.${TABLE} enable row level security`).catch(() => {});
-    return pgPool;
-  })().catch(async err => {
+  pgReady = connectPostgres().catch(async err => {
     pgReady = null;
     if (pgPool) {
       const failedPool = pgPool;
@@ -198,6 +252,9 @@ function ensurePostgres() {
       await failedPool.end().catch(() => {});
     }
     throw err;
+  }).then(pool => {
+    pgPool = pool;
+    return pool;
   });
   return pgReady;
 }
@@ -240,12 +297,29 @@ async function writePostgres(data) {
   });
 }
 
+/**
+ * Read from the active backend. When Postgres is unreachable (bad credential,
+ * paused project, network) and the Supabase REST key is configured, the REST
+ * backend takes over so the site keeps working with the same shared row.
+ */
 async function readRemote() {
-  return restEnabled ? readRest() : readPostgres();
+  if (!DATABASE_URL_CANDIDATES.length) return readRest();
+  try {
+    return await readPostgres();
+  } catch (pgErr) {
+    if (!restConfigured || failoverBackend === 'rest') throw pgErr;
+    failoverBackend = 'rest';
+    console.warn('[store] Postgres unreachable, switching to the Supabase REST backend:', pgErr.message);
+    return readRest();
+  }
 }
 
+/** Write to whichever backend produced the last successful read. */
 async function writeRemote(data) {
-  return restEnabled ? writeRest(data) : writePostgres(data);
+  if (failoverBackend === 'rest' || !DATABASE_URL_CANDIDATES.length) {
+    return writeRest(data);
+  }
+  return writePostgres(data);
 }
 
 /**
@@ -321,7 +395,9 @@ async function refresh(force = false) {
 }
 
 async function acquireMutationLock() {
-  if (remoteMode === 'supabase') {
+  const backend = failoverBackend
+    || (remoteMode === 'supabase' ? 'supabase' : postgresEnabled ? 'postgres' : 'local');
+  if (backend === 'supabase') {
     let releaseGate;
     const previousMutation = restMutationTail;
     restMutationTail = new Promise(resolve => { releaseGate = resolve; });
@@ -341,7 +417,7 @@ async function acquireMutationLock() {
       releaseGate();
     };
   }
-  if (remoteMode !== 'postgres') {
+  if (backend === 'local') {
     await refresh(true);
     if (remoteEnabled && !canPersist()) throw new Error('Persistent storage is unavailable.');
     return async () => {};
@@ -436,6 +512,26 @@ function status() {
   return remoteMode;
 }
 
+/** Full picture for /api/health so connectivity problems are visible at once. */
+function diagnostics() {
+  const pgTried = DATABASE_URL_CANDIDATES.map(url => {
+    try { return new URL(url).host; } catch { return 'invalid-url'; }
+  });
+  return {
+    injector: DATABASE_URL_CANDIDATES.length ? 'postgres' : (restConfigured ? 'supabase-rest' : 'local-file'),
+    postgres: {
+      configured: DATABASE_URL_CANDIDATES.length > 0,
+      candidates: pgTried,
+      using: pgTried[0]
+    },
+    supabaseRest: {
+      configured: restConfigured,
+      project: SUPABASE_URL ? (SUPABASE_URL.match(/^https:\/\/([a-z0-9]+)\./i)?.[1] || null) : null,
+      failover: failoverBackend === 'rest'
+    }
+  };
+}
+
 module.exports = {
   init,
   refresh,
@@ -446,6 +542,7 @@ module.exports = {
   isRemote,
   canPersist,
   status,
+  diagnostics,
   remoteEnabled,
   remoteMode,
   databaseProvider,
