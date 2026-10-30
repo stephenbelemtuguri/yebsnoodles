@@ -920,7 +920,7 @@ async function requireDurableSave(db) {
 }
 
 // One-time upgrade of any legacy plaintext passwords to bcrypt.
-function migratePasswords() {
+async function migratePasswords() {
   const db = loadDatabase();
   let changed = 0;
   const upgrade = (account, label) => {
@@ -944,7 +944,10 @@ function migratePasswords() {
       details: `${changed} legacy password(s) upgraded to bcrypt with unique salts.`,
       ipOrAgent: "LOCAL"
     });
-    saveDatabase(db);
+    const result = await saveDatabase(db);
+    if (!result || !result.ok) {
+      throw new Error(`Failed to persist password migration: ${(result && result.error) || 'storage backend unavailable'}`);
+    }
     console.log(`[security] ${changed} password(s) upgraded to bcrypt.`);
   }
   return changed;
@@ -3926,7 +3929,7 @@ app.get('/api/drivers/:id/approval', (req, res) => {
 // 9. ADMIN SETTINGS — Change username / password
 // ==========================================================
 
-app.post('/api/admin/settings/credentials', requireRole('admin'), (req, res) => {
+app.post('/api/admin/settings/credentials', requireRole('admin'), async (req, res) => {
   const { currentPassword, newUsername, newPassword } = req.body || {};
   const db = loadDatabase();
   const admin = db.admins.find(a => a.id === req.auth.admin.id);
@@ -3938,7 +3941,21 @@ app.post('/api/admin/settings/credentials', requireRole('admin'), (req, res) => 
     return res.status(401).json({ success: false, message: "Current password is incorrect." });
   }
 
+  const previousCredentials = {
+    username: admin.username,
+    password: admin.password,
+    passwordUpdatedAt: admin.passwordUpdatedAt,
+    sessionEpoch: admin.sessionEpoch
+  };
+  const previousAuditLogs = Array.isArray(db.auditLogs) ? db.auditLogs.slice() : db.auditLogs;
   let changed = [];
+  if (newPassword && String(newPassword).length < 12) {
+    return res.status(400).json({ success: false, message: "New password must be at least 12 characters." });
+  }
+  if (newPassword && String(newPassword) === PUBLISHED_DEFAULT_ADMIN_PASSWORD) {
+    return res.status(400).json({ success: false, message: "Choose a unique password. The published default password is not allowed." });
+  }
+
   if (newUsername && cleanString(newUsername, 80).toLowerCase() !== admin.username.toLowerCase()) {
     const nu = cleanString(newUsername, 80);
     if (db.admins.some(a => a.id !== admin.id && String(a.username).toLowerCase() === nu.toLowerCase())) {
@@ -3948,12 +3965,6 @@ app.post('/api/admin/settings/credentials', requireRole('admin'), (req, res) => 
     changed.push('username');
   }
   if (newPassword) {
-    if (String(newPassword).length < 12) {
-      return res.status(400).json({ success: false, message: "New password must be at least 12 characters." });
-    }
-    if (String(newPassword) === PUBLISHED_DEFAULT_ADMIN_PASSWORD) {
-      return res.status(400).json({ success: false, message: "Choose a unique password. The published default password is not allowed." });
-    }
     admin.password = hashPassword(String(newPassword));
     admin.passwordUpdatedAt = new Date().toISOString();
     admin.sessionEpoch = (admin.sessionEpoch || 0) + 1;
@@ -3962,8 +3973,25 @@ app.post('/api/admin/settings/credentials', requireRole('admin'), (req, res) => 
 
   if (!changed.length) return res.status(400).json({ success: false, message: "No changes provided." });
 
-  saveDatabase(db);
-  logAction("ADMIN_CREDENTIALS_UPDATED", admin.username, "SETTINGS", { changed }, req);
+  db.auditLogs = db.auditLogs || [];
+  db.auditLogs.unshift({
+    id: "log-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+    timestamp: new Date().toISOString(),
+    action: "ADMIN_CREDENTIALS_UPDATED",
+    actor: admin.username || "ANONYMOUS",
+    entity: "SETTINGS",
+    details: JSON.stringify({ changed }),
+    ipOrAgent: (req.headers['x-forwarded-for'] || req.socket.remoteAddress || "LOCAL").toString()
+  });
+  if (db.auditLogs.length > 500) db.auditLogs.pop();
+
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) {
+    Object.assign(admin, previousCredentials);
+    if (previousAuditLogs === undefined) delete db.auditLogs;
+    else db.auditLogs = previousAuditLogs;
+    return res.status(503).json({ success: false, message: persistenceError });
+  }
 
   const token = createToken(admin.id, 'admin', { username: admin.username, name: admin.name, sessionEpoch: admin.sessionEpoch || 0 });
   res.json({
@@ -4751,6 +4779,7 @@ app.get('/api/health', (req, res) => {
         : store.remoteMode === 'postgres'
           ? 'postgres'
           : 'supabase-rest',
+      provider: store.databaseProvider,
       path: store.remoteMode === 'local' ? DB_FILE : null,
       persistent: databasePersistent,
       writable: databaseWritable
@@ -4797,13 +4826,35 @@ function start() {
   if (!startPromise) {
     startPromise = (async () => {
       const data = await store.init(loadDatabase);
+      const previousResetVersion = String(data.settings && data.settings.adminCredentialResetVersion || '');
       if (ensureSystemAccounts(data)) {
-        store.set(data);
+        const result = await store.set(data);
+        if (!result || !result.ok) {
+          throw new Error(`Failed to persist startup account changes: ${(result && result.error) || 'storage backend unavailable'}`);
+        }
         if (store.remoteMode === 'local') {
           try { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); } catch (e) { /* read-only fs */ }
         }
       }
-      migratePasswords();
+      const resetApplied = ADMIN_CREDENTIAL_RESET_VERSION &&
+        previousResetVersion !== ADMIN_CREDENTIAL_RESET_VERSION &&
+        String(data.settings && data.settings.adminCredentialResetVersion || '') === ADMIN_CREDENTIAL_RESET_VERSION;
+      if (resetApplied) {
+        await store.refresh(true);
+        if (store.remoteMode !== 'local' && !store.canPersist()) {
+          throw new Error('Failed to verify the administrator credential reset against persistent storage.');
+        }
+        const persisted = store.get();
+        const persistedAdmin = (persisted.admins || []).find(admin =>
+          String(admin.username || '').toLowerCase() === DEFAULT_ADMIN_USERNAME.toLowerCase()
+        );
+        if (!persistedAdmin ||
+            String(persisted.settings && persisted.settings.adminCredentialResetVersion || '') !== ADMIN_CREDENTIAL_RESET_VERSION ||
+            !verifyPassword(DEFAULT_ADMIN_PASSWORD, persistedAdmin.password)) {
+          throw new Error('Administrator credential reset did not match the durable database state.');
+        }
+      }
+      await migratePasswords();
       return data;
     })().catch(err => {
       startPromise = null;

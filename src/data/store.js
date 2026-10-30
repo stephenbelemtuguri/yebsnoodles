@@ -70,6 +70,16 @@ const postgresEnabled = Boolean(DATABASE_URL);
 const restEnabled = !postgresEnabled && Boolean(SUPABASE_URL && SUPABASE_KEY);
 const remoteEnabled = restEnabled || postgresEnabled;
 const remoteMode = restEnabled ? 'supabase' : postgresEnabled ? 'postgres' : 'local';
+let databaseProvider = remoteMode;
+if (postgresEnabled) {
+  try {
+    databaseProvider = /supabase\.(com|co)$/i.test(new URL(DATABASE_URL).hostname)
+      ? 'supabase-postgres'
+      : 'postgres';
+  } catch {
+    databaseProvider = 'postgres';
+  }
+}
 
 let cache = null;
 let initPromise = null;
@@ -353,6 +363,7 @@ module.exports = {
   status,
   remoteEnabled,
   remoteMode,
+  databaseProvider,
   DATABASE_URL,
   TABLE
 };

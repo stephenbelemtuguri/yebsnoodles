@@ -56,6 +56,7 @@ describe('persistent store recovery', () => {
     poolUrl.username = 'postgres.projectref123';
 
     expect(store.DATABASE_URL).toBe(poolUrl.toString());
+    expect(store.databaseProvider).toBe('supabase-postgres');
   });
 
   test('uses DATABASE_URL when no pooler URL is configured', () => {
