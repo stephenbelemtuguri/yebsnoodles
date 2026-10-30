@@ -2876,7 +2876,7 @@
         ? 'The kitchen has been notified automatically.'
         : newOrder.notificationStatus === 'queued'
           ? 'WhatsApp bot is working. Please wait while the order message is sent.'
-          : 'The kitchen sees your order instantly in the dashboard.';
+          : 'WhatsApp delivery is pending configuration. Your order is saved and visible in the admin dashboard.';
 
       // Clear the cart so the order is not accidentally submitted twice.
       Object.keys(cart).forEach(k => delete cart[k]);

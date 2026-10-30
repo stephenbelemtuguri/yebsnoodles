@@ -2211,7 +2211,7 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
 
   // Try OSRM public routing API (free, no key)
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&steps=false`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&steps=true`;
     const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined });
     if (res.ok) {
       const data = await res.json();
@@ -2225,6 +2225,19 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
           lineJoin: 'round',
           lineCap: 'round'
         }).addTo(map);
+        const legs = route.legs || [];
+        const maneuverSteps = legs.flatMap(leg => leg.steps || [])
+          .filter(step => step.maneuver && step.maneuver.location)
+          .map(step => ({
+            instruction: step.maneuver.instruction || step.name || 'Continue on the road',
+            distanceMeters: Number(step.distance) || 0,
+            durationSeconds: Number(step.duration) || 0
+          }));
+        layer.routeMeta = {
+          distanceMeters: Number(route.distance) || 0,
+          durationSeconds: Number(route.duration) || 0,
+          steps: maneuverSteps
+        };
         return layer;
       }
     }
