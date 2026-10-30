@@ -1072,6 +1072,7 @@
     // Map & Markers
     let map = null;
     let driverMarker = null;
+    let customerMarker = null;
     let pickupMarker = null;
     let routeLine = null;
     let currentCoords = { lat: RESTAURANT_COORDS.lat, lng: RESTAURANT_COORDS.lng };
@@ -1309,6 +1310,28 @@
       if (mapPickupPointLabel) mapPickupPointLabel.textContent = name;
     }
 
+    function updateCustomerMarker(lat, lng, name, customerName) {
+      if (!map || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return;
+      const customerIcon = L.divIcon({
+        className: 'yebs-customer-marker',
+        html: `<div style="background:#fff;color:#173d30;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;border:3px solid #e57a45;box-shadow:0 4px 14px rgba(23,61,48,.35);font-size:22px;">🧑</div>`,
+        iconSize: [42, 42],
+        iconAnchor: [21, 21]
+      });
+      if (customerMarker) {
+        customerMarker.setLatLng([Number(lat), Number(lng)]);
+        customerMarker.setIcon(customerIcon);
+      } else {
+        customerMarker = L.marker([Number(lat), Number(lng)], { icon: customerIcon }).addTo(map);
+      }
+      customerMarker.bindTooltip(`<strong>${customerName || 'Customer'}</strong><br>${name}`, {
+        permanent: false,
+        direction: 'top',
+        offset: [0, -18]
+      });
+      customerMarker.bindPopup(`<b>Customer destination</b><br>${customerName ? `${customerName}<br>` : ''}${name}`);
+    }
+
     function updateGoogleMapsAppLink(lat, lng) {
       openGoogleMapsAppBtn.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
     }
@@ -1380,6 +1403,7 @@
       navigationOrderId = order.id;
       if (map) {
         updatePickupMarker(target.lat, target.lng, target.name);
+        updateCustomerMarker(target.lat, target.lng, target.name, order.customer || '');
         const bounds = L.latLngBounds([[target.lat, target.lng]]);
         if (hasLiveGpsFix) bounds.extend([currentCoords.lat, currentCoords.lng]);
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });

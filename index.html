@@ -3071,9 +3071,9 @@
 
       const custIcon = L.divIcon({
         className: 'bolt-dest-marker',
-        html: `<div style="background:#173d30; color:white; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; border:3px solid white; box-shadow:0 4px 12px rgba(0,0,0,0.3); font-size:18px;">📍</div>`,
-        iconSize: [36, 36],
-        iconAnchor: [18, 18]
+        html: `<div style="background:#fff; color:#173d30; width:44px; height:44px; border-radius:50%; display:grid; place-items:center; border:3px solid #e57a45; box-shadow:0 5px 16px rgba(23,61,48,.35); font-size:23px;">🧑</div>`,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22]
       });
 
       trackDriverMarker = L.marker([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], { icon: driverIcon }).addTo(trackMap);
@@ -3539,7 +3539,7 @@
           trackCustMarker.bindPopup(
             isCollectionOrder
               ? `<b>📍 Shared pickup point</b><br>${targetName}`
-              : `<b>🏠 Delivery address</b><br>${targetName}`
+              : `<b>🧑 Customer location</b><br>${targetName}`
           );
         } else {
           trackCustMarker.setOpacity(0);

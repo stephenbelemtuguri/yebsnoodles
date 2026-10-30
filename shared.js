@@ -2228,6 +2228,16 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
           .map(([lng, lat]) => [Number(lat), Number(lng)])
           .filter(point => point.every(Number.isFinite))
           .filter((point, index, points) => index === 0 || point[0] !== points[index - 1][0] || point[1] !== points[index - 1][1]);
+        const cleanedLatLngs = latlngs.filter((point, index) => {
+          if (index === 0 || index === latlngs.length - 1) return true;
+          const previous = latlngs[index - 1];
+          const next = latlngs[index + 1];
+          const inStep = Math.hypot(point[0] - previous[0], point[1] - previous[1]);
+          const outStep = Math.hypot(next[0] - point[0], next[1] - point[1]);
+          return inStep < 0.018 && outStep < 0.018;
+        });
+        const routeLatLngs = cleanedLatLngs.length >= 2 ? cleanedLatLngs : latlngs;
+        const latlngs = routeLatLngs;
         if (latlngs.length < 2) throw new Error('OSRM returned an unusable route.');
         const group = L.layerGroup().addTo(map);
         L.polyline(latlngs, {
