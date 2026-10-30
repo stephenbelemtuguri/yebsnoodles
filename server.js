@@ -1681,13 +1681,14 @@ app.post('/api/auth/recovery/start', async (req, res) => {
   });
 
   const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  const expiresAt = new Date(Date.now() + RECOVERY_TTL_MS);
   db.recoveryCodes.push({
     id: 'rcv-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
     role,
     accountId: account.id,
     codeHash: hashPassword(code),
     createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + RECOVERY_TTL_MS).toISOString(),
+    expiresAt: expiresAt.toISOString(),
     attempts: 0,
     usedAt: null
   });
@@ -1705,7 +1706,15 @@ app.post('/api/auth/recovery/start', async (req, res) => {
   const delivered = emailResult.ok === true || smsResult.ok === true;
 
   const echoSetting = String(process.env.RECOVERY_SHOW_CODE || '').toLowerCase();
-  const showCode = echoSetting === '1' || (echoSetting !== '0' && isLocalRequest(req));
+  const showCode = echoSetting !== '0' && isLocalRequest(req);
+  const ownerLogFallback = role === 'admin' && !delivered;
+  if (ownerLogFallback) {
+    console.warn('[recovery] Admin password recovery code (restricted service logs only):', JSON.stringify({
+      username: account.username || account.name,
+      code,
+      expiresAt: expiresAt.toISOString()
+    }));
+  }
 
   console.log(`[recovery] Request for ${role} "${account.username || account.name}". Email: ${emailResult.ok ? 'Delivered' : emailResult.reason}, Phone: ${smsResult.ok ? 'Delivered' : smsResult.reason}.`);
 
@@ -1724,6 +1733,7 @@ app.post('/api/auth/recovery/start', async (req, res) => {
     smsDelivered: smsResult.ok,
     smsReason: smsResult.reason || null,
     phoneHint: maskPhone(phone),
+    ownerLogFallback,
     ...(showCode ? { code } : {})
   });
 });
@@ -4994,7 +5004,8 @@ app.get('/api/health', (req, res) => {
       sendGridConfigured: recoveryEmailSendGridReady,
       smtpConfigured: recoveryEmailSmtpReady,
       twilioConfigured: recoveryPhoneTwilioReady,
-      whatsappConfigured: Boolean(wa.token && wa.phoneId)
+      whatsappConfigured: Boolean(wa.token && wa.phoneId),
+      adminOwnerLogFallback: true
     },
     momo: {
       payTo: getMomoSettings(db).payTo,

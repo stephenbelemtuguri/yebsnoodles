@@ -8,9 +8,9 @@
 //   POST /api/auth/recovery/start   { role, identifier }
 //   POST /api/auth/recovery/verify  { role, identifier, code, password }
 //
-// A code is delivered over WhatsApp when the server has the Cloud API
-// configured. On a local machine the code is returned in the response and
-// filled in automatically.
+// A code is delivered through configured channels. If admin delivery is
+// unavailable, the owner can retrieve its short-lived code from restricted
+// hosting logs; codes are never exposed in production API responses.
 
 const STYLE_ID = 'yebs-recovery-styles';
 
@@ -129,7 +129,7 @@ export function openRecovery(role = 'admin') {
   const isAdmin = role === 'admin';
   const roleLabel = isAdmin ? 'admin' : 'rider';
   const idLabel = isAdmin ? 'Admin username, email, or phone' : 'Rider username, email, or phone number';
-  const idPlaceholder = isAdmin ? 'e.g. goodfood or yebsnoodles@gmail.com' : 'e.g. your username, email, or 0541234567';
+  const idPlaceholder = isAdmin ? 'e.g. your admin username or recovery phone' : 'e.g. your username, email, or 0541234567';
 
   let identifier = '';
   let stage = 1;
@@ -144,7 +144,7 @@ export function openRecovery(role = 'admin') {
       <div class="yebs-recovery-head">
         <button type="button" class="yebs-recovery-close" data-close aria-label="Close">&times;</button>
         <h3>Recover your ${roleLabel} password</h3>
-        <p>We will send a 6-digit code to your signup email (e.g. yebsnoodles@gmail.com) and phone number on file.</p>
+        <p>We will send a 6-digit code through the configured recovery channels. If admin delivery is unavailable, an authorized service owner can retrieve a short-lived fallback code from the hosting logs.</p>
       </div>
       <div class="yebs-recovery-body">
         <div class="yebs-recovery-step">
@@ -158,7 +158,7 @@ export function openRecovery(role = 'admin') {
                    placeholder="${idPlaceholder}" required>
             <div class="yebs-recovery-note">
               ${isAdmin
-                ? 'The code goes to <strong>yebsnoodles@gmail.com</strong> and the admin phone. You can enter <strong>goodfood</strong>, <strong>yebsnoodles@gmail.com</strong>, or your phone number.'
+                ? 'Enter your admin username, email, or recovery phone. When delivery services are unavailable, the one-time admin code is available only in restricted hosting logs.'
                 : 'The code goes to the email and phone number you signed up with.'}
             </div>
             <button type="submit" class="yebs-recovery-btn" data-send>Send recovery code</button>
@@ -264,9 +264,12 @@ export function openRecovery(role = 'admin') {
         } else if (data.code) {
           delivery.className = 'yebs-recovery-note';
           delivery.innerHTML = (lines.length ? lines.join('<br>') + '<br>' : '') + `⚡ Recovery code: <strong>${data.code}</strong> (autofilled below).`;
+        } else if (data.ownerLogFallback) {
+          delivery.className = 'yebs-recovery-note warn';
+          delivery.textContent = 'Email and phone delivery are not configured. An authorized Render owner can find the one-time code in the service logs by searching for “Admin password recovery code”. It expires in 10 minutes. Do not share the code.';
         } else if (data.canSelfRecover) {
           delivery.className = 'yebs-recovery-note warn';
-          delivery.innerHTML = (lines.length ? lines.join('<br>') + '<br>' : '') + 'No code was delivered. Ask the administrator to configure email or WhatsApp delivery, then request a new code.';
+          delivery.innerHTML = (lines.length ? lines.join('<br>') + '<br>' : '') + 'No code was delivered. Contact the account administrator to restore email, SMS, or WhatsApp recovery delivery.';
         } else {
           delivery.className = 'yebs-recovery-note warn';
           delivery.innerHTML = 'No recovery email or phone was found for this account. Contact the administrator to update the account contact details.';

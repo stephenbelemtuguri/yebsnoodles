@@ -134,9 +134,12 @@ opens a two-step dialog: request a 6-digit code, then set a new password.
 | Rider phone | The number used at sign-up |
 | Session safety | A successful reset bumps `sessionEpoch`, signing out every old session |
 
-When WhatsApp is not configured the server prints the code in its log and the
-dialog tells the user to ask the owner. The guaranteed owner fallback works
-without WhatsApp:
+When no email, SMS, or WhatsApp provider delivers an admin code, the server
+writes the 10-minute, single-use code only to restricted service logs. An
+authorized owner can request recovery and retrieve it from the hosting logs;
+the public API response never includes this fallback code. Rider recovery
+requires a configured delivery channel. The owner can also reset credentials
+from a trusted shell:
 
 ```bash
 # Reset the first admin account
@@ -150,8 +153,8 @@ The script writes to Supabase when `SUPABASE_URL` and
 `SUPABASE_SERVICE_ROLE_KEY` are set (the same store the deployed app uses),
 otherwise to `database.json`.
 
-> Never expose `RECOVERY_SHOW_CODE=1` on a public host: it returns the code in
-> the HTTP response. It is only meant for local development.
+> `RECOVERY_SHOW_CODE=1` only reveals codes for requests received directly from
+> localhost. It has no effect on public requests; use it only for local development.
 
 ---
 

@@ -229,8 +229,12 @@ Change the admin password in **Settings** before going live.
 
 Both login pages have **Forgot your password?**. It sends a 6-digit code over
 WhatsApp when `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` and
-`ADMIN_RECOVERY_PHONE` are set. If WhatsApp is not configured, the code is
-printed in the Render log, and the owner can always reset it from a shell:
+`ADMIN_RECOVERY_PHONE` are set. If no email, SMS, or WhatsApp provider delivers
+the code, an admin-only fallback writes the 10-minute, single-use code to the
+restricted Render service logs. In the Render Dashboard, open the service's
+**Logs**, request recovery again, and search for
+`Admin password recovery code`. Do not share the code or expose service logs.
+If you cannot access the logs, reset the password from a trusted shell:
 
 ```bash
 npm run reset:password -- admin "NewStrongPassword"
@@ -238,8 +242,9 @@ npm run reset:password -- driver "NewStrongPassword" 0541234567
 ```
 
 The script uses the same `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (or
-`DATABASE_URL`) the service uses. Do **not** set `RECOVERY_SHOW_CODE=1` on
-Render: it returns codes in the HTTP response.
+`DATABASE_URL`) the service uses. `RECOVERY_SHOW_CODE=1` only reveals codes for
+requests received directly from localhost and has no effect on public requests;
+do not configure it on Render.
 
 ## 5. Notes
 
