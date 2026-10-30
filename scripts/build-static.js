@@ -16,7 +16,9 @@ const FILES = [
   'recovery.js',
   'nav.js',
   'sw.js',
-  'manifest.json'
+  'manifest.json',
+  'robots.txt',
+  'sitemap.xml'
 ];
 
 const DIRS = ['public', 'vendor'];

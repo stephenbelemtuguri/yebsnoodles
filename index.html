@@ -4,11 +4,39 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#173d30">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+  <meta name="googlebot" content="index, follow">
+  <meta name="author" content="YEBS Noodles">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="YEBS Noodles">
+  <meta property="og:title" content="YEBS Noodles | Order Fresh Noodles in Accra">
+  <meta property="og:description" content="Order fresh noodles in Accra and track your delivery live.">
+  <meta property="og:url" content="https://yebsnoodles.onrender.com/">
+  <meta property="og:image" content="https://yebsnoodles.onrender.com/logo.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="YEBS Noodles | Fresh Noodles Delivered">
+  <meta name="twitter:description" content="Order fresh noodles in Accra with live delivery tracking.">
+  <meta name="twitter:image" content="https://yebsnoodles.onrender.com/logo.png">
   <meta name="description" content="Fresh, satisfying spaghetti and noodles from YEBS Noodles. Order for pickup or delivery with live real-time GPS tracking in Accra.">
   <title>YEBS Noodles | Fresh from our kitchen & Live Order Tracking</title>
+  <link rel="canonical" href="https://yebsnoodles.onrender.com/">
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css" onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';">
   <script src="nav.js" defer></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Restaurant",
+    "@id": "https://yebsnoodles.onrender.com/#restaurant",
+    "name": "YEBS Noodles",
+    "url": "https://yebsnoodles.onrender.com/",
+    "image": "https://yebsnoodles.onrender.com/logo.png",
+    "telephone": "+233559103452",
+    "servesCuisine": ["Noodles", "African Fusion", "Spaghetti"],
+    "priceRange": "GH₵",
+    "areaServed": { "@type": "City", "name": "Accra" }
+  }
+  </script>
   <style>
     :root {
       color-scheme: light;
@@ -2653,7 +2681,8 @@
         const url = formatWhatsAppUrl('0559103452', editor.value.trim());
         modal.style.display = 'none';
         document.body.style.overflow = '';
-        window.open(url, '_blank', 'noopener,noreferrer');
+        const whatsappWindow = window.open(url, '_blank', 'noopener,noreferrer');
+        if (!whatsappWindow) window.location.assign(url);
       };
       document.getElementById('whatsappOrderPreviewCancel').onclick = () => {
         modal.style.display = 'none';
