@@ -54,6 +54,8 @@ describe('persistent store recovery', () => {
 
     const store = require('../src/data/store');
     poolUrl.username = 'postgres.projectref123';
+    poolUrl.port = '5432';
+    poolUrl.searchParams.delete('pgbouncer');
 
     expect(store.DATABASE_URL).toBe(poolUrl.toString());
     expect(store.databaseProvider).toBe('supabase-postgres');

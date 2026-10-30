@@ -51,6 +51,12 @@ function normalizeDatabaseUrl(raw) {
         .match(/^https:\/\/([a-z0-9]+)\.supabase\.co/i)?.[1];
       if (projectRef) url.username = `postgres.${projectRef}`;
     }
+    if (url.hostname.endsWith('.pooler.supabase.com')) {
+      // Port 6543 is Supabase transaction pooling. This application holds
+      // session-scoped advisory locks, so use the session pooler on 5432.
+      if (url.port === '6543') url.port = '5432';
+      url.searchParams.delete('pgbouncer');
+    }
     // Accept the raw password separately so characters like @ : # / do not
     // have to be URL-encoded by hand for alternate database URLs.
     if (RAW_DB_PASSWORD) url.password = RAW_DB_PASSWORD;
@@ -111,15 +117,21 @@ async function readRest() {
   const url = `${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${encodeURIComponent(ROW_ID)}&select=data,updated_at`;
   // A paused/misconfigured Supabase project must fail fast, not hang until the
   // serverless function times out (which surfaces as a 502 in the browser).
-  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(5000) });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Supabase read failed (${res.status}): ${body.slice(0, 300)}`);
+  const startedAt = Date.now();
+  try {
+    const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(8000) });
+    const rows = await res.json();
+    if (!res.ok) {
+      const body = Array.isArray(rows) ? '' : JSON.stringify(rows).slice(0, 300);
+      throw new Error(`Supabase read failed (${res.status}): ${body}`);
+    }
+    const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+    remoteUpdatedAt = row && row.updated_at ? row.updated_at : null;
+    return row ? row.data : null;
+  } catch (err) {
+    console.warn(`[store] REST read ${failoverBackend === 'rest' ? '(failover)' : ''}${Date.now() - startedAt}ms: ${err.message}`);
+    throw err;
   }
-  const rows = await res.json();
-  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
-  remoteUpdatedAt = row && row.updated_at ? row.updated_at : null;
-  return row ? row.data : null;
 }
 
 async function writeRest(data) {
@@ -192,9 +204,9 @@ function pgPoolFor(connectionString) {
     connectionString,
     // Hosted Postgres (Supabase/Render) requires TLS.
     ssl: /supabase|pooler|render\.com|dpg-/i.test(connectionString) ? { rejectUnauthorized: false } : undefined,
-    max: Number(process.env.PG_POOL_MAX || 2),
+    max: Number(process.env.PG_POOL_MAX || 1),
     idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 20000),
+    connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 30000),
     query_timeout: Number(process.env.PG_QUERY_TIMEOUT_MS || 20000),
     statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS || 20000),
     keepAlive: true,
@@ -555,9 +567,13 @@ module.exports = {
   canPersist,
   status,
   diagnostics,
-  remoteEnabled,
-  remoteMode,
-  databaseProvider,
-  DATABASE_URL,
+  // These are live getters on purpose: `remoteMode` and `databaseProvider`
+  // change when the backend fails over, and a plain "property: variable" export
+  // would be frozen at whatever the value was when the module was first
+  // required (which is exactly the stale-"postgres"-after-failover bug).
+  get remoteEnabled() { return remoteEnabled; },
+  get remoteMode() { return remoteMode; },
+  get databaseProvider() { return databaseProvider; },
+  get DATABASE_URL() { return activeConnectionString; },
   TABLE
 };
