@@ -68,13 +68,15 @@ a database key. Everything else is optional:
 
 ### Recovering an existing administrator login
 
-On Render, the app derives `ADMIN_CREDENTIAL_RESET_VERSION` from Render's
-`RENDER_GIT_COMMIT`; no script edits dashboard settings or needs a Render API
-token. Each new Git commit deploy therefore uses a fresh marker, while restarts
-of the same commit do not reset repeatedly. Outside Render, the app continues
-to use the manually configured `ADMIN_CREDENTIAL_RESET_VERSION`.
+On Render, the `npm install` build step generates a unique deployment marker.
+At startup the app assigns it to the effective
+`ADMIN_CREDENTIAL_RESET_VERSION`; no script edits dashboard settings or needs a
+Render API token. Each new build/deploy therefore uses a fresh marker, while
+process restarts of the same deployed build do not reset repeatedly. Outside
+Render, the app continues to use the manually configured
+`ADMIN_CREDENTIAL_RESET_VERSION`.
 
-**Important:** every new Git commit deployment resets the admin password back
+**Important:** every new build/deployment resets the admin password back
 to the value in Render's `ADMIN_PASSWORD` and invalidates existing admin
 sessions. Keep that value current and private. Password changes made later in
 the admin GUI will be replaced by the Render value on the next code deployment.

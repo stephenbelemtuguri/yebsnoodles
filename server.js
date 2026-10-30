@@ -20,7 +20,14 @@ const bcrypt = require('bcryptjs');
 const store = require('./src/data/store');
 const { resolveAdminCredentialResetVersion } = require('./scripts/render-deploy-version');
 
-const resolvedAdminCredentialResetVersion = resolveAdminCredentialResetVersion();
+let renderBuildVersion = '';
+if (process.env.RENDER || process.env.RENDER_SERVICE_ID) {
+  const renderBuildVersionPath = path.join(__dirname, '.render-deploy-version');
+  if (fs.existsSync(renderBuildVersionPath)) {
+    renderBuildVersion = fs.readFileSync(renderBuildVersionPath, 'utf8').trim();
+  }
+}
+const resolvedAdminCredentialResetVersion = resolveAdminCredentialResetVersion(process.env, renderBuildVersion);
 if (resolvedAdminCredentialResetVersion) {
   process.env.ADMIN_CREDENTIAL_RESET_VERSION = resolvedAdminCredentialResetVersion;
 }

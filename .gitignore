@@ -10,6 +10,7 @@ yarn-error.log*
 .env.*
 !.env.example
 .auth-secret
+.render-deploy-version
 
 # Runtime data
 logs/

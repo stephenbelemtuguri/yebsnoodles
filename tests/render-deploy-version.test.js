@@ -1,28 +1,36 @@
-const { resolveAdminCredentialResetVersion } = require('../scripts/render-deploy-version');
+const {
+  createDeploymentVersion,
+  resolveAdminCredentialResetVersion
+} = require('../scripts/render-deploy-version');
 
 describe('Render administrator reset version', () => {
-  test('uses the Git commit as a stable version for one deployment', () => {
-    const env = { RENDER_GIT_COMMIT: 'abc123' };
-    const first = resolveAdminCredentialResetVersion(env);
-    const second = resolveAdminCredentialResetVersion(env);
+  test('generates a unique marker for each new build', () => {
+    const first = createDeploymentVersion();
+    const second = createDeploymentVersion();
 
-    expect(first).toBe('render-deploy-abc123');
-    expect(second).toBe(first);
-  });
-
-  test('produces a new version for a different deployed commit', () => {
-    const first = resolveAdminCredentialResetVersion({
-      RENDER_GIT_COMMIT: 'first-commit'
-    });
-    const second = resolveAdminCredentialResetVersion({
-      RENDER_GIT_COMMIT: 'second-commit'
-    });
-
+    expect(first).toMatch(/^build-\d+-[0-9a-f-]{36}$/);
     expect(second).not.toBe(first);
   });
 
-  test('uses the manually configured version when not running on Render', () => {
+  test('uses the generated build marker on Render', () => {
+    const version = resolveAdminCredentialResetVersion(
+      { RENDER: 'true', RENDER_GIT_COMMIT: 'commit-id' },
+      'build-marker'
+    );
+
+    expect(version).toBe('render-deploy-build-marker');
+  });
+
+  test('falls back to the Render commit if a build marker is unavailable', () => {
     expect(resolveAdminCredentialResetVersion({
+      RENDER: 'true',
+      RENDER_GIT_COMMIT: 'commit-id'
+    })).toBe('render-deploy-commit-id');
+  });
+
+  test('uses the manually configured version outside Render', () => {
+    expect(resolveAdminCredentialResetVersion({
+      RENDER: '',
       ADMIN_CREDENTIAL_RESET_VERSION: 'manual-version'
     })).toBe('manual-version');
   });
