@@ -39,7 +39,15 @@ const syntaxRules = [
 
 module.exports = [
   {
-    ignores: ['coverage/**', 'dist/**', 'node_modules/**', 'vendor/**']
+    ignores: [
+      'coverage/**',
+      'dist/**',
+      'node_modules/**',
+      'vendor/**',
+      'test-results/**',
+      'playwright-report/**',
+      'blob-report/**'
+    ]
   },
   {
     files: ['**/*.{js,cjs,mjs}'],
