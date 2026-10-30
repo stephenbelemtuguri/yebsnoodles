@@ -300,26 +300,38 @@ async function writePostgres(data) {
 /**
  * Read from the active backend. When Postgres is unreachable (bad credential,
  * paused project, network) and the Supabase REST key is configured, the REST
- * backend takes over so the site keeps working with the same shared row.
+ * backend takes over once and stays on it — probing the dead connection on
+ * every request only added 20 second delays and kept storage marked broken.
  */
 async function readRemote() {
+  if (failoverBackend === 'rest') return readRest();
   if (!DATABASE_URL_CANDIDATES.length) return readRest();
   try {
     return await readPostgres();
   } catch (pgErr) {
-    if (!restConfigured || failoverBackend === 'rest') throw pgErr;
+    if (!restConfigured) throw pgErr;
     failoverBackend = 'rest';
+    remoteMode = 'supabase';
+    databaseProvider = 'supabase-rest';
     console.warn('[store] Postgres unreachable, switching to the Supabase REST backend:', pgErr.message);
     return readRest();
   }
 }
 
-/** Write to whichever backend produced the last successful read. */
+/** Write to whichever backend the reads are currently using. */
 async function writeRemote(data) {
-  if (failoverBackend === 'rest' || !DATABASE_URL_CANDIDATES.length) {
+  if (failoverBackend === 'rest') return writeRest(data);
+  if (!DATABASE_URL_CANDIDATES.length) return writeRest(data);
+  try {
+    return await writePostgres(data);
+  } catch (pgErr) {
+    if (!restConfigured) throw pgErr;
+    failoverBackend = 'rest';
+    remoteMode = 'supabase';
+    databaseProvider = 'supabase-rest';
+    console.warn('[store] Postgres write failed, switching to the Supabase REST backend:', pgErr.message);
     return writeRest(data);
   }
-  return writePostgres(data);
 }
 
 /**
