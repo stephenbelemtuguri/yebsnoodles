@@ -811,6 +811,7 @@ function ensureSystemAccounts(db) {
 
   const isOldPickup = point => point && (
     (Math.abs(Number(point.lat) - 5.5612) < 0.000001 && Math.abs(Number(point.lng) + 0.2155) < 0.000001)
+    || (Math.abs(Number(point.lat) - 5.557914) < 0.000001 && Math.abs(Number(point.lng) + 0.213738) < 0.000001)
     || (String(point.name || '').includes('Circle Odo Rice Junction'))
   );
   if (db.settings && isOldPickup(db.settings.pickup)) {
