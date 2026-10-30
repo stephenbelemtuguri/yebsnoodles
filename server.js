@@ -1207,6 +1207,8 @@ function projectOrder(order, viewer = 'public') {
     pickupPointName: order.pickupPointName || null,
     pickupPoint: order.pickupPoint || null,
     notificationStatus: order.notificationStatus || null,
+    customerOrderNumber: Number(order.customerOrderNumber) || 1,
+    congratulationsMessage: order.congratulationsMessage || null,
     cancellation: order.cancellation ? {
       status: order.cancellation.status || null,
       reason: order.cancellation.reason || null,
@@ -3191,6 +3193,11 @@ app.post('/api/orders', async (req, res) => {
   const total = Math.round((subtotal + deliveryFee) * 100) / 100;
 
   const customerAccessToken = crypto.randomBytes(32).toString('base64url');
+  const customerPhoneKey = String(phone || '').replace(/\D/g, '').slice(-9);
+  const previousOrders = customerPhoneKey
+    ? (db.orders || []).filter(existing => String(existing.phone || '').replace(/\D/g, '').slice(-9) === customerPhoneKey && existing.status !== 'cancelled')
+    : [];
+  const customerOrderNumber = previousOrders.length + 1;
   const newOrder = {
     id,
     customerAccessTokenHash: customerOrderTokenHash(customerAccessToken),
@@ -3200,6 +3207,10 @@ app.post('/api/orders', async (req, res) => {
     createdAt: body.createdAt || new Date().toISOString(),
     customer,
     phone,
+    customerOrderNumber,
+    congratulationsMessage: customerOrderNumber === 1
+      ? 'Congratulations on your first order! Thank you for choosing YEBS Noodles and making us your main piece.'
+      : `Congratulations on your ${customerOrderNumber}${customerOrderNumber % 10 === 1 && customerOrderNumber !== 11 ? 'st' : customerOrderNumber % 10 === 2 && customerOrderNumber !== 12 ? 'nd' : customerOrderNumber % 10 === 3 && customerOrderNumber !== 13 ? 'rd' : 'th'} order! Thank you for continuing to choose YEBS Noodles.`,
     fulfilment: isDelivery ? 'Delivery' : 'Collection',
     location: orderLocation,
     mapPin: orderPin,

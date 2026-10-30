@@ -2886,7 +2886,7 @@
       formFeedback.style.color = "#166534";
       formFeedback.textContent = `✅ Order ${newOrder.id} ${editingThisOrder ? 'updated' : 'placed'}! ${newOrder.fulfilment === 'Collection'
         ? 'Collect it free at ' + (newOrder.pickupPointName || sharedPickupPoint.name) + '.'
-        : 'The rider will bring it to ' + (newOrder.location || 'your address') + '.'} ${notifyNote}`;
+        : 'The rider will bring it to ' + (newOrder.location || 'your address') + '.'} ${newOrder.congratulationsMessage || ''} ${notifyNote}`;
       localStorage.setItem('yebs_active_order_id', newOrder.id);
       currentlyTrackedOrderId = newOrder.id;
       try {
@@ -2903,6 +2903,7 @@
       // again once the payment is verified).
       if (window.celebrateOrder) {
         window.celebrateOrder(newOrder, {
+          copy: newOrder.congratulationsMessage || undefined,
           note: payMode === "now" && newOrder.paymentMode !== "cash"
             ? 'Finish the mobile money step and your order is fully confirmed.'
             : notifyNote
