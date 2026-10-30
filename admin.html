@@ -2237,6 +2237,20 @@
             .addTo(markersLayer);
         }
 
+        const customerLocation = o.customerCurrentLocation;
+        if (customerLocation && Number.isFinite(Number(customerLocation.lat)) && Number.isFinite(Number(customerLocation.lng))) {
+          mapPoints.push([Number(customerLocation.lat), Number(customerLocation.lng)]);
+          const liveCustomerIcon = L.divIcon({
+            html: '<div style="background:#2563eb;color:white;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;border:3px solid white;font-size:16px;box-shadow:0 3px 12px rgba(37,99,235,.45);">🧑‍💼</div>',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+          });
+          const ageMins = customerLocation.updatedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(customerLocation.updatedAt)) / 60000)) : null;
+          L.marker([Number(customerLocation.lat), Number(customerLocation.lng)], { icon: liveCustomerIcon })
+            .bindPopup(`<b>Live customer: ${o.customer || 'Customer'}</b><br>Order: ${o.id}<br>${ageMins === null ? 'Recently updated' : ageMins + ' min ago'}`)
+            .addTo(markersLayer);
+        }
+
         if (o.driver && o.driver.currentLocation && Number.isFinite(Number(o.driver.currentLocation.lat)) && Number.isFinite(Number(o.driver.currentLocation.lng))) {
           mapPoints.push([Number(o.driver.currentLocation.lat), Number(o.driver.currentLocation.lng)]);
           const driverIcon = L.divIcon({
@@ -2258,13 +2272,15 @@
       (liveDrivers || []).forEach(d => {
         if (Number.isFinite(Number(d.lat)) && Number.isFinite(Number(d.lng)) && !isDriverOffMap(d)) {
           mapPoints.push([Number(d.lat), Number(d.lng)]);
+          const updateAgeMs = d.lastLocationUpdate ? Date.now() - Date.parse(d.lastLocationUpdate) : Infinity;
+          const stale = updateAgeMs > 2 * 60 * 1000;
           L.circleMarker([d.lat, d.lng], {
             radius: 9,
-            color: '#173d30',
+            color: stale ? '#64748b' : '#173d30',
             weight: 2,
-            fillColor: '#22c55e',
+            fillColor: stale ? '#94a3b8' : '#22c55e',
             fillOpacity: 0.9
-          }).bindPopup(`<b>${d.name || 'Rider'}</b><br>${d.vehicle || ''}<br>${d.phone || ''}`).addTo(markersLayer);
+          }).bindPopup(`<b>${d.name || 'Rider'}</b><br>${d.vehicle || ''}<br>${d.phone || ''}<br>${stale ? 'GPS stale' : 'GPS live'}`).addTo(markersLayer);
         }
       });
       const selectedOrder = ongoingOrders.find(order => order.id === selectedOrderId);

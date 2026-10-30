@@ -3145,10 +3145,51 @@
 
       // ── Live SSE subscription: get real-time order status pushes ──
       startOrderSSE(orderId);
+      startCustomerLocationStream(orderId);
     }
 
     let _orderSSE = null;
     let _orderPollInterval = null;
+    let _customerLocationWatchId = null;
+    let _customerLocationLastSentAt = 0;
+
+    function stopCustomerLocationStream() {
+      if (_customerLocationWatchId !== null && navigator.geolocation) {
+        try { navigator.geolocation.clearWatch(_customerLocationWatchId); } catch (_) {}
+      }
+      _customerLocationWatchId = null;
+    }
+
+    function publishCustomerLocation(orderId, position) {
+      const now = Date.now();
+      if (now - _customerLocationLastSentAt < 5000) return;
+      _customerLocationLastSentAt = now;
+      const accessToken = getOrderAccessToken(orderId);
+      fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/customer-location`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Order-Access-Token': accessToken
+        },
+        body: JSON.stringify({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracyM: position.coords.accuracy
+        }),
+        keepalive: true
+      }).catch(() => {});
+    }
+
+    function startCustomerLocationStream(orderId) {
+      stopCustomerLocationStream();
+      if (!navigator.geolocation || !window.isSecureContext) return;
+      const sendFix = (position) => publishCustomerLocation(orderId, position);
+      _customerLocationWatchId = navigator.geolocation.watchPosition(
+        sendFix,
+        () => {},
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 3000 }
+      );
+    }
 
     function startOrderSSE(orderId) {
       stopOrderSSE(); // clear any existing connection
@@ -3241,6 +3282,7 @@
       trackingOverlay.classList.remove("active");
       document.body.style.overflow = "";
       stopOrderSSE();
+      stopCustomerLocationStream();
     }
 
     function renderTrackingModal() {
@@ -3772,6 +3814,12 @@
         return;
       }
       openTrackingModal(val);
+    });
+    headerTrackInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        headerTrackSubmit.click();
+      }
     });
 
     heroTrackDemoBtn.addEventListener('click', () => {

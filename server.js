@@ -799,15 +799,32 @@ function rateSuccess(req, role, identity) {
 // non-default deployment password is explicitly configured.
 const DEFAULT_MOMO_SETTINGS = { payTo: '0559103452', accountName: 'MATHEW TIA' };
 const DEFAULT_PICKUP_POINT = {
-  name: 'Circle Odo Rice Junction / VIP Station',
-  address: 'Kwame Nkrumah Circle, Accra',
-  lat: 5.5612,
-  lng: -0.2155
+  name: 'YEBS Noodles Kitchen',
+  address: 'In front of Efex Hotel, Adabraka, Accra',
+  lat: 5.558026,
+  lng: -0.213706
 };
 
 function ensureSystemAccounts(db) {
   const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'notifications', 'recoveryCodes'];
   let changed = false;
+
+  const isOldPickup = point => point && (
+    (Math.abs(Number(point.lat) - 5.5612) < 0.000001 && Math.abs(Number(point.lng) + 0.2155) < 0.000001)
+    || (String(point.name || '').includes('Circle Odo Rice Junction'))
+  );
+  if (db.settings && isOldPickup(db.settings.pickup)) {
+    db.settings.pickup = { ...DEFAULT_PICKUP_POINT, updatedAt: new Date().toISOString() };
+    changed = true;
+  }
+  if (Array.isArray(db.sessions)) {
+    db.sessions.forEach(session => {
+      if (!session.pickupPoint || isOldPickup(session.pickupPoint)) {
+        session.pickupPoint = { ...DEFAULT_PICKUP_POINT, updatedAt: new Date().toISOString() };
+        changed = true;
+      }
+    });
+  }
 
   collections.forEach(key => {
     if (!Array.isArray(db[key])) { db[key] = []; changed = true; }
@@ -927,9 +944,9 @@ function loadDatabase() {
           startedAt: new Date().toISOString(),
           intermissionEndsAt: null,
           pickupPoint: {
-            name: "Circle Odo Rice Junction / VIP Station",
-            lat: 5.5612,
-            lng: -0.2155,
+            name: "YEBS Noodles Kitchen",
+            lat: 5.558026,
+            lng: -0.213706,
             updatedAt: new Date().toISOString()
           }
         }
@@ -1198,6 +1215,7 @@ function projectOrder(order, viewer = 'public') {
     fulfilment: order.fulfilment,
     location: order.location,
     mapPin: order.mapPin,
+    customerCurrentLocation: order.customerCurrentLocation || null,
     timing: order.timing,
     items: order.items || [],
     subtotal: order.subtotal,
@@ -5092,6 +5110,25 @@ app.get('/api/orders/:id/track', (req, res) => {
   }
   if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
   res.json({ success: true, order: projectOrder(order, 'customer') });
+});
+
+app.post('/api/orders/:id/customer-location', (req, res) => {
+  const db = loadDatabase();
+  const orderId = normalizeOrderId(req.params.id);
+  const order = db.orders.find(o => String(o.id).toUpperCase() === orderId);
+  if (!order) return res.status(404).json({ success: false, message: 'Order not found.' });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: 'Order access token required.' });
+
+  const lat = Number(req.body && req.body.lat);
+  const lng = Number(req.body && req.body.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return res.status(400).json({ success: false, message: 'A valid customer GPS position is required.' });
+  }
+  order.customerCurrentLocation = { lat, lng, updatedAt: new Date().toISOString(), accuracyM: Number(req.body.accuracyM) || null };
+  const result = saveDatabase(db);
+  if (result === false) return res.status(503).json({ success: false, persisted: false, message: 'Customer location could not be saved.' });
+  pushOrderUpdate(order.id, { type: 'customer-location', order: projectOrder(order, 'customer') });
+  return res.json({ success: true, persisted: true, customerLocation: order.customerCurrentLocation });
 });
 
 function pushOrderUpdate(orderId, payload) {
