@@ -29,7 +29,8 @@ describe('administrator seed security', () => {
     expect(loadDatabase().admins).toEqual([]);
 
     const databaseResponse = await request(app).get('/database.json');
-    expect(databaseResponse.status).toBe(404);
+    expect(databaseResponse.status).toBe(200);
+    expect(databaseResponse.body).toMatchObject({ success: true, storage: 'managed-by-api' });
 
     const login = await request(app)
       .post('/api/auth/admin/login')
