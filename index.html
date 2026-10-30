@@ -2978,7 +2978,10 @@
       ].join('\n');
       const whatsappBotUrl = formatWhatsAppUrl('0559103452', whatsappOrderMessage);
       if (!newOrder.notificationStatus || newOrder.notificationStatus !== 'sent') {
-        showWhatsAppOrderPreview(newOrder, whatsappOrderMessage);
+        window.setTimeout(() => {
+          const whatsappTab = window.open(whatsappBotUrl, '_blank', 'noopener,noreferrer');
+          if (!whatsappTab) window.location.assign(whatsappBotUrl);
+        }, 0);
       }
 
       // Clear the cart so the order is not accidentally submitted twice.

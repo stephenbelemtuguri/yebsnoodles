@@ -490,15 +490,20 @@ async function notifyOrderCreated(db, order) {
   const persistenceError = await requireDurableSave(db);
   if (persistenceError) throw new Error(persistenceError);
 
-  void sendOwnerWhatsApp(entry.message).then(async delivered => {
-    entry.status = delivered.ok ? 'sent' : 'failed';
-    entry.provider = delivered.provider || null;
-    entry.providerId = delivered.providerId || null;
-    entry.reason = delivered.reason || null;
-    entry.sentAt = delivered.ok ? new Date().toISOString() : null;
-    if (!delivered.ok) console.warn('[whatsapp] order notification not delivered:', delivered.reason);
-    await requireDurableSave(db).catch(err => console.warn('[whatsapp] notification status persistence failed:', err.message));
-  });
+  let delivered;
+  try {
+    delivered = await sendOwnerWhatsApp(entry.message);
+  } catch (err) {
+    delivered = { ok: false, reason: err.message };
+  }
+  entry.status = delivered.ok ? 'sent' : 'failed';
+  entry.provider = delivered.provider || null;
+  entry.providerId = delivered.providerId || null;
+  entry.reason = delivered.reason || null;
+  entry.sentAt = delivered.ok ? new Date().toISOString() : null;
+  if (!delivered.ok) console.warn('[whatsapp] order notification not delivered:', delivered.reason);
+  await requireDurableSave(db).catch(err => console.warn('[whatsapp] notification status persistence failed:', err.message));
+  order.notificationStatus = entry.status;
   return entry;
 }
 
