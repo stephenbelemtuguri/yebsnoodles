@@ -174,7 +174,11 @@ function ensurePostgres() {
       ssl: /supabase|pooler|render\.com|dpg-/i.test(DATABASE_URL) ? { rejectUnauthorized: false } : undefined,
       max: Number(process.env.PG_POOL_MAX || 2),
       idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 8000
+      connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 20000),
+      query_timeout: Number(process.env.PG_QUERY_TIMEOUT_MS || 20000),
+      statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS || 20000),
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000
     });
     pgPool.on('error', err => console.error('[store] Postgres pool error:', err.message));
     await pgPool.query(
@@ -186,24 +190,54 @@ function ensurePostgres() {
     );
     await pgPool.query(`alter table public.${TABLE} enable row level security`).catch(() => {});
     return pgPool;
-  })();
+  })().catch(async err => {
+    pgReady = null;
+    if (pgPool) {
+      const failedPool = pgPool;
+      pgPool = null;
+      await failedPool.end().catch(() => {});
+    }
+    throw err;
+  });
   return pgReady;
 }
 
+async function retryPostgres(operation, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastError = err;
+      const transient = /timeout|temporarily unavailable|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENETUNREACH/i.test(err.message || '');
+      if (!transient || attempt === attempts) throw err;
+      console.warn(`[store] Postgres retry ${attempt}/${attempts}: ${err.message}`);
+      await new Promise(resolve => {
+        setTimeout(resolve, attempt * 750);
+      });
+    }
+  }
+  throw lastError;
+}
+
 async function readPostgres() {
-  const pool = await ensurePostgres();
-  const res = await pool.query(`select data from public.${TABLE} where id = $1 limit 1`, [ROW_ID]);
-  return res.rows[0] ? res.rows[0].data : null;
+  return retryPostgres(async () => {
+    const pool = await ensurePostgres();
+    const res = await pool.query(`select data from public.${TABLE} where id = $1 limit 1`, [ROW_ID]);
+    return res.rows[0] ? res.rows[0].data : null;
+  });
 }
 
 async function writePostgres(data) {
-  const pool = await ensurePostgres();
-  await pool.query(
-    `insert into public.${TABLE} (id, data, updated_at)
-     values ($1, $2::jsonb, now())
-     on conflict (id) do update set data = excluded.data, updated_at = now()`,
-    [ROW_ID, JSON.stringify(data)]
-  );
+  await retryPostgres(async () => {
+    const pool = await ensurePostgres();
+    await pool.query(
+      `insert into public.${TABLE} (id, data, updated_at)
+       values ($1, $2::jsonb, now())
+       on conflict (id) do update set data = excluded.data, updated_at = now()`,
+      [ROW_ID, JSON.stringify(data)]
+    );
+  });
 }
 
 async function readRemote() {

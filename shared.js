@@ -2018,22 +2018,32 @@ export function startLiveOrderSync(onUpdate, intervalMs = 5000) {
 }
 
 export async function apiFetchAllDrivers() {
-  try {
-    const res = await fetch(`${API_BASE}/api/admin/drivers`, {
-      headers: authHeaders(),
-      cache: 'no-store'
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.message || `Could not load drivers (${res.status}).`);
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/drivers`, {
+        headers: authHeaders(),
+        cache: 'no-store',
+        signal: AbortSignal.timeout(25000)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || `Could not load drivers (${res.status}).`);
+      }
+      if (!Array.isArray(data)) throw new Error('The server returned an invalid driver roster.');
+      data.forEach(rememberRegisteredDriver);
+      return data;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) {
+        await new Promise(resolve => {
+          setTimeout(resolve, 700 * (attempt + 1));
+        });
+      }
     }
-    if (!Array.isArray(data)) throw new Error('The server returned an invalid driver roster.');
-    data.forEach(rememberRegisteredDriver);
-    return data;
-  } catch (error) {
-    console.error('Could not load the admin driver roster:', error);
-    throw error;
   }
+  console.error('Could not load the admin driver roster:', lastError);
+  throw lastError;
 }
 
 export async function apiCheckHealth() {
