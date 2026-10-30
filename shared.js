@@ -359,8 +359,8 @@ export function rememberRegisteredDriver(driver) {
 
 // Default Restaurant Coordinates (Adabraka, Accra, Ghana - in front of Efex Hotel)
 export const RESTAURANT_COORDS = {
-  lat: 5.56246,
-  lng: -0.21289,
+  lat: 5.558026,
+  lng: -0.213706,
   name: "YEBS Noodles Kitchen",
   address: "In front of Efex Hotel, Adabraka, Accra"
 };

@@ -1850,6 +1850,7 @@
       apiMomoStatus,
       apiFetchPaymentNetworks,
       apiFetchOrder,
+      mergeServerOrders,
       getOrderAccessToken,
       API_BASE,
       apiFetchActiveDrivers,
@@ -1875,7 +1876,7 @@
     // Live settings fetched from the kitchen: the shared pickup point every
     // customer collects at, and the fee charged only when a rider has to bring
     // the food to the customer's own address.
-    let sharedPickupPoint = { name: "Circle Odo Rice Junction / VIP Station", lat: 5.5612, lng: -0.2155 };
+    let sharedPickupPoint = { name: "YEBS Noodles Kitchen", lat: 5.558026, lng: -0.213706 };
     let deliveryFeeAmount = 15;
     let settingsLoaded = false;
     let customerPinMap = null;
@@ -3111,6 +3112,15 @@
       // from the server (customer sessions never download the whole database).
       if (!getOrderById(orderId)) {
         await apiFetchOrder(orderId).catch(() => {});
+      }
+      if (!getOrderById(orderId)) {
+        try {
+          const response = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/track`);
+          const data = await response.json().catch(() => ({}));
+          if (response.ok && data.order && data.order.id) {
+            mergeServerOrders([data.order]);
+          }
+        } catch (_) {}
       }
       if (!getOrderById(orderId)) {
         alert(`Order ${orderId} was not found. Please verify your order number or place an order first.`);

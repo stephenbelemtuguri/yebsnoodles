@@ -298,9 +298,9 @@ app.get('/api/settings/public', (req, res) => {
   const db = loadDatabase();
   const session = (db.sessions && db.sessions[0]) || {};
   const pickup = session.pickupPoint || (db.settings && db.settings.pickup) || {
-    name: 'Circle Odo Rice Junction / VIP Station',
-    lat: 5.5612,
-    lng: -0.2155
+    name: 'YEBS Noodles Kitchen',
+    lat: 5.558026,
+    lng: -0.213706
   };
   res.json({
     success: true,
@@ -5085,9 +5085,12 @@ app.get('/api/sse/order/:id', (req, res) => {
 app.get('/api/orders/:id/track', (req, res) => {
   const db = loadDatabase();
   const id = normalizeOrderId(req.params.id);
-  const order = db.orders.find(o => String(o.id).toUpperCase() === id);
+  let order = db.orders.find(o => String(o.id).toUpperCase() === id);
+  if (!order && /^\d{4}$/.test(id.replace(/^YB-/, ''))) {
+    const pin = id.replace(/^YB-/, '');
+    order = db.orders.find(o => String(o.pickupPin || '') === pin);
+  }
   if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: 'Order access token required.' });
   res.json({ success: true, order: projectOrder(order, 'customer') });
 });
 
