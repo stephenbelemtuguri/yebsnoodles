@@ -1858,6 +1858,7 @@
     let trackDriverMarker = null;
     let trackCustMarker = null;
     let trackRouteLine = null;
+    let trackLastAutoFitSignature = '';
     let currentlyTrackedOrderId = localStorage.getItem('yebs_active_order_id') || "";
 
     // Elements
@@ -2640,6 +2641,26 @@
       document.body.style.overflow = "";
     }
 
+    function showWhatsAppOrderPreview(order, message) {
+      const modal = document.getElementById('whatsappOrderPreviewModal');
+      const editor = document.getElementById('whatsappOrderPreviewText');
+      const send = document.getElementById('whatsappOrderPreviewSend');
+      if (!modal || !editor || !send) return;
+      editor.value = message;
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+      send.onclick = () => {
+        const url = formatWhatsAppUrl('0559103452', editor.value.trim());
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+        window.open(url, '_blank', 'noopener,noreferrer');
+      };
+      document.getElementById('whatsappOrderPreviewCancel').onclick = () => {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+      };
+    }
+
     if (copyOrderIdBtn) {
       copyOrderIdBtn.addEventListener("click", async () => {
         const id = pendingOrderIdForModal || (orderIdModalValue && orderIdModalValue.textContent) || "";
@@ -2887,12 +2908,6 @@
 
       let newOrder = null;
       let orderErrorMessage = '';
-      const automaticWhatsAppTab = editingThisOrder
-        ? null
-        : window.open('', '_blank');
-      if (automaticWhatsAppTab) {
-        automaticWhatsAppTab.document.write('<!doctype html><title>Preparing WhatsApp</title><body style="font-family:Arial;background:#f4fbf7;color:#173d30;display:grid;place-items:center;height:100vh;margin:0">Preparing your WhatsApp order message...</body>');
-      }
       try {
         newOrder = await createOrder(orderPayload, editingOrderId);
         editingOrderId = '';
@@ -2907,7 +2922,6 @@
       }
 
       if (!newOrder) {
-        try { if (automaticWhatsAppTab) automaticWhatsAppTab.close(); } catch (e) {}
         formFeedback.textContent = orderErrorMessage || (editingThisOrder
           ? "Could not update the order. Please check the details and try again."
           : "Could not place the order. Please check your connection and try again.");
@@ -2934,13 +2948,8 @@
         `Items: ${(newOrder.items || []).map(item => `${item.qty || item.quantity || 1}x ${item.name}`).join(', ') || 'See order details'}`
       ].join('\n');
       const whatsappBotUrl = formatWhatsAppUrl('0559103452', whatsappOrderMessage);
-      if (automaticWhatsAppTab && !automaticWhatsAppTab.closed) {
-        automaticWhatsAppTab.location.replace(whatsappBotUrl);
-      } else if (!newOrder.notificationStatus || newOrder.notificationStatus !== 'sent') {
-        window.setTimeout(() => {
-          const fallback = window.open(whatsappBotUrl, '_blank', 'noopener,noreferrer');
-          if (!fallback) window.location.href = whatsappBotUrl;
-        }, 0);
+      if (!newOrder.notificationStatus || newOrder.notificationStatus !== 'sent') {
+        showWhatsAppOrderPreview(newOrder, whatsappOrderMessage);
       }
 
       // Clear the cart so the order is not accidentally submitted twice.
@@ -3553,7 +3562,19 @@
         const bounds = L.latLngBounds([]);
         if (hasDestination) bounds.extend([targetLat, targetLng]);
         if (hasDriverLocation) bounds.extend([driverLat, driverLng]);
-        if (hasDestination || hasDriverLocation) trackMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+        if (hasDestination || hasDriverLocation) {
+          const distanceKm = hasDestination && hasDriverLocation
+            ? calculateDistanceKm(driverLat, driverLng, targetLat, targetLng)
+            : 0;
+          const fitSignature = `${Math.round(distanceKm * 10) / 10}:${hasDestination ? 1 : 0}`;
+          if (!trackLastAutoFitSignature || fitSignature !== trackLastAutoFitSignature) {
+            trackMap.fitBounds(bounds, {
+              padding: [distanceKm < 1 ? 35 : 48, distanceKm < 1 ? 35 : 48],
+              maxZoom: distanceKm < 1 ? 17 : 15
+            });
+            trackLastAutoFitSignature = fitSignature;
+          }
+        }
       }
     }
 
@@ -4827,6 +4848,18 @@
 
   <!-- ======================================================== -->
   <!-- ORDER ID POPUP (top-level, always above everything else) -->
+  <div id="whatsappOrderPreviewModal" class="arrival-popup-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="whatsappOrderPreviewTitle">
+    <div style="background:white; border-radius:16px; max-width:560px; width:calc(100% - 32px); padding:22px; box-shadow:0 24px 60px rgba(0,0,0,.3);">
+      <div style="font-size:1.5rem;">💬</div>
+      <h2 id="whatsappOrderPreviewTitle" style="margin:7px 0 5px; font-family:var(--serif); color:var(--forest);">Review order for admin WhatsApp</h2>
+      <p style="margin:0 0 12px; color:var(--muted); font-size:.86rem;">Check or edit the message before sending it to YEBS Noodles on 055 910 3452.</p>
+      <textarea id="whatsappOrderPreviewText" style="width:100%; min-height:210px; resize:vertical; border:1px solid var(--line); border-radius:10px; padding:12px; font:14px/1.55 Arial,sans-serif;"></textarea>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:14px;">
+        <button type="button" id="whatsappOrderPreviewCancel" class="button" style="background:white;border:1px solid var(--line);color:var(--muted);">Cancel</button>
+        <button type="button" id="whatsappOrderPreviewSend" class="button button-orange">Open WhatsApp & Send</button>
+      </div>
+    </div>
+  </div>
   <!-- ======================================================== -->
   <div id="orderIdModal" class="arrival-popup-backdrop" style="display:none;">
     <div class="arrival-popup-box" style="max-width:520px; text-align:center;">
