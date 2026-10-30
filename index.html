@@ -469,6 +469,21 @@
     .pickup-info small { display: block; color: #5b675c; font-size: .74rem; line-height: 1.5; margin-top: 3px; }
     .pickup-summary { margin-top: 14px; padding: 12px 14px; border: 1px dashed #cfdcc6; border-radius: 10px; background: #f7faf3; font-size: .78rem; color: #3f4a3f; line-height: 1.55; }
     .pickup-summary strong { color: #173d30; }
+    .yebs-route-distance-marker div {
+      display: grid;
+      place-items: center;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 14px;
+      background: #173d30;
+      color: #fff;
+      border: 2px solid #fff;
+      box-shadow: 0 3px 12px rgba(23, 61, 48, .28);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    #liveTrackingMap, #liveTrackingMap .leaflet-container { touch-action: none; }
     .fee-row { font-size: .9rem !important; font-weight: 600 !important; color: var(--muted) !important; margin-top: 8px !important; }
     .fee-row.fee-free { color: #15803d !important; }
     .grand-total { padding-top: 12px; border-top: 1px solid #eceade; margin-top: 12px; }
@@ -2878,6 +2893,18 @@
           ? 'WhatsApp bot is working. Please wait while the order message is sent.'
           : 'WhatsApp delivery is pending configuration. Your order is saved and visible in the admin dashboard.';
 
+      const whatsappOrderMessage = [
+        '*NEW YEBS NOODLES ORDER*',
+        `Order: ${newOrder.id}`,
+        `Customer: ${newOrder.customer || 'Customer'}`,
+        `Phone: ${newOrder.phone || ''}`,
+        `Amount: GH₵${Number(newOrder.total || 0).toFixed(2)}`,
+        `Fulfilment: ${newOrder.fulfilment || 'Delivery'}`,
+        `Location: ${newOrder.location || 'Not provided'}`,
+        `Items: ${(newOrder.items || []).map(item => `${item.qty || item.quantity || 1}x ${item.name}`).join(', ') || 'See order details'}`
+      ].join('\n');
+      const whatsappBotUrl = formatWhatsAppUrl('0559103452', whatsappOrderMessage);
+
       // Clear the cart so the order is not accidentally submitted twice.
       Object.keys(cart).forEach(k => delete cart[k]);
       renderCart();
@@ -2898,6 +2925,14 @@
       updateActiveOrderPill();
 
       showOrderIdModal(newOrder);
+      const waButton = document.createElement('button');
+      waButton.type = 'button';
+      waButton.className = 'btn btn-whatsapp';
+      waButton.textContent = 'Send Order to Kitchen WhatsApp';
+      waButton.style.marginTop = '12px';
+      waButton.addEventListener('click', () => window.open(whatsappBotUrl, '_blank', 'noopener,noreferrer'));
+      formFeedback.appendChild(document.createElement('br'));
+      formFeedback.appendChild(waButton);
 
       // Celebrate every successful order (the mobile-money flow celebrates
       // again once the payment is verified).
@@ -2926,7 +2961,16 @@
       if (trackMap) return;
       const mapEl = document.getElementById('liveTrackingMap');
       if (!mapEl || typeof L === 'undefined') return;
-      trackMap = L.map('liveTrackingMap', { zoomControl: true }).setView([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], 15);
+      trackMap = L.map('liveTrackingMap', {
+        zoomControl: true,
+        scrollWheelZoom: true,
+        doubleClickZoom: true,
+        touchZoom: true,
+        boxZoom: true,
+        zoomAnimation: true,
+        fadeAnimation: true
+      }).setView([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], 15);
+      trackMap.zoomControl.setPosition('topright');
       addReliableBasemap(trackMap);
 
       const driverIcon = L.divIcon({
@@ -3251,13 +3295,13 @@
         targetLng = Number(order.mapPin.lng);
         targetName = order.mapPin.name || order.location || "Selected Location";
       } else if (isCollectionOrder && order.pickupPoint && Number.isFinite(Number(order.pickupPoint.lat)) && Number.isFinite(Number(order.pickupPoint.lng))) {
-        targetLat = Number(order.pickupPoint.lat);
-        targetLng = Number(order.pickupPoint.lng);
-        targetName = order.pickupPoint.name || order.location || "Pickup Point";
+        targetLat = null;
+        targetLng = null;
+        targetName = "Pickup arranged by kitchen";
       } else if (isCollectionOrder && sharedPickupPoint && Number.isFinite(Number(sharedPickupPoint.lat))) {
-        targetLat = Number(sharedPickupPoint.lat);
-        targetLng = Number(sharedPickupPoint.lng);
-        targetName = sharedPickupPoint.name || "Circle Odo Rice Junction / VIP Station";
+        targetLat = null;
+        targetLng = null;
+        targetName = "Pickup arranged by kitchen";
       }
 
       const hasDestination = Number.isFinite(targetLat) && Number.isFinite(targetLng);

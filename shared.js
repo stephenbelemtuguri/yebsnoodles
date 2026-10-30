@@ -2206,7 +2206,10 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
 
   // Remove previous route if provided
   if (opts.previousLayer) {
-    try { map.removeLayer(opts.previousLayer); } catch (e) {}
+    try {
+      if (opts.previousLayer.routeDistanceBadge) map.removeLayer(opts.previousLayer.routeDistanceBadge);
+      map.removeLayer(opts.previousLayer);
+    } catch (e) {}
   }
 
   // Try OSRM public routing API (free, no key)
@@ -2238,6 +2241,21 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
           durationSeconds: Number(route.duration) || 0,
           steps: maneuverSteps
         };
+        if (opts.showDistanceBadge !== false && route.distance) {
+          const middleIndex = Math.max(0, Math.floor(latlngs.length / 2));
+          const middle = latlngs[middleIndex] || latlngs[0];
+          const distanceKm = Number(route.distance / 1000).toFixed(1);
+          const durationMin = Math.max(1, Math.round(Number(route.duration) / 60));
+          layer.routeDistanceBadge = L.marker(middle, {
+            interactive: false,
+            icon: L.divIcon({
+              className: 'yebs-route-distance-marker',
+              html: `<div>${distanceKm} km · ${durationMin} min</div>`,
+              iconSize: [112, 28],
+              iconAnchor: [56, 14]
+            })
+          }).addTo(map);
+        }
         return layer;
       }
     }

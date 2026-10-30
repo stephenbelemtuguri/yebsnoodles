@@ -3269,7 +3269,8 @@ app.post('/api/orders', async (req, res) => {
     paymentMode: newOrder.paymentMode
   }, req);
 
-  // Notify the kitchen automatically. No WhatsApp redirect for the customer.
+  // Notify the kitchen through the configured provider when available. The
+  // customer portal also supplies a pre-filled wa.me handoff for this order.
   try {
     await notifyOrderCreated(db, newOrder);
   } catch (err) {
