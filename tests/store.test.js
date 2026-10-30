@@ -98,7 +98,13 @@ describe('persistent store recovery', () => {
         ok: true,
         json: async () => []
       })
-      .mockResolvedValueOnce({ ok: true });
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{
+          data: { orders: [], drivers: [{ id: 'driver-test' }] },
+          updated_at: '2026-10-30T09:00:00.000Z'
+        }]
+      });
     global.fetch = fetchMock;
     const store = require('../src/data/store');
     const seed = { orders: [] };
@@ -115,5 +121,107 @@ describe('persistent store recovery', () => {
     const saved = await store.set({ ...seed, drivers: [{ id: 'driver-test' }] });
     expect(saved.ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  test('refuses a stale Supabase REST write when another instance updated the state row', async () => {
+    process.env.SUPABASE_URL = 'https://storage.example.test';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+    process.env.DATABASE_URL = '';
+    process.env.DATABASE_POOL_URL = '';
+    process.env.SUPABASE_DB_URL = '';
+
+    const updatedAt = '2026-10-30T09:00:00.000Z';
+    const state = { orders: [] };
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ data: state, updated_at: updatedAt }]
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ data: state, updated_at: updatedAt }]
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => []
+      });
+    global.fetch = fetchMock;
+    const store = require('../src/data/store');
+
+    await store.init(() => state);
+    const release = await store.acquireMutationLock();
+    const saved = await store.set({ orders: [{ id: 'stale-write' }] });
+    await release();
+
+    expect(saved.ok).toBe(false);
+    expect(saved.error).toMatch(/concurrent state update/i);
+    expect(fetchMock.mock.calls[2][0]).toContain('updated_at=eq.');
+    expect(fetchMock.mock.calls[2][1].method).toBe('PATCH');
+  });
+
+  test('uses the database-issued updated_at value for the next conditional write', async () => {
+    process.env.SUPABASE_URL = 'https://storage.example.test';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+    process.env.DATABASE_URL = '';
+    process.env.DATABASE_POOL_URL = '';
+    process.env.SUPABASE_DB_URL = '';
+
+    const initialUpdatedAt = '2026-10-30T09:00:00.000Z';
+    const databaseUpdatedAt = '2026-10-30T09:00:01.123+00:00';
+    const nextUpdatedAt = '2026-10-30T09:00:02.456+00:00';
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ data: { orders: [] }, updated_at: initialUpdatedAt }]
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ data: { orders: [] }, updated_at: initialUpdatedAt }]
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ data: { orders: [{ id: 'one' }] }, updated_at: databaseUpdatedAt }]
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ data: { orders: [{ id: 'one' }, { id: 'two' }] }, updated_at: nextUpdatedAt }]
+      });
+    global.fetch = fetchMock;
+    const store = require('../src/data/store');
+
+    await store.init(() => ({ orders: [] }));
+    const release = await store.acquireMutationLock();
+    expect((await store.set({ orders: [{ id: 'one' }] })).ok).toBe(true);
+    expect((await store.set({ orders: [{ id: 'one' }, { id: 'two' }] })).ok).toBe(true);
+    await release();
+
+    expect(decodeURIComponent(fetchMock.mock.calls[3][0])).toContain(`updated_at=eq.${databaseUpdatedAt}`);
+  });
+
+  test('serializes overlapping mutation requests before refreshing shared REST state', async () => {
+    process.env.SUPABASE_URL = 'https://storage.example.test';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+    process.env.DATABASE_URL = '';
+    process.env.DATABASE_POOL_URL = '';
+    process.env.SUPABASE_DB_URL = '';
+
+    const updatedAt = '2026-10-30T09:00:00.000Z';
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ data: { orders: [] }, updated_at: updatedAt }]
+    });
+    global.fetch = fetchMock;
+    const store = require('../src/data/store');
+
+    await store.init(() => ({ orders: [] }));
+    const releaseFirst = await store.acquireMutationLock();
+    const secondLock = store.acquireMutationLock();
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await releaseFirst();
+    const releaseSecond = await secondLock;
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await releaseSecond();
   });
 });

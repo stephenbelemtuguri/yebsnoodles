@@ -1802,6 +1802,7 @@
 
     const cart = {};
     let customerGpsPin = null;
+    let editingOrderId = '';
 
     // Live settings fetched from the kitchen: the shared pickup point every
     // customer collects at, and the fee charged only when a rider has to bring
@@ -2654,8 +2655,16 @@
           alert("This order has already been assigned to a driver and cannot be edited now. Contact us on WhatsApp if you need help: 055 910 3452");
           return;
         }
+        if ((order.paymentStatus && order.paymentStatus !== 'unpaid')
+          || order.paymentVerified
+          || order.momoReceipt
+          || order.momoRequestId) {
+          alert("An order with payment activity cannot be edited. Contact the kitchen for help.");
+          return;
+        }
         const proceed = confirm(`Edit Order ${order.id}?\n\nYou can change items, delivery address, or payment method before the kitchen finalizes preparation.\n\nPress OK to return to the menu and edit your cart.`);
         if (!proceed) return;
+        editingOrderId = order.id;
 
         // Reload cart from order items
         Object.keys(cart).forEach(k => delete cart[k]);
@@ -2670,16 +2679,40 @@
         const phoneInput = document.getElementById("phone");
         const locInput = document.getElementById("location");
         const notesInput = document.getElementById("notes");
+        const fulfilmentInput = document.getElementById("fulfilment");
+        const timingInput = document.getElementById("timing");
+        const payerPhoneInput = document.getElementById("payerPhone");
+        const paymentNetworkInput = document.getElementById("paymentNetwork");
+        const payNowInput = document.getElementById("payModeNow");
+        const payDeliveryInput = document.getElementById("payModeDelivery");
         if (custInput) custInput.value = order.customer || "";
         if (phoneInput) phoneInput.value = order.phone || "";
         if (locInput) locInput.value = order.location || "";
         if (notesInput) notesInput.value = order.notes || "";
-        customerGpsPin = order.mapPin || null;
+        if (fulfilmentInput) {
+          fulfilmentInput.value = order.fulfilment === 'Delivery' ? 'Delivery' : 'Collection';
+          fulfilmentInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (timingInput) timingInput.value = order.timing || 'As soon as possible';
+        if (payerPhoneInput) payerPhoneInput.value = order.momoPayerPhone || '';
+        if (paymentNetworkInput && order.paymentNetwork) paymentNetworkInput.value = order.paymentNetwork;
+        if (order.paymentMode === 'cash') {
+          if (payDeliveryInput) {
+            payDeliveryInput.checked = true;
+            payDeliveryInput.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        } else if (payNowInput) {
+          payNowInput.checked = true;
+          payNowInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        customerGpsPin = order.fulfilment === 'Delivery' ? (order.mapPin || null) : null;
 
         renderCart();
+        const submitBtn = document.getElementById("submitOrderBtn");
+        if (submitBtn) submitBtn.textContent = "Save Order Changes";
         hideOrderIdModal();
         document.getElementById("checkout").scrollIntoView({ behavior: 'smooth' });
-        alert(`Order ${order.id} items loaded into your cart. Make changes and place the order again. The old order will be automatically cancelled once you submit.`);
+        alert(`Order ${order.id} is ready to edit. Your changes will update the existing order; it will not create a duplicate.`);
       });
     }
 
@@ -2703,6 +2736,7 @@
 
     checkoutForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const editingThisOrder = Boolean(editingOrderId);
       formFeedback.textContent = "";
       formFeedback.style.color = "#dc2626";
 
@@ -2808,23 +2842,28 @@
       const submitBtn = document.getElementById("submitOrderBtn");
       if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.textContent = "Placing your order…";
+        submitBtn.textContent = editingThisOrder ? "Saving order changes…" : "Placing your order…";
       }
 
       let newOrder = null;
+      let orderErrorMessage = '';
       try {
-        newOrder = await createOrder(orderPayload);
+        newOrder = await createOrder(orderPayload, editingOrderId);
+        editingOrderId = '';
       } catch (err) {
+        orderErrorMessage = err.message || '';
         console.error("Order creation failed", err);
       } finally {
         if (submitBtn) {
           submitBtn.disabled = false;
-          submitBtn.textContent = "Place Order & Start Live Session 🚀";
+          submitBtn.textContent = editingOrderId ? "Save Order Changes" : "Place Order & Start Live Session 🚀";
         }
       }
 
       if (!newOrder) {
-        formFeedback.textContent = "Could not place the order. Please check your connection and try again.";
+        formFeedback.textContent = orderErrorMessage || (editingThisOrder
+          ? "Could not update the order. Please check the details and try again."
+          : "Could not place the order. Please check your connection and try again.");
         return;
       }
 
@@ -2841,15 +2880,16 @@
       clearCheckoutDraft();
 
       formFeedback.style.color = "#166534";
-      formFeedback.textContent = `✅ Order ${newOrder.id} placed! ${newOrder.fulfilment === 'Collection'
+      formFeedback.textContent = `✅ Order ${newOrder.id} ${editingThisOrder ? 'updated' : 'placed'}! ${newOrder.fulfilment === 'Collection'
         ? 'Collect it free at ' + (newOrder.pickupPointName || sharedPickupPoint.name) + '.'
         : 'The rider will bring it to ' + (newOrder.location || 'your address') + '.'} ${notifyNote}`;
       localStorage.setItem('yebs_active_order_id', newOrder.id);
       currentlyTrackedOrderId = newOrder.id;
       try {
         const list = JSON.parse(localStorage.getItem('yebs_customer_orders') || '[]');
-        list.unshift({ id: newOrder.id, customer: newOrder.customer, total: newOrder.total, status: newOrder.status, createdAt: newOrder.createdAt, pin: newOrder.pickupPin });
-        localStorage.setItem('yebs_customer_orders', JSON.stringify(list.slice(0, 10)));
+        const updatedList = list.filter(order => String(order.id).toUpperCase() !== String(newOrder.id).toUpperCase());
+        updatedList.unshift({ id: newOrder.id, customer: newOrder.customer, total: newOrder.total, status: newOrder.status, createdAt: newOrder.createdAt, pin: newOrder.pickupPin });
+        localStorage.setItem('yebs_customer_orders', JSON.stringify(updatedList.slice(0, 10)));
       } catch (e) {}
       updateActiveOrderPill();
 
@@ -2870,7 +2910,7 @@
       if (payMode === "now" && newOrder.paymentMode !== "cash") {
         openPayNowModal(newOrder, payNetwork);
       } else {
-        formFeedback.textContent = `Order ${newOrder.id} placed. Pay GH\u20b5${Number(newOrder.total).toFixed(2)} cash to the rider at handover.`;
+        formFeedback.textContent = `Order ${newOrder.id} ${editingThisOrder ? 'updated' : 'placed'}. Pay GH\u20b5${Number(newOrder.total).toFixed(2)} cash to the rider at handover.`;
       }
     });
 

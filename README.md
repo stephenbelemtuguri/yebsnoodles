@@ -170,8 +170,18 @@ yebs-noodles/
 ## 🧪 Testing
 
 ```bash
-npm test           # Run all tests
-npm run test:e2e   # End-to-end tests
+npm test           # Run API and persistence tests
+npm run lint       # Check JavaScript for syntax and common correctness errors
+npx playwright install chromium  # Install the browser once
+npm run test:e2e   # Run isolated browser tests against a temporary local database
+```
+
+On Windows, if Microsoft Edge is already installed, you can run the browser tests
+without downloading Chromium:
+
+```powershell
+$env:PLAYWRIGHT_BROWSER = 'msedge'
+npm run test:e2e
 ```
 
 ---

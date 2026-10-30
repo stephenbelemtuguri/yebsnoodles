@@ -209,7 +209,7 @@ function localLandmarkSearch(query) {
 
 async function nominatimFetch(pathname, params) {
   const wait = Math.max(0, GEOCODE_MIN_INTERVAL_MS - (Date.now() - lastGeoRequestAt));
-  if (wait) await new Promise(r => setTimeout(r, wait));
+  if (wait) await new Promise(r => { setTimeout(r, wait); });
   lastGeoRequestAt = Date.now();
 
   const url = new URL('https://nominatim.openstreetmap.org/' + pathname);
@@ -2943,6 +2943,36 @@ function calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup) {
   return { fee, distanceKm, discount, baseFee, mealCount };
 }
 
+function normalizeOrderItems(db, submittedItems) {
+  if (!Array.isArray(submittedItems) || submittedItems.length === 0 || submittedItems.length > 30) {
+    return { error: "Add between 1 and 30 meals to the order." };
+  }
+
+  const items = [];
+  for (const item of submittedItems) {
+    if (!item || typeof item !== 'object') {
+      return { error: "One or more selected meals are invalid. Refresh the menu and try again." };
+    }
+    const menuItem = (db.menuItems || []).find(m => String(m.id) === String(item.menuId));
+    const status = String(menuItem && menuItem.status || '').toLowerCase();
+    const price = menuItem ? toAmount(menuItem.price) : null;
+    if (!menuItem || menuItem.available === false || ['sold_out', 'coming_soon'].includes(status) || price === null) {
+      return { error: "One or more selected meals are unavailable. Refresh the menu and try again." };
+    }
+    const quantity = Number(item.quantity);
+    const qty = Math.max(1, Math.min(50, Math.floor(Number.isFinite(quantity) && quantity > 0 ? quantity : 1)));
+    items.push({
+      name: cleanString(menuItem.name, 100),
+      noodle: cleanString(item.noodle, 60),
+      menuId: menuItem.id,
+      price,
+      quantity: qty,
+      image: cleanString(menuItem.image || item.image, 120)
+    });
+  }
+  return { items };
+}
+
 app.post('/api/orders', async (req, res) => {
   const body = req.body || {};
   const db = loadDatabase();
@@ -2965,23 +2995,9 @@ app.post('/api/orders', async (req, res) => {
     }
   }
 
-  const items = Array.isArray(body.items) ? body.items.slice(0, 30).map(item => {
-    const menuItem = (db.menuItems || []).find(m => String(m.id) === String(item.menuId));
-    const unit = menuItem ? Number(menuItem.price) : toAmount(item.price);
-    const qty = Math.max(1, Math.min(50, Math.floor(Number(item.quantity) || 1)));
-    return {
-      name: cleanString(item.name || (menuItem && menuItem.name), 100),
-      noodle: cleanString(item.noodle, 60),
-      menuId: menuItem ? menuItem.id : (item.menuId || null),
-      price: unit || 0,
-      quantity: qty,
-      image: cleanString(item.image, 120)
-    };
-  }).filter(i => i.name && i.price >= 0) : [];
-
-  if (!items.length) {
-    return res.status(400).json({ success: false, message: "Add at least one meal to the order." });
-  }
+  const normalizedItems = normalizeOrderItems(db, body.items);
+  if (normalizedItems.error) return res.status(400).json({ success: false, message: normalizedItems.error });
+  const { items } = normalizedItems;
 
   const subtotal = Math.round(items.reduce((sum, i) => sum + (i.price * i.quantity), 0) * 100) / 100;
   const requestedFulfilment = cleanString(body.fulfilment || 'Delivery', 40);
@@ -3115,6 +3131,104 @@ app.post('/api/orders', async (req, res) => {
   }
 
   res.status(201).json({ ...projectOrder(newOrder, 'checkout'), trackingToken: customerAccessToken });
+});
+
+app.patch('/api/orders/:id/edit', (req, res) => {
+  const db = loadDatabase();
+  const id = normalizeOrderId(req.params.id);
+  const order = db.orders.find(o => String(o.id).toUpperCase() === id);
+  if (!order) return res.status(404).json({ success: false, message: "Order not found." });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
+  if (!['pending', 'kitchen'].includes(order.status) || order.driverId || order.driver) {
+    return res.status(409).json({ success: false, message: "This order can no longer be edited. Contact the kitchen for help." });
+  }
+  if ((order.paymentStatus && order.paymentStatus !== 'unpaid')
+    || order.paymentVerified
+    || order.momoReceipt
+    || order.momoTransactionRef
+    || order.momoRequestId) {
+    return res.status(409).json({ success: false, message: "An order with payment activity cannot be edited. Contact the kitchen for help." });
+  }
+  if (order.cancellation && ['requested', 'pending', 'awaiting_cancellation'].includes(order.cancellation.status)) {
+    return res.status(409).json({ success: false, message: "This order has a pending cancellation request and cannot be edited." });
+  }
+
+  const body = req.body || {};
+  const customer = cleanString(body.customer, 100);
+  const phone = cleanString(body.phone, 30);
+  if (!customer || !phone) {
+    return res.status(400).json({ success: false, message: "Customer name and phone number are required." });
+  }
+  const normalizedItems = normalizeOrderItems(db, body.items);
+  if (normalizedItems.error) return res.status(400).json({ success: false, message: normalizedItems.error });
+
+  const items = normalizedItems.items;
+  const subtotal = Math.round(items.reduce((sum, item) => sum + item.price * item.quantity, 0) * 100) / 100;
+  const requestedFulfilment = cleanString(body.fulfilment || 'Delivery', 40);
+  const isDelivery = /deliver/i.test(requestedFulfilment);
+  const currentSession = (db.sessions && db.sessions[0]) || { sessionNumber: order.sessionNumber || 1 };
+  const sharedPickup = currentSession.pickupPoint || (db.settings && db.settings.pickup) || null;
+  const pinFromAddress = extractCoordinates(body.location);
+  const hasPin = body.mapPin
+    && Number.isFinite(Number(body.mapPin.lat))
+    && Number.isFinite(Number(body.mapPin.lng))
+    && Math.abs(Number(body.mapPin.lat)) <= 90
+    && Math.abs(Number(body.mapPin.lng)) <= 180;
+  const customerPin = hasPin
+    ? {
+      lat: Number(body.mapPin.lat),
+      lng: Number(body.mapPin.lng),
+      name: cleanString(body.mapPin.name || body.location, 200)
+    }
+    : pinFromAddress;
+  const sharedPin = sharedPickup && Number.isFinite(Number(sharedPickup.lat)) && Number.isFinite(Number(sharedPickup.lng))
+    ? { lat: Number(sharedPickup.lat), lng: Number(sharedPickup.lng), name: sharedPickup.name }
+    : { ...DEFAULT_PICKUP_POINT };
+  if (isDelivery && !customerPin) {
+    return res.status(400).json({
+      success: false,
+      message: "Choose a delivery landmark or share your GPS pin so the rider can navigate to the correct address."
+    });
+  }
+
+  const orderPin = isDelivery ? customerPin : sharedPin;
+  const orderLocation = isDelivery
+    ? cleanString(body.location || customerPin.name || 'Customer selected location', 200)
+    : (sharedPin.name || DEFAULT_PICKUP_POINT.name);
+  const deliveryCalc = calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup);
+  const requestedNetwork = normalizeNetwork(body.paymentNetwork);
+  const network = requestedNetwork === 'cash' ? '' : (requestedNetwork || normalizeNetwork(body.payment));
+  const payment = cleanString(body.payment || (network ? MOMO_NETWORKS[network].label : 'MTN Mobile Money'), 80);
+
+  order.customer = customer;
+  order.phone = phone;
+  order.fulfilment = isDelivery ? 'Delivery' : 'Collection';
+  order.location = orderLocation;
+  order.mapPin = orderPin;
+  order.pinSource = customerPin ? (hasPin ? 'customer-map' : 'map-link') : 'shared-pickup';
+  order.timing = cleanString(body.timing || "As soon as possible", 60);
+  order.items = items;
+  order.subtotal = subtotal;
+  order.deliveryFee = deliveryCalc.fee;
+  order.deliveryDistanceKm = deliveryCalc.distanceKm;
+  order.deliveryDiscount = deliveryCalc.discount;
+  order.deliveryBaseFee = deliveryCalc.baseFee;
+  order.total = Math.round((subtotal + deliveryCalc.fee) * 100) / 100;
+  order.payment = payment;
+  order.paymentMode = paymentModeFor(payment) === 'cash' || requestedNetwork === 'cash' ? 'cash' : 'momo';
+  order.paymentNetwork = network || null;
+  order.momoPayerPhone = walletPhone(body.payerPhone) || null;
+  order.notes = cleanString(body.notes, 500);
+  order.pickupPoint = sharedPickup;
+  order.pickupPointName = sharedPickup ? sharedPickup.name : null;
+  order.updatedAt = new Date().toISOString();
+  saveDatabase(db);
+  logAction("ORDER_EDITED", customer, order.id, { total: order.total }, req);
+
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'updated', order: projectOrder(order, 'customer') });
+  }
+  res.json({ success: true, message: "Order updated.", order: projectOrder(order, 'checkout') });
 });
 
 app.patch('/api/orders/:id/status', requireRole('driver', 'admin'), (req, res) => {
@@ -3910,13 +4024,25 @@ app.post('/api/drivers/:id/payouts', requireRole('driver', 'admin'), (req, res) 
     return res.status(403).json({ success: false, message: 'You can only request your own payout.' });
   }
   const snapshot = driverEarningsSnapshot(driver, 'week');
-  const amount = toAmount((req.body || {}).amount) || snapshot.pendingPayout;
-  if (!amount || amount <= 0) {
-    return res.status(400).json({ success: false, message: 'There is no pending delivery fee to request yet.' });
-  }
   const existing = (db.payouts || []).find(p => String(p.driverId) === String(driver.id) && p.status === 'requested');
   if (existing) {
     return res.status(200).json({ success: true, pending: true, message: 'Your payout request is already waiting for the admin.', payout: existing });
+  }
+  const requestedAmount = (req.body || {}).amount;
+  const amount = requestedAmount === undefined || requestedAmount === null || requestedAmount === ''
+    ? snapshot.pendingPayout
+    : toAmount(requestedAmount);
+  if (amount === null) {
+    return res.status(400).json({ success: false, message: 'Enter a valid payout amount.' });
+  }
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ success: false, message: 'There is no pending delivery fee to request yet.' });
+  }
+  if (amount > snapshot.pendingPayout) {
+    return res.status(400).json({
+      success: false,
+      message: `The requested payout cannot exceed your pending earnings of GH₵${snapshot.pendingPayout.toFixed(2)}.`
+    });
   }
   const payout = {
     id: 'payout-' + Date.now(),
@@ -4775,6 +4901,22 @@ app.post('/api/admin/payouts/:id/pay', requireRole('admin'), (req, res) => {
   const db = loadDatabase();
   const payout = (db.payouts || []).find(p => String(p.id) === String(req.params.id));
   if (!payout) return res.status(404).json({ success: false, message: 'Payout request not found.' });
+  if (payout.status !== 'requested') {
+    return res.status(409).json({ success: false, message: 'Only a pending payout request can be marked as paid.' });
+  }
+  const driver = (db.drivers || []).find(d => String(d.id) === String(payout.driverId));
+  if (!driver) return res.status(409).json({ success: false, message: 'The payout driver no longer exists.' });
+  const earnings = driverEarningsSnapshot(driver);
+  const otherClaims = (db.payouts || [])
+    .filter(p => String(p.driverId) === String(driver.id) && String(p.id) !== String(payout.id) && ['requested', 'paid'].includes(p.status))
+    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const available = Math.max(0, Math.round((earnings.totalEarnings - otherClaims) * 100) / 100);
+  if (!Number.isFinite(Number(payout.amount)) || Number(payout.amount) <= 0 || Number(payout.amount) > available) {
+    return res.status(409).json({
+      success: false,
+      message: `This payout exceeds the driver's available earnings of GH₵${available.toFixed(2)}.`
+    });
+  }
   payout.status = 'paid';
   payout.paidAt = new Date().toISOString();
   payout.paidBy = req.auth.admin.username;

@@ -993,27 +993,40 @@ export function saveOrders(orders) {
   broadcastEvent("ORDERS_UPDATED", { count: orders.length });
 }
 
-export async function createOrder(orderData) {
-  const orders = getOrders();
+export async function createOrder(orderData, editOrderId = '') {
   const currentSession = getSessionState();
-
   const paymentLabel = orderData.payment || "MTN Mobile Money";
   const paymentMode = /cash|pay on delivery|on arrival|upon delivery/i.test(paymentLabel) ? "cash" : "momo";
+  const originalOrder = editOrderId ? getOrderById(editOrderId) : null;
+  if (editOrderId && !originalOrder) throw new Error('The order to edit could not be found.');
 
-  // The server is the authority for the Order ID. It guarantees a unique
-  // The server assigns a unique public YB-XXXX ID and a separate pickup PIN.
-  let serverOrder = null;
-  try {
-    serverOrder = await apiCreateOrder({
+  let newOrder;
+  if (editOrderId) {
+    const result = await apiEditOrder(editOrderId, {
       ...orderData,
       sessionNumber: currentSession.sessionNumber
     });
-  } catch (e) {
-    serverOrder = null;
-  }
-
-  let newOrder;
-  if (serverOrder && serverOrder.id) {
+    if (!result.success || !result.order) {
+      throw new Error(result.message || 'The order could not be updated.');
+    }
+    newOrder = {
+      ...originalOrder,
+      ...result.order,
+      trackingToken: originalOrder.trackingToken,
+      phone: orderData.phone,
+      notes: orderData.notes,
+      location: result.order.location || orderData.location,
+      mapPin: result.order.mapPin || orderData.mapPin,
+      items: result.order.items || orderData.items || []
+    };
+  } else {
+    const serverOrder = await apiCreateOrder({
+      ...orderData,
+      sessionNumber: currentSession.sessionNumber
+    });
+    if (!serverOrder || !serverOrder.id) {
+      throw new Error('The server did not confirm the order. Please try again.');
+    }
     newOrder = {
       ...serverOrder,
       // Public projection intentionally hides private contact data; keep the
@@ -1023,64 +1036,6 @@ export async function createOrder(orderData) {
       location: serverOrder.location || orderData.location,
       mapPin: serverOrder.mapPin || orderData.mapPin,
       items: serverOrder.items || orderData.items || []
-    };
-  } else {
-    // Offline fallback: generate a locally unique code, then sync when online.
-    let idNumber = Math.floor(1000 + Math.random() * 9000);
-    let newId = `YB-${idNumber}`;
-    let guard = 0;
-    while (orders.some(o => String(o.id).toUpperCase() === newId.toUpperCase()) && guard < 9000) {
-      idNumber = 1000 + ((idNumber - 1000 + 1) % 9000);
-      newId = `YB-${idNumber}`;
-      guard += 1;
-    }
-    const usedPins = new Set(orders.map(order => String(order.pickupPin || '')));
-    let pickupPin = '';
-    for (let attempt = 0; attempt < 9000; attempt++) {
-      const candidate = String(Math.floor(1000 + Math.random() * 9000));
-      if (!usedPins.has(candidate) && candidate !== String(idNumber)) {
-        pickupPin = candidate;
-        break;
-      }
-    }
-    if (!pickupPin) throw new Error('No unused pickup PIN is available while offline.');
-    newOrder = {
-      ...orderData,
-      id: newId,
-      pickupPin,
-      pickupPinIsOrderId: false,
-      sessionNumber: currentSession.sessionNumber,
-      createdAt: new Date().toISOString(),
-      fulfilment: orderData.fulfilment || "Delivery",
-      location: orderData.location || "Adabraka, Accra",
-      mapPin: orderData.mapPin || { lat: 5.5650, lng: -0.2100 },
-      timing: orderData.timing || "As soon as possible",
-      items: orderData.items || [],
-      subtotal: orderData.subtotal || 0,
-      deliveryFee: orderData.deliveryFee || 0,
-      total: orderData.total || (orderData.subtotal || 0) + (orderData.deliveryFee || 0),
-      payment: paymentLabel,
-      paymentMode,
-      paymentStatus: "unpaid",
-      paymentRef: newId,
-      paymentVerified: false,
-      paidAt: null,
-      momoAmount: null,
-      momoTransactionRef: null,
-      momoReceipt: null,
-      paymentAudit: [],
-      notes: orderData.notes || "",
-      status: "pending",
-      verifiedByDriver: false,
-      pickupPoint: currentSession.pickupPoint || null,
-      pickupPointName: currentSession.pickupPoint ? currentSession.pickupPoint.name : null,
-      orderSession: {
-        isActive: true,
-        sessionNumber: currentSession.sessionNumber,
-        startedAt: new Date().toISOString(),
-        endedAt: null
-      },
-      driver: null
     };
   }
 
@@ -1691,26 +1646,19 @@ export async function apiFetchLogs() {
 }
 
 export async function apiCreateOrder(order) {
-  try {
-    const res = await fetch(`${API_BASE}/api/orders`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(order)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.id && data.trackingToken) {
-        try {
-          localStorage.setItem(`yebs_order_access_${String(data.id).toUpperCase()}`, data.trackingToken);
-          delete data.trackingToken;
-        } catch (e) {
-          return null;
-        }
-      }
-      return data;
-    }
-  } catch (e) {}
-  return null;
+  const res = await fetch(`${API_BASE}/api/orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(order)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || 'The server rejected the order.');
+  if (!data || !data.id || !data.trackingToken) {
+    throw new Error('The server did not return valid order tracking details.');
+  }
+  localStorage.setItem(`yebs_order_access_${String(data.id).toUpperCase()}`, data.trackingToken);
+  delete data.trackingToken;
+  return data;
 }
 
 export async function apiFetchActiveDrivers() {
@@ -2105,7 +2053,7 @@ export async function apiEditOrder(orderId, updates) {
   try {
     const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/edit`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: orderAccessHeaders(orderId, { 'Content-Type': 'application/json' }),
       body: JSON.stringify(updates)
     });
     const data = await res.json().catch(() => ({}));

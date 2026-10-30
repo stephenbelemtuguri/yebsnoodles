@@ -46,7 +46,6 @@ router.post('/order/:orderId', async (req, res) => {
       message,
       messageType, // 'text', 'image', 'location', 'system'
       attachmentUrl: attachmentUrl || null,
-      readBy: { customer: false, driver: false, admin: false },
       readBy: {
         customer: senderRole === 'customer',
         driver: senderRole === 'driver',

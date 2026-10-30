@@ -4,7 +4,8 @@ const path = require('path');
 const request = require('supertest');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yebs-momo-bridge-'));
-process.env.DB_PATH = path.join(tempDir, 'database.json');
+const databasePath = path.join(tempDir, 'database.json');
+process.env.DB_PATH = databasePath;
 process.env.DATABASE_URL = '';
 process.env.DATABASE_POOL_URL = '';
 process.env.SUPABASE_URL = '';
@@ -13,6 +14,25 @@ process.env.ADMIN_USERNAME = '';
 process.env.ADMIN_PASSWORD = '';
 process.env.MOMO_SMS_INGEST_TOKEN = 'a'.repeat(64);
 process.env.MOMO_SMS_ALLOWED_SENDERS = 'MTN, 12345';
+
+fs.writeFileSync(databasePath, JSON.stringify({
+  admins: [],
+  drivers: [],
+  orders: [],
+  sessions: [],
+  settings: { momo: {}, pickup: {}, deliveryFee: 15 },
+  menuItems: [{
+    id: 'test-meal',
+    name: 'Test meal',
+    price: 10,
+    available: true,
+    status: 'available'
+  }],
+  auditLogs: [],
+  payouts: [],
+  reviews: [],
+  notifications: []
+}));
 
 const { app, start } = require('../server');
 
@@ -30,7 +50,7 @@ describe('MoMo SMS ingestion bridge', () => {
       phone: '0240000000',
       fulfilment: 'Collection',
       payment: 'MTN Mobile Money',
-      items: [{ name: 'Test meal', price: 10, quantity: 1 }]
+      items: [{ menuId: 'test-meal', name: 'Test meal', price: 10, quantity: 1 }]
     });
     expect(response.status).toBe(201);
     order = response.body;

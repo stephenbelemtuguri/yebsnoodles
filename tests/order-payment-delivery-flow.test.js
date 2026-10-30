@@ -53,7 +53,14 @@ fs.writeFileSync(databasePath, JSON.stringify({
     pickup: { name: 'Test Kitchen', ...initialLocation },
     deliveryFee: 15
   },
-  menuItems: [],
+  menuItems: [{
+    id: 'test-meal',
+    name: 'Test meal',
+    price: 25,
+    image: 'test-meal.jpg',
+    available: true,
+    status: 'available'
+  }],
   auditLogs: [],
   payouts: [],
   reviews: [],
@@ -118,7 +125,7 @@ describe('customer order to verified delivery flow', () => {
         payment: 'MTN Mobile Money',
         location: 'Test delivery address',
         mapPin: { lat: 5.6037, lng: -0.187, name: 'Test delivery address' },
-        items: [{ name: 'Test meal', price: 25, quantity: 1 }]
+        items: [{ menuId: 'test-meal', name: 'Test meal', price: 25, quantity: 1 }]
       });
 
     expect(response.status).toBe(201);
@@ -136,6 +143,62 @@ describe('customer order to verified delivery flow', () => {
       });
   }
 
+  test('uses the server menu price and rejects fabricated menu items', async () => {
+    const fabricated = await request(app)
+      .post('/api/orders')
+      .send({
+        customer: 'Test Customer',
+        phone: '0240000000',
+        items: [{ menuId: 'not-on-menu', name: 'Free meal', price: 0, quantity: 1 }]
+      });
+    expect(fabricated.status).toBe(400);
+
+    const order = await request(app)
+      .post('/api/orders')
+      .send({
+        customer: 'Test Customer',
+        phone: '0240000000',
+        fulfilment: 'Collection',
+        items: [{ menuId: 'test-meal', name: 'Spoofed name', price: 0, quantity: 2 }]
+      });
+    expect(order.status).toBe(201);
+    expect(order.body.items).toMatchObject([{ name: 'Test meal', price: 25, quantity: 2 }]);
+    expect(order.body.subtotal).toBe(50);
+  });
+
+  test('edits the existing unpaid order with authenticated access', async () => {
+    const order = await createDelivery();
+    const unauthorized = await request(app)
+      .patch(`/api/orders/${order.id}/edit`)
+      .send({ customer: 'Test Customer', phone: '0240000000', items: [{ menuId: 'test-meal', quantity: 2 }] });
+    expect(unauthorized.status).toBe(403);
+
+    const edited = await request(app)
+      .patch(`/api/orders/${order.id}/edit`)
+      .set('X-Order-Access-Token', order.trackingToken)
+      .send({
+        customer: 'Updated Customer',
+        phone: '0240000000',
+        fulfilment: 'Delivery',
+        location: 'Updated delivery address',
+        mapPin: { lat: 5.61, lng: -0.19, name: 'Updated delivery address' },
+        payment: 'MTN Mobile Money',
+        paymentNetwork: 'mtn',
+        items: [{ menuId: 'test-meal', price: 0, quantity: 2 }]
+      });
+    expect(edited.status).toBe(200);
+    expect(edited.body.order.id).toBe(order.id);
+    expect(edited.body.order.customer).toBe('Updated Customer');
+    expect(edited.body.order.items).toMatchObject([{ name: 'Test meal', price: 25, quantity: 2 }]);
+    expect(edited.body.order.subtotal).toBe(50);
+
+    const tracking = await request(app)
+      .get(`/api/orders/${order.id}/track`)
+      .set('X-Order-Access-Token', order.trackingToken);
+    expect(tracking.status).toBe(200);
+    expect(tracking.body.order.location).toBe('Updated delivery address');
+  });
+
   test('holds unverified payment for review, then tracks GPS through PIN-confirmed delivery', async () => {
     const order = await createDelivery();
 
@@ -144,6 +207,16 @@ describe('customer order to verified delivery flow', () => {
     expect(proof.body.needsReview).toBe(true);
     expect(proof.body.order.paymentStatus).toBe('review');
     expect(proof.body.order.paymentVerified).toBe(false);
+
+    const cannotEditAfterPayment = await request(app)
+      .patch(`/api/orders/${order.id}/edit`)
+      .set('X-Order-Access-Token', order.trackingToken)
+      .send({
+        customer: 'Test Customer',
+        phone: '0240000000',
+        items: [{ menuId: 'test-meal', quantity: 2 }]
+      });
+    expect(cannotEditAfterPayment.status).toBe(409);
 
     const customerCannotApprove = await request(app)
       .post(`/api/orders/${order.id}/pay/review`)
@@ -201,6 +274,35 @@ describe('customer order to verified delivery flow', () => {
     expect(delivered.status).toBe(200);
     expect(delivered.body.order.status).toBe('delivered');
     expect(delivered.body.order.paymentVerified).toBe(true);
+
+    const excessivePayout = await request(app)
+      .post(`/api/drivers/${driverId}/payouts`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ amount: Number(order.deliveryFee) + 1 });
+    expect(excessivePayout.status).toBe(400);
+
+    const payout = await request(app)
+      .post(`/api/drivers/${driverId}/payouts`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ amount: order.deliveryFee });
+    expect(payout.status).toBe(201);
+    const duplicateRequest = await request(app)
+      .post(`/api/drivers/${driverId}/payouts`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({});
+    expect(duplicateRequest.status).toBe(200);
+    expect(duplicateRequest.body.payout.id).toBe(payout.body.payout.id);
+
+    const paidPayout = await request(app)
+      .post(`/api/admin/payouts/${payout.body.payout.id}/pay`)
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({});
+    expect(paidPayout.status).toBe(200);
+    const duplicatePayment = await request(app)
+      .post(`/api/admin/payouts/${payout.body.payout.id}/pay`)
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({});
+    expect(duplicatePayment.status).toBe(409);
 
     const finalTracking = await request(app)
       .get(`/api/orders/${order.id}/track`)

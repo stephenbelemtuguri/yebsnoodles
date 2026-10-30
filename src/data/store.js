@@ -84,6 +84,7 @@ if (postgresEnabled) {
 let cache = null;
 let initPromise = null;
 let pending = Promise.resolve();
+let restMutationTail = Promise.resolve();
 let pgPool = null;
 let pgReady = null;
 
@@ -97,7 +98,7 @@ function headers(extra = {}) {
 }
 
 async function readRest() {
-  const url = `${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${encodeURIComponent(ROW_ID)}&select=data`;
+  const url = `${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${encodeURIComponent(ROW_ID)}&select=data,updated_at`;
   // A paused/misconfigured Supabase project must fail fast, not hang until the
   // serverless function times out (which surfaces as a 502 in the browser).
   const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(5000) });
@@ -106,20 +107,51 @@ async function readRest() {
     throw new Error(`Supabase read failed (${res.status}): ${body.slice(0, 300)}`);
   }
   const rows = await res.json();
-  return Array.isArray(rows) && rows[0] ? rows[0].data : null;
+  const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  remoteUpdatedAt = row && row.updated_at ? row.updated_at : null;
+  return row ? row.data : null;
 }
 
 async function writeRest(data) {
-  const url = `${SUPABASE_URL}/rest/v1/${TABLE}?on_conflict=id`;
+  const previousUpdatedAt = remoteUpdatedAt;
+  const updatedAt = new Date(Math.max(Date.now(), (Date.parse(previousUpdatedAt) || 0) + 1)).toISOString();
+  const isNewRow = !previousUpdatedAt;
+  const query = isNewRow
+    ? `on_conflict=id`
+    : `id=eq.${encodeURIComponent(ROW_ID)}&updated_at=eq.${encodeURIComponent(previousUpdatedAt)}`;
+  const url = `${SUPABASE_URL}/rest/v1/${TABLE}?${query}`;
   const res = await fetch(url, {
-    method: 'POST',
-    headers: headers({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
-    body: JSON.stringify({ id: ROW_ID, data, updated_at: new Date().toISOString() }),
+    method: isNewRow ? 'POST' : 'PATCH',
+    headers: headers({
+      Prefer: isNewRow ? 'resolution=ignore-duplicates,return=representation' : 'return=representation'
+    }),
+    body: JSON.stringify(isNewRow
+      ? { id: ROW_ID, data, updated_at: updatedAt }
+      : { data, updated_at: updatedAt }),
     signal: AbortSignal.timeout(5000)
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`Supabase write failed (${res.status}): ${body.slice(0, 300)}`);
+  }
+  const rows = await res.json();
+  if (!Array.isArray(rows) || rows.length === 0) {
+    if (!isNewRow) {
+      throw new Error('Concurrent state update detected; reload the latest data and retry.');
+    }
+    const remote = await readRest();
+    if (!remote || typeof remote !== 'object') {
+      throw new Error('The shared state row could not be created.');
+    }
+    cache = remote;
+    if (JSON.stringify(remote) !== JSON.stringify(data)) {
+      throw new Error('Concurrent state creation detected; reload the latest data and retry.');
+    }
+    return;
+  }
+  remoteUpdatedAt = rows[0].updated_at || updatedAt;
+  if (isNewRow && rows[0].data && typeof rows[0].data === 'object') {
+    cache = rows[0].data;
   }
 }
 
@@ -188,6 +220,7 @@ async function writeRemote(data) {
  */
 let lastError = null;
 let lastReadAt = 0;
+let remoteUpdatedAt = null;
 // False when the durable row could not be read at startup. While it is false we
 // must never write, otherwise a transient outage would replace the real menu,
 // orders and accounts with the local seed document.
@@ -256,6 +289,26 @@ async function refresh(force = false) {
 }
 
 async function acquireMutationLock() {
+  if (remoteMode === 'supabase') {
+    let releaseGate;
+    const previousMutation = restMutationTail;
+    restMutationTail = new Promise(resolve => { releaseGate = resolve; });
+    await previousMutation;
+    try {
+      await refresh(true);
+      if (!canPersist()) throw new Error('Persistent storage is unavailable.');
+    } catch (err) {
+      releaseGate();
+      throw err;
+    }
+
+    let released = false;
+    return async () => {
+      if (released) return;
+      released = true;
+      releaseGate();
+    };
+  }
   if (remoteMode !== 'postgres') {
     await refresh(true);
     if (remoteEnabled && !canPersist()) throw new Error('Persistent storage is unavailable.');
