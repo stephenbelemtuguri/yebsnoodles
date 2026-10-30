@@ -44,7 +44,7 @@
     .topbar-links a:hover { opacity: 1; text-decoration: underline; color: var(--gold); }
     
     /* Site Header */
-    .site-header { position: sticky; z-index: 100; top: 0; background: rgb(251 248 240 / 96%); border-bottom: 1px solid rgb(23 61 48 / 8%); backdrop-filter: blur(12px); }
+    .site-header { position: sticky; z-index: 100; top: 0; background: rgb(251 248 240 / 90%); border-bottom: 1px solid rgb(23 61 48 / 10%); box-shadow: 0 8px 24px rgb(23 61 48 / 7%); -webkit-backdrop-filter: saturate(145%) blur(16px); backdrop-filter: saturate(145%) blur(16px); }
     .header-inner { min-height: 80px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
     .brand { display: inline-flex; align-items: center; gap: 12px; text-decoration: none; color: var(--forest); }
     .brand-logo-img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--orange); box-shadow: 0 4px 12px rgba(229,122,69,0.2); }
@@ -55,7 +55,7 @@
     .main-nav { display: flex; align-items: center; gap: 18px; }
     .main-nav a { color: #464d45; font-size: .88rem; font-weight: 700; text-decoration: none; transition: color .2s; }
     .main-nav a:hover { color: var(--orange); }
-    .nav-track-btn { display: inline-flex; align-items: center; gap: 6px; background: #eef5f0; color: var(--forest) !important; padding: 7px 14px; border-radius: 6px; border: 1px solid #c9decb; }
+    .nav-track-btn { display: inline-flex; align-items: center; gap: 6px; background: rgb(238 245 240 / 84%); color: var(--forest) !important; padding: 7px 14px; border-radius: 999px; border: 1px solid rgb(201 222 203 / 90%); box-shadow: 0 3px 12px rgb(23 61 48 / 6%); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
     .nav-track-btn:hover { background: #dceada; }
     
     .nav-cta, .button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 6px; padding: 0 20px; background: var(--forest); color: white; font-weight: 700; text-decoration: none; transition: background .18s ease, transform .18s ease; }
@@ -166,7 +166,7 @@
     .hero-visual { position: relative; min-height: 380px; }
     .hero-image { position: absolute; inset: 0 18px 12px 0; width: calc(100% - 18px); height: calc(100% - 12px); object-fit: cover; border-radius: 36px 36px 8px 8px; box-shadow: var(--shadow); }
     .hero-visual::after { position: absolute; z-index: -1; top: 18px; right: 0; bottom: 0; left: 24px; border: 2px solid var(--gold); border-radius: 36px 36px 8px 8px; content: ""; }
-    .hero-stamp { position: absolute; right: 0px; bottom: 30px; width: 120px; height: 120px; display: grid; align-content: center; justify-items: center; border: 5px solid var(--cream); border-radius: 50%; background: var(--forest); color: white; text-align: center; transform: rotate(8deg); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+    .hero-stamp { position: absolute; right: 0px; bottom: 30px; width: 120px; height: 120px; display: grid; align-content: center; justify-items: center; border: 5px solid var(--cream); border-radius: 50%; background: rgb(23 61 48 / 88%); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: white; text-align: center; transform: rotate(8deg); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
     .hero-stamp strong { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; color: var(--gold); }
     .hero-stamp span { color: #e4d6b7; font-size: .62rem; letter-spacing: .13em; text-transform: uppercase; }
 
@@ -207,20 +207,21 @@
     
     .poster-card {
       background: #ffffff;
-      border: 2px solid #e8e2d4;
+      border: 1px solid #e8e2d4;
       border-radius: 20px;
       overflow: hidden;
       box-shadow: 0 10px 30px rgba(18, 44, 34, 0.08);
-      transition: all 0.28s ease;
+      transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
       display: flex;
       flex-direction: column;
       position: relative;
     }
     .poster-card:hover {
-      transform: translateY(-5px);
+      transform: translateY(-4px);
       box-shadow: 0 18px 45px rgba(23, 61, 48, 0.16);
       border-color: var(--gold);
     }
+    .poster-card:focus-within { outline: 3px solid var(--gold); outline-offset: 3px; }
     
     /* Poster Capsule Banner (Exact replica of Image 1) */
     .poster-capsule-bar {

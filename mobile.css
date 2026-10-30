@@ -30,6 +30,28 @@
   background: rgba(15, 26, 20, 0.97) !important;
   border-bottom-color: var(--dm-border) !important;
 }
+[data-theme="dark"] .brand {
+  color: var(--dm-text) !important;
+}
+[data-theme="dark"] .brand-tagline {
+  color: var(--dm-orange) !important;
+}
+[data-theme="dark"] .main-nav a:not(.nav-cta) {
+  color: var(--dm-text) !important;
+}
+[data-theme="dark"] .nav-track-btn {
+  background: var(--dm-card) !important;
+  border-color: var(--dm-border) !important;
+  color: var(--dm-text) !important;
+}
+[data-theme="dark"] .hero-copy,
+[data-theme="dark"] .section-heading p,
+[data-theme="dark"] .order-heading p {
+  color: var(--dm-muted) !important;
+}
+[data-theme="dark"] .eyebrow {
+  color: var(--dm-gold) !important;
+}
 [data-theme="dark"] .main-nav {
   background: var(--dm-surface) !important;
   border-bottom-color: var(--dm-border) !important;
@@ -796,9 +818,11 @@
     max-height: calc(100dvh - 74px);
     overflow-y: auto;
     padding: 10px 14px 16px;
-    background: #173d30;
+    background: rgba(15, 40, 32, 0.96);
     border-top: 1px solid rgba(255, 255, 255, .14);
     box-shadow: 0 20px 34px rgba(0, 0, 0, .32);
+    -webkit-backdrop-filter: saturate(145%) blur(16px);
+    backdrop-filter: saturate(145%) blur(16px);
     z-index: 2100;
   }
   .has-mobile-nav header nav.nav-open { display: flex !important; }
@@ -857,6 +881,11 @@
 
 @media (min-width: 821px) {
   .mobile-nav-toggle { display: none !important; }
+}
+
+:focus-visible {
+  outline: 3px solid #e9bd68;
+  outline-offset: 3px;
 }
 
 /* -------------------------------------------------------- AUTH FORMS (small) ---- */
