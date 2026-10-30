@@ -508,36 +508,57 @@ app.get('/api/admin/notifications', requireRole('admin'), (req, res) => {
   res.json({ success: true, notifications: (db.notifications || []).slice(0, 100) });
 });
 
-// Send one plain WhatsApp Cloud API text message. Used by the kitchen alert
-// above and by the password-recovery flow. Returns { ok, reason } and never
-// throws, so callers can fall back to another channel.
+// Send one plain text message to an individual WhatsApp phone. Used by the
+// password-recovery flow and rider handover notices. Tries the owner's
+// CallMeBot relay as a fallback when the Cloud API is unavailable.
 async function sendWhatsAppText(to, text) {
   const cfg = whatsappConfig();
   const target = String(to || cfg.to || '').replace(/[^\d]/g, '');
-  if (!cfg.token || !cfg.phoneId) return { ok: false, reason: 'not-configured' };
   if (!target) return { ok: false, reason: 'no-phone' };
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-    const response = await fetch('https://graph.facebook.com/' + cfg.version + '/' + cfg.phoneId + '/messages', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + cfg.token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: target,
-        type: 'text',
-        text: { preview_url: false, body: String(text).slice(0, 3800) }
-      }),
-      signal: controller.signal
-    }).finally(() => clearTimeout(timer));
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error((payload.error && payload.error.message) || ('WhatsApp API ' + response.status));
-    return { ok: true, providerId: payload.messages && payload.messages[0] ? payload.messages[0].id : null };
-  } catch (err) {
-    console.warn('[whatsapp] message failed:', err.message);
-    return { ok: false, reason: err.message };
+  if (cfg.token && cfg.phoneId) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch('https://graph.facebook.com/' + cfg.version + '/' + cfg.phoneId + '/messages', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + cfg.token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: target,
+          type: 'text',
+          text: { preview_url: false, body: String(text).slice(0, 3800) }
+        }),
+        signal: controller.signal
+      }).finally(() => clearTimeout(timer));
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error((payload.error && payload.error.message) || ('WhatsApp API ' + response.status));
+      return { ok: true, providerId: payload.messages && payload.messages[0] ? payload.messages[0].id : null };
+    } catch (err) {
+      console.warn('[whatsapp] cloud message failed:', err.message);
+    }
   }
+  // Fallback: the owner's own relay number can still deliver notices.
+  const bot = callmebotConfig();
+  if (bot.apiKey && bot.phone) {
+    try {
+      const url = 'https://api.callmebot.com/whatsapp.php?phone=%2B' + encodeURIComponent(bot.phone)
+        + '&text=' + encodeURIComponent(String(text).slice(0, 1000))
+        + '&apikey=' + encodeURIComponent(bot.apiKey);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+      const body = await response.text().catch(() => '');
+      if (!response.ok || /error|invalid/i.test(body.slice(0, 200))) {
+        throw new Error(body.slice(0, 160) || ('CallMeBot ' + response.status));
+      }
+      return { ok: true, provider: 'callmebot' };
+    } catch (err) {
+      console.warn('[whatsapp] callmebot failed:', err.message);
+      return { ok: false, reason: err.message };
+    }
+  }
+  return { ok: false, reason: 'whatsapp-not-configured' };
 }
 
 // ==========================================================
