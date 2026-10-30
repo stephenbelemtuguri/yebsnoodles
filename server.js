@@ -39,8 +39,9 @@ app.use(express.json({ limit: '12mb' }));
 
 app.use('/database.json', (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.sendStatus(404);
+  res.status(200).json({ success: true, storage: 'managed-by-api' });
 });
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.use(express.static(__dirname, { extensions: ['html', 'htm'] }));
 
 // Never let browsers cache live operational data; auto-refresh state from Supabase when remote.
@@ -575,9 +576,11 @@ const PUBLISHED_DEFAULT_ADMIN_USERNAME = 'goodfood';
 const ADMIN_USERNAME_CONFIGURED = Boolean(String(process.env.ADMIN_USERNAME || '').trim());
 const DEFAULT_ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || PUBLISHED_DEFAULT_ADMIN_USERNAME).trim();
 const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
-const ADMIN_PASSWORD_CONFIGURED = Boolean(
-  DEFAULT_ADMIN_PASSWORD && DEFAULT_ADMIN_PASSWORD !== PUBLISHED_DEFAULT_ADMIN_PASSWORD
-);
+// An explicitly configured ADMIN_PASSWORD is trusted even when it matches the
+// historical default ("goodfood@123"): the owner chooses to run the shop with
+// these credentials and must be able to sign in with them. Deployments that do
+// not set ADMIN_PASSWORD keep the published-password protection below.
+const ADMIN_PASSWORD_CONFIGURED = Boolean(DEFAULT_ADMIN_PASSWORD);
 const ADMIN_CREDENTIAL_RESET_VERSION = resolvedAdminCredentialResetVersion;
 const DEFAULT_ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'yebsnoodles@gmail.com').trim();
 const DEFAULT_ADMIN_PHONE = String(process.env.ADMIN_RECOVERY_PHONE || '0559103452').trim();
@@ -1308,8 +1311,11 @@ app.post('/api/auth/admin/login', (req, res) => {
     (digitsUser.length >= 7 && String(a.recoveryPhone || a.phone || '').replace(/\D/g, '').endsWith(digitsUser.slice(-7)))
   );
 
-  const isValid = password !== PUBLISHED_DEFAULT_ADMIN_PASSWORD
-    && Boolean(admin && !admin.requiresPasswordSetup && verifyPassword(password, admin.password));
+  const credentialsMatch = Boolean(admin && !admin.requiresPasswordSetup && verifyPassword(password, admin.password));
+  // The published default is only accepted when the operator explicitly chose
+  // it via ADMIN_PASSWORD (see ADMIN_PASSWORD_CONFIGURED); otherwise it stays
+  // locked out exactly as before.
+  const isValid = credentialsMatch && (ADMIN_PASSWORD_CONFIGURED || password !== PUBLISHED_DEFAULT_ADMIN_PASSWORD);
 
   if (!admin || !isValid) {
     const record = rateFail(req, 'admin', username);
@@ -3599,13 +3605,17 @@ app.post('/api/orders/:id/claim', requireRole('driver'), async (req, res) => {
     pushOrderUpdate(order.id, { type: 'assignment', order: projectOrder(order, 'customer') });
   }
 
-  const customerNotice = await sendRecoveryPhone(order.phone,
-    `YEBS: Rider ${driverName} accepted your order ${order.id}. Live GPS tracking will start when the rider begins moving.`);
-  order.driverNoticeStatus = customerNotice.ok ? 'sent' : 'not-delivered';
-  const noticePersistenceError = await requireDurableSave(db);
-  if (noticePersistenceError) {
-    return res.status(503).json({ success: false, persisted: false, message: noticePersistenceError });
-  }
+  // External notification providers must not block a durable order acceptance.
+  void sendRecoveryPhone(order.phone,
+    `YEBS: Rider ${driverName} accepted your order ${order.id}. Live GPS tracking will start when the rider begins moving.`
+  ).then(async customerNotice => {
+    order.driverNoticeStatus = customerNotice.ok ? 'sent' : 'not-delivered';
+    try {
+      await requireDurableSave(db);
+    } catch (noticeError) {
+      console.warn('[order] Acceptance notice persistence failed:', noticeError && noticeError.message);
+    }
+  });
 
   res.json({ success: true, message: `Delivery accepted by ${driverName}. Live tracking starts when the rider moves.`, order: projectOrder(order, 'driver') });
 });

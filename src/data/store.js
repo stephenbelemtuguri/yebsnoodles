@@ -208,7 +208,10 @@ function pgPoolFor(connectionString) {
     ssl: /supabase|pooler|render\.com|dpg-/i.test(connectionString) ? { rejectUnauthorized: false } : undefined,
     max: Number(process.env.PG_POOL_MAX || 1),
     idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 30000),
+    // Supavisor answers a healthy connection in well under a second. Waiting
+    // 30s per handshake -- potentially twice with the candidate list -- made
+    // every mutation storm-slow before the REST failover could take over.
+    connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 10000),
     query_timeout: Number(process.env.PG_QUERY_TIMEOUT_MS || 20000),
     statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS || 20000),
     keepAlive: true,
@@ -273,7 +276,7 @@ function ensurePostgres() {
   return pgReady;
 }
 
-async function retryPostgres(operation, attempts = 3) {
+async function retryPostgres(operation, attempts = 2) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {

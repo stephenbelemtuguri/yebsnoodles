@@ -54,6 +54,14 @@ services:
         sync: false
       - key: WHATSAPP_PHONE_NUMBER_ID
         sync: false
+      # Free CallMeBot relay fallback so the owner still gets order alerts when
+      # the Cloud API is absent. The owner first sends
+      # "I allow callmebot to send me messages" to +34 644 51 95 23 and puts the
+      # resulting key here.
+      - key: WHATSAPP_CALLMEBOT_APIKEY
+        sync: false
+      - key: WHATSAPP_CALLMEBOT_PHONE
+        sync: false
       # Password recovery email providers.
       - key: SENDGRID_API_KEY
         sync: false

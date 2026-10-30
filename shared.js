@@ -2417,10 +2417,13 @@ export function calculateDeliveryQuote(distanceKm, mealCount, isDelivery) {
 
 export async function apiClaimOrder(orderId) {
   if (!orderId) return { success: false, message: 'Missing order ID' };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
   try {
     const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/claim`, {
       method: 'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json' })
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      signal: controller.signal
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.order) {
@@ -2430,6 +2433,8 @@ export async function apiClaimOrder(orderId) {
     return { ...data, ok: res.ok };
   } catch (e) {
     return { success: false, message: 'Could not reach server to claim delivery.' };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
