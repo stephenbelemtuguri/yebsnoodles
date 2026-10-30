@@ -74,5 +74,6 @@ describe('one-time administrator credential reset', () => {
       .post('/api/auth/admin/login')
       .send({ username: resetUsername, password: 'new-gui-admin-strong-password' });
     expect(guiLogin.status).toBe(200);
+    expect(JSON.parse(fs.readFileSync(databasePath, 'utf8')).settings.adminCredentialResetVersion).toBe(resetVersion);
   });
 });

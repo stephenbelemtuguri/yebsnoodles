@@ -20,14 +20,7 @@ const bcrypt = require('bcryptjs');
 const store = require('./src/data/store');
 const { resolveAdminCredentialResetVersion } = require('./scripts/render-deploy-version');
 
-let renderBuildVersion = '';
-if (process.env.RENDER || process.env.RENDER_SERVICE_ID) {
-  const renderBuildVersionPath = path.join(__dirname, '.render-deploy-version');
-  if (fs.existsSync(renderBuildVersionPath)) {
-    renderBuildVersion = fs.readFileSync(renderBuildVersionPath, 'utf8').trim();
-  }
-}
-const resolvedAdminCredentialResetVersion = resolveAdminCredentialResetVersion(process.env, renderBuildVersion);
+const resolvedAdminCredentialResetVersion = resolveAdminCredentialResetVersion(process.env);
 if (resolvedAdminCredentialResetVersion) {
   process.env.ADMIN_CREDENTIAL_RESET_VERSION = resolvedAdminCredentialResetVersion;
 }
@@ -798,22 +791,29 @@ function ensureSystemAccounts(db) {
 
     if (ADMIN_CREDENTIAL_RESET_VERSION && ADMIN_USERNAME_CONFIGURED && ADMIN_PASSWORD_CONFIGURED &&
         String(db.settings.adminCredentialResetVersion || '') !== ADMIN_CREDENTIAL_RESET_VERSION) {
-      const desiredUsername = DEFAULT_ADMIN_USERNAME.toLowerCase();
-      const matchingAdmin = db.admins.find(admin =>
-        String(admin.username || '').toLowerCase() === desiredUsername
-      );
-      const resetAdmin = matchingAdmin || (db.admins.length === 1 ? db.admins[0] : null);
-      if (resetAdmin) {
-        resetAdmin.username = DEFAULT_ADMIN_USERNAME;
-        resetAdmin.password = hashPassword(DEFAULT_ADMIN_PASSWORD);
-        resetAdmin.passwordUpdatedAt = new Date().toISOString();
-        resetAdmin.sessionEpoch = (Number(resetAdmin.sessionEpoch) || 0) + 1;
-        delete resetAdmin.requiresPasswordSetup;
+      const previousResetVersion = String(db.settings.adminCredentialResetVersion || '');
+      if (/^render-deploy-build-/.test(previousResetVersion)) {
         db.settings.adminCredentialResetVersion = ADMIN_CREDENTIAL_RESET_VERSION;
         changed = true;
-        console.log(`[security] Applied one-time administrator credential reset version "${ADMIN_CREDENTIAL_RESET_VERSION}" to "${DEFAULT_ADMIN_USERNAME}".`);
+        console.log('[security] Migrated the legacy per-deploy reset marker without changing administrator credentials.');
       } else {
-        console.error('[security] Administrator credential reset was not applied: set ADMIN_USERNAME to an existing account, or ensure exactly one administrator exists.');
+        const desiredUsername = DEFAULT_ADMIN_USERNAME.toLowerCase();
+        const matchingAdmin = db.admins.find(admin =>
+          String(admin.username || '').toLowerCase() === desiredUsername
+        );
+        const resetAdmin = matchingAdmin || (db.admins.length === 1 ? db.admins[0] : null);
+        if (resetAdmin) {
+          resetAdmin.username = DEFAULT_ADMIN_USERNAME;
+          resetAdmin.password = hashPassword(DEFAULT_ADMIN_PASSWORD);
+          resetAdmin.passwordUpdatedAt = new Date().toISOString();
+          resetAdmin.sessionEpoch = (Number(resetAdmin.sessionEpoch) || 0) + 1;
+          delete resetAdmin.requiresPasswordSetup;
+          db.settings.adminCredentialResetVersion = ADMIN_CREDENTIAL_RESET_VERSION;
+          changed = true;
+          console.log(`[security] Applied one-time administrator credential reset version "${ADMIN_CREDENTIAL_RESET_VERSION}" to "${DEFAULT_ADMIN_USERNAME}".`);
+        } else {
+          console.error('[security] Administrator credential reset was not applied: set ADMIN_USERNAME to an existing account, or ensure exactly one administrator exists.');
+        }
       }
     }
 
@@ -4857,6 +4857,9 @@ function start() {
     startPromise = (async () => {
       const data = await store.init(loadDatabase);
       const previousResetVersion = String(data.settings && data.settings.adminCredentialResetVersion || '');
+      const migratingLegacyResetVersion = /^render-deploy-build-/.test(previousResetVersion)
+        && ADMIN_USERNAME_CONFIGURED
+        && ADMIN_PASSWORD_CONFIGURED;
       if (ensureSystemAccounts(data)) {
         const result = await store.set(data);
         if (!result || !result.ok) {
@@ -4866,7 +4869,8 @@ function start() {
           try { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); } catch (e) { /* read-only fs */ }
         }
       }
-      const resetApplied = ADMIN_CREDENTIAL_RESET_VERSION &&
+      const resetApplied = !migratingLegacyResetVersion &&
+        ADMIN_CREDENTIAL_RESET_VERSION &&
         previousResetVersion !== ADMIN_CREDENTIAL_RESET_VERSION &&
         String(data.settings && data.settings.adminCredentialResetVersion || '') === ADMIN_CREDENTIAL_RESET_VERSION;
       if (resetApplied) {

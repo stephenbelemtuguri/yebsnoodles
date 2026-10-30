@@ -778,6 +778,7 @@
 @media (max-width: 820px) {
   .has-mobile-nav header .header-wrap {
     position: relative;
+    flex-direction: row;
     flex-wrap: nowrap;
     align-items: center;
     justify-content: space-between;

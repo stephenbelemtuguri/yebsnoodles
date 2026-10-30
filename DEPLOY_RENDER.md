@@ -52,8 +52,8 @@ a database key. Everything else is optional:
 |---|---|---|
 | `NODE_ENV` | `production` | Production behaviour |
 | `ADMIN_USERNAME` | Your private administrator username | Initial administrator account |
-| `ADMIN_PASSWORD` | Unique, strong password (not `goodfood@123`) | Required to create or migrate the administrator |
-| `ADMIN_CREDENTIAL_RESET_VERSION` | A unique label | Manual reset outside Render; on Render it is derived from the deployed Git commit |
+| `ADMIN_PASSWORD` | Unique, strong password (not `goodfood@123`) | Initial administrator seed or explicitly requested reset |
+| `ADMIN_CREDENTIAL_RESET_VERSION` | A unique label, only when intentionally resetting | Optional one-time reset trigger; deployment builds do not change it |
 | `DATABASE_URL` | from `yebs-db` (automatic) | Orders, menu and drivers |
 | `WHATSAPP_TOKEN` | Meta permanent token | Automatic order alerts |
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp phone number ID | Automatic order alerts |
@@ -65,22 +65,6 @@ a database key. Everything else is optional:
 | `DATABASE_POOL_URL` | Supabase session-pooler URI | Optional PostgreSQL connection; takes precedence over `DATABASE_URL` when set |
 | `MOMO_SUBSCRIPTION_KEY` | MTN key | Optional automatic MoMo |
 | `MOMO_API_USER` | MTN API user | Optional automatic MoMo |
-
-### Recovering an existing administrator login
-
-On Render, the `npm install` build step generates a unique deployment marker.
-At startup the app assigns it to the effective
-`ADMIN_CREDENTIAL_RESET_VERSION`; no script edits dashboard settings or needs a
-Render API token. Each new build/deploy therefore uses a fresh marker, while
-process restarts of the same deployed build do not reset repeatedly. Outside
-Render, the app continues to use the manually configured
-`ADMIN_CREDENTIAL_RESET_VERSION`.
-
-**Important:** every new build/deployment resets the admin password back
-to the value in Render's `ADMIN_PASSWORD` and invalidates existing admin
-sessions. Keep that value current and private. Password changes made later in
-the admin GUI will be replaced by the Render value on the next code deployment.
-Never put passwords in source control or chat.
 | `MOMO_API_KEY` | MTN API key | Optional automatic MoMo |
 | `MOMO_CALLBACK_HOST` | `https://your-service.onrender.com` | Optional automatic MoMo |
 | `MOMO_TARGET_ENV` | `sandbox` or `mtnghana` | MoMo environment |
@@ -95,6 +79,25 @@ Never put passwords in source control or chat.
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID | Password recovery SMS |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token | Password recovery SMS |
 | `TWILIO_FROM_NUMBER` | Twilio-enabled sender number | Password recovery SMS |
+
+### Recovering an existing administrator login
+
+Admin credentials are stored in the shared database as bcrypt hashes. Change an
+administrator password from **Admin Dashboard → Account Security**; the change
+is persisted to the configured database and remains in effect across normal
+deployments.
+
+`ADMIN_PASSWORD` is used when seeding the first admin, migrating a legacy
+default account, or applying an explicitly requested reset. Deployments do not
+automatically reset credentials. To intentionally reset from Render, set
+`ADMIN_USERNAME` and a new private `ADMIN_PASSWORD`, then change
+`ADMIN_CREDENTIAL_RESET_VERSION` to a new unique label and deploy. The server
+applies that reset once, verifies the bcrypt hash in persistent storage, and
+records the label. Do not change the label again unless another reset is
+intended. Never put passwords in source control, screenshots, or chat.
+On the first deployment after upgrading from the former per-build reset
+behavior, the old generated marker is migrated to the configured label without
+changing the existing administrator password.
 
 `GET /api/health` shows the storage mode and whether messaging providers are configured.
 It returns HTTP 503 and `success: false` when persistent writes are unavailable, so

@@ -1,8 +1,12 @@
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const request = require('supertest');
 
 describe('administrator credential reset persistence', () => {
   const envKeys = [
+    'DB_PATH',
     'ADMIN_USERNAME',
     'ADMIN_PASSWORD',
     'ADMIN_CREDENTIAL_RESET_VERSION',
@@ -128,6 +132,69 @@ describe('administrator credential reset persistence', () => {
     expect(refresh).toHaveBeenCalledWith(true);
     expect(data.settings.adminCredentialResetVersion).toBe('verified-reset-version');
     expect(bcrypt.compareSync('new-private-test-password', data.admins[0].password)).toBe(true);
+  });
+
+  test('migrates a legacy per-deploy marker without changing the existing admin password', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yebs-reset-marker-migration-'));
+    const databasePath = path.join(tempDir, 'database.json');
+    const currentPassword = 'gui-changed-admin-password';
+    const configuredPassword = 'configured-render-password';
+
+    process.env.DB_PATH = databasePath;
+    process.env.ADMIN_USERNAME = 'migration-admin';
+    process.env.ADMIN_PASSWORD = configuredPassword;
+    process.env.ADMIN_CREDENTIAL_RESET_VERSION = 'intentional-reset-marker';
+    process.env.DATABASE_URL = '';
+    process.env.DATABASE_POOL_URL = '';
+    process.env.SUPABASE_DB_URL = '';
+    process.env.SUPABASE_URL = '';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = '';
+    process.env.SUPABASE_SERVICE_KEY = '';
+    process.env.SUPABASE_SECRET_KEY = '';
+
+    fs.writeFileSync(databasePath, JSON.stringify({
+      admins: [{
+        id: 'adm-migration',
+        username: 'migration-admin',
+        password: bcrypt.hashSync(currentPassword, 10),
+        name: 'Migration administrator',
+        role: 'SUPERADMIN',
+        sessionEpoch: 5
+      }],
+      drivers: [],
+      orders: [],
+      sessions: [],
+      auditLogs: [],
+      menuItems: [],
+      payouts: [],
+      reviews: [],
+      notifications: [],
+      recoveryCodes: [],
+      settings: {
+        adminCredentialResetVersion: 'render-deploy-build-legacy-marker',
+        momo: { payTo: '0000000000', accountName: 'Test' },
+        pickup: { name: 'Test', address: 'Test', lat: 0, lng: 0 },
+        deliveryFee: 15
+      }
+    }));
+
+    try {
+      jest.resetModules();
+      const { app, start } = require('../server');
+      await start();
+
+      const state = JSON.parse(fs.readFileSync(databasePath, 'utf8'));
+      expect(state.settings.adminCredentialResetVersion).toBe('intentional-reset-marker');
+      expect(bcrypt.compareSync(currentPassword, state.admins[0].password)).toBe(true);
+      expect(bcrypt.compareSync(configuredPassword, state.admins[0].password)).toBe(false);
+
+      const login = await request(app)
+        .post('/api/auth/admin/login')
+        .send({ username: 'migration-admin', password: currentPassword });
+      expect(login.status).toBe(200);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   test('returns an error and restores the active credentials when a GUI update is not saved', async () => {
