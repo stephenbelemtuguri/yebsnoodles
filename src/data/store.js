@@ -142,6 +142,8 @@ async function writeRest(data) {
     ? `on_conflict=id`
     : `id=eq.${encodeURIComponent(ROW_ID)}&updated_at=eq.${encodeURIComponent(previousUpdatedAt)}`;
   const url = `${SUPABASE_URL}/rest/v1/${TABLE}?${query}`;
+  // The whole state row (menu, orders, accounts) can be hundreds of kilobytes
+  // on a slow upload link, so writes get a generous ceiling.
   const res = await fetch(url, {
     method: isNewRow ? 'POST' : 'PATCH',
     headers: headers({
@@ -150,7 +152,7 @@ async function writeRest(data) {
     body: JSON.stringify(isNewRow
       ? { id: ROW_ID, data, updated_at: updatedAt }
       : { data, updated_at: updatedAt }),
-    signal: AbortSignal.timeout(5000)
+    signal: AbortSignal.timeout(15000)
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
