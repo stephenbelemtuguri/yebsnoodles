@@ -2203,6 +2203,9 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
   if (!map || !from || !to || typeof L === 'undefined') return null;
   const color = opts.color || '#e57a45';
   const weight = opts.weight || 5;
+  const routeStateKey = '__yebsRouteRequestId';
+  map[routeStateKey] = Number(map[routeStateKey] || 0) + 1;
+  const routeRequestId = map[routeStateKey];
 
   // Remove previous route if provided
   if (opts.previousLayer) {
@@ -2220,14 +2223,27 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
       const data = await res.json();
       const route = data.routes && data.routes[0];
       if (route && route.geometry && route.geometry.coordinates) {
-        const latlngs = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        if (routeRequestId !== map[routeStateKey]) return null;
+        const latlngs = route.geometry.coordinates
+          .map(([lng, lat]) => [Number(lat), Number(lng)])
+          .filter(point => point.every(Number.isFinite))
+          .filter((point, index, points) => index === 0 || point[0] !== points[index - 1][0] || point[1] !== points[index - 1][1]);
+        if (latlngs.length < 2) throw new Error('OSRM returned an unusable route.');
+        const group = L.layerGroup().addTo(map);
+        L.polyline(latlngs, {
+          color: '#ffffff',
+          weight: weight + 5,
+          opacity: 0.95,
+          lineJoin: 'round',
+          lineCap: 'round'
+        }).addTo(group);
         const layer = L.polyline(latlngs, {
           color,
           weight,
-          opacity: 0.85,
+          opacity: 0.92,
           lineJoin: 'round',
           lineCap: 'round'
-        }).addTo(map);
+        }).addTo(group);
         const legs = route.legs || [];
         const maneuverSteps = legs.flatMap(leg => leg.steps || [])
           .filter(step => step.maneuver && step.maneuver.location)
@@ -2246,7 +2262,7 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
           const middle = latlngs[middleIndex] || latlngs[0];
           const distanceKm = Number(route.distance / 1000).toFixed(1);
           const durationMin = Math.max(1, Math.round(Number(route.duration) / 60));
-          layer.routeDistanceBadge = L.marker(middle, {
+          group.routeDistanceBadge = L.marker(middle, {
             interactive: false,
             icon: L.divIcon({
               className: 'yebs-route-distance-marker',
@@ -2255,8 +2271,11 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
               iconAnchor: [56, 14]
             })
           }).addTo(map);
+          layer.routeDistanceBadge = group.routeDistanceBadge;
         }
-        return layer;
+        group.routeMeta = layer.routeMeta;
+        group.routeDistanceBadge = layer.routeDistanceBadge || null;
+        return group;
       }
     }
   } catch (e) {
@@ -2264,13 +2283,22 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
   }
 
   // Offline fallback: dashed straight line
-  const layer = L.polyline([[from.lat, from.lng], [to.lat, to.lng]], {
+  if (routeRequestId !== map[routeStateKey]) return null;
+  const group = L.layerGroup().addTo(map);
+  L.polyline([[from.lat, from.lng], [to.lat, to.lng]], {
+    color: '#ffffff',
+    weight: 5,
+    opacity: 0.95,
+    lineJoin: 'round',
+    lineCap: 'round'
+  }).addTo(group);
+  L.polyline([[from.lat, from.lng], [to.lat, to.lng]], {
     color,
     weight: 3,
     opacity: 0.7,
     dashArray: '10, 8'
-  }).addTo(map);
-  return layer;
+  }).addTo(group);
+  return group;
 }
 
 /**

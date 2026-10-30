@@ -2989,7 +2989,16 @@
 
       trackDriverMarker = L.marker([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], { icon: driverIcon }).addTo(trackMap);
       trackCustMarker = L.marker([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], { icon: custIcon }).addTo(trackMap);
-      trackRouteLine = L.polyline([], { color: '#e57a45', weight: 5, dashArray: '8, 8', opacity: 0.85 }).addTo(trackMap);
+      trackRouteLine = null;
+    }
+
+    function clearCustomerRoute() {
+      if (!trackMap || !trackRouteLine) return;
+      try {
+        if (trackRouteLine.routeDistanceBadge) trackMap.removeLayer(trackRouteLine.routeDistanceBadge);
+        trackMap.removeLayer(trackRouteLine);
+      } catch (e) {}
+      trackRouteLine = null;
     }
 
     async function openTrackingModal(orderId) {
@@ -3451,9 +3460,9 @@
           trackDriverMarker.setOpacity(1);
         } else {
           trackDriverMarker.setOpacity(0);
-          trackRouteLine.setLatLngs([]);
+          clearCustomerRoute();
         }
-        if (hasDriverLocation && !hasDestination) trackRouteLine.setLatLngs([]);
+        if (hasDriverLocation && !hasDestination) clearCustomerRoute();
 
         // Draw road-following route (falls back to dashed line offline)
         import('./shared.js').then(({ drawRoadRoute, computeRoadEta }) => {
@@ -3479,7 +3488,15 @@
           }
         }).catch(() => {
           // shared.js not available as module — use the straight line
-          if (hasDriverLocation && hasDestination) trackRouteLine.setLatLngs([[driverLat, driverLng], [targetLat, targetLng]]);
+          if (hasDriverLocation && hasDestination) {
+            clearCustomerRoute();
+            trackRouteLine = L.polyline([[driverLat, driverLng], [targetLat, targetLng]], {
+              color: '#e57a45',
+              weight: 5,
+              dashArray: '10, 8',
+              opacity: 0.9
+            }).addTo(trackMap);
+          }
         });
 
         const bounds = L.latLngBounds([]);
