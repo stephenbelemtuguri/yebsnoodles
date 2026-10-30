@@ -3845,6 +3845,11 @@
       try {
         liveDrivers = await apiFetchAllDrivers();
       } catch (error) {
+        if (error.status === 401 || error.status === 403) {
+          clearAdminSession();
+          checkAdminAuth();
+          return;
+        }
         if (adminRiderRoster) {
           adminRiderRoster.innerHTML = `<div class="action-meta" style="color:#b91c1c;">Could not refresh riders: ${escapeHtml(error.message)}</div>`;
         }
@@ -3865,14 +3870,13 @@
         return true;
       }
       if (info && info.unauthorized) {
-        // Do not discard a newly issued token on the first validation race.
-        // The login response already authenticated this account and protected
-        // requests will report a definitive expired session afterward.
-        const loginAt = Number(sessionStorage.getItem('yebs_admin_login_at') || Date.now());
-        if (Date.now() - loginAt < 15000) {
-          checkAdminAuth();
-          return true;
+        clearAdminSession();
+        checkAdminAuth();
+        if (adminAuthError) {
+          adminAuthError.textContent = 'Your session expired or was invalidated. Sign in again.';
+          adminAuthError.style.display = 'block';
         }
+        return false;
       }
       if (!info || info.role !== 'admin') {
         clearAdminSession();

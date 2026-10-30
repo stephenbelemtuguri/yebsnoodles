@@ -2039,13 +2039,16 @@ export async function apiFetchAllDrivers() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.message || `Could not load drivers (${res.status}).`);
+        const error = new Error(data.message || `Could not load drivers (${res.status}).`);
+        error.status = res.status;
+        throw error;
       }
       if (!Array.isArray(data)) throw new Error('The server returned an invalid driver roster.');
       data.forEach(rememberRegisteredDriver);
       return data;
     } catch (error) {
       lastError = error;
+      if (error.status === 401 || error.status === 403) break;
       if (attempt < 2) {
         await new Promise(resolve => {
           setTimeout(resolve, 700 * (attempt + 1));
