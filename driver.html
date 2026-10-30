@@ -1017,11 +1017,6 @@
 
     initStore();
 
-    // Register Service Worker for PWA
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW error', err));
-    }
-
     let deferredPrompt = null;
     const pwaInstallBanner = document.getElementById('pwaInstallBanner');
     const pwaInstallBtn = document.getElementById('pwaInstallBtn');

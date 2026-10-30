@@ -8,6 +8,7 @@
   <title>YEBS Noodles | Fresh from our kitchen & Live Order Tracking</title>
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css" onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';">
+  <script src="nav.js" defer></script>
   <style>
     :root {
       color-scheme: light;
@@ -3719,10 +3720,6 @@
       }
     }, 2500);
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW error', err));
-    }
-
     // Lightbox for Official Menu Poster
     const menuPosterModal = document.getElementById("menuPosterModal");
     const openMenuPosterModalBtn = document.getElementById("openMenuPosterModalBtn");
@@ -4189,6 +4186,15 @@
       el.style.color = tone === 'error' ? '#b91c1c' : '#15803d';
     }
 
+    function showPaymentRequestReference(reference) {
+      const panel = document.getElementById('payNowProviderReference');
+      const value = document.getElementById('payNowProviderReferenceValue');
+      if (!panel || !value) return;
+      const cleanReference = String(reference || '').trim();
+      value.textContent = cleanReference;
+      panel.style.display = cleanReference ? 'block' : 'none';
+    }
+
     function stopPayPolling() {
       if (payPollTimer) { clearInterval(payPollTimer); payPollTimer = null; }
     }
@@ -4224,9 +4230,9 @@
 
       const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
       set('payNowOrderId', order.id);
-      set('payNowRef', order.id);
+      set('payNowRef', order.paymentRef || order.id);
       set('payNowAmount', 'GH₵' + Number(order.total || 0).toFixed(2));
-      set('payNowStepRef', order.id);
+      set('payNowStepRef', order.paymentRef || order.id);
       set('payNowStepAmount', 'GH₵' + Number(order.total || 0).toFixed(2));
       const confirmBtn = document.getElementById('payNowConfirmBtn');
       if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'I have paid — submit proof'; }
@@ -4234,6 +4240,7 @@
       if (laterBtn) laterBtn.textContent = "I'll pay later on the tracking screen";
       const txn = document.getElementById('payNowTxn');
       if (txn) txn.value = '';
+      showPaymentRequestReference(order.paymentRequestReference || '');
       const receipt = document.getElementById('payNowReceipt');
       if (receipt) receipt.value = '';
       setPayNowStatus('', '');
@@ -4247,8 +4254,8 @@
       document.body.style.overflow = 'hidden';
       stopPayPolling();
       // Save pending payment so USSD return detection can re-open this modal
-      if (window.savePendingPayment && order.paymentMode !== 'cash') {
-        window.savePendingPayment(order);
+      if (order.paymentMode !== 'cash') {
+        rememberPendingPayment(order, selectedPayNetwork);
       }
     }
     // Expose globally for USSD return detection
@@ -4289,7 +4296,13 @@
         return;
       }
       if (res.mode === 'api' && res.requested) {
-        setPushStatus('Prompt sent to ' + phone + '. Approve it on your phone, then wait here — this screen updates automatically.', 'ok');
+        const requestReference = String(res.reference || '').trim();
+        if (requestReference) {
+          currentPayOrder.paymentRequestReference = requestReference;
+          showPaymentRequestReference(requestReference);
+          rememberPendingPayment(currentPayOrder, selectedPayNetwork);
+        }
+        setPushStatus('Prompt sent to ' + phone + '. Request reference: ' + (requestReference || currentPayOrder.id) + '. Approve it on your phone; enter the transaction ID from the MoMo SMS below if asked.', 'ok');
         startPayPolling();
       } else {
         setPushStatus((res.message || 'Use the USSD code below, then confirm your transaction ID.') + ' Pay to ' + (res.payToLabel || PAY_WALLET.label) + ' with reference ' + (res.reference || currentPayOrder.id) + '.', 'ok');
@@ -4475,6 +4488,7 @@
         localStorage.setItem(PENDING_PAY_KEY, JSON.stringify({
           orderId: order.id,
           network: network || selectedPayNetwork,
+          paymentRequestReference: order.paymentRequestReference || '',
           total: order.total,
           at: Date.now()
         }));
@@ -4582,6 +4596,7 @@
       try {
         const order = await apiFetchOrder(pending.orderId);
         if (!order || order.paymentStatus === 'paid') { clearPendingPayment(); return; }
+        order.paymentRequestReference = pending.paymentRequestReference || '';
         openPayNowModal(order, pending.network);
         awaitingUssdReturn = true;
         handleUssdReturn(true);
@@ -4624,6 +4639,9 @@
             <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:#6b7280; font-weight:800;">Amount due</div>
             <div class="amount" id="payNowAmount">GH&#8373;0.00</div>
           </div>
+          <div id="payNowProviderReference" style="display:none; margin:10px 0; padding:9px 11px; border:1px solid #c9decb; border-radius:8px; background:#f0fdf4; font-size:.78rem; color:#173d30;">
+            MoMo request reference: <strong id="payNowProviderReferenceValue" style="font-family:ui-monospace,monospace; overflow-wrap:anywhere;"></strong>
+          </div>
           <div style="text-align:right;">
             <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:#6b7280; font-weight:800;">Reference</div>
             <div class="ref" id="payNowRef">YB----</div>
@@ -4661,8 +4679,9 @@
         <div id="payNowPushStatus" style="font-size:.76rem; color:#15803d; margin-top:8px;" role="status" aria-live="polite"></div>
 
         <div style="margin-top:14px; padding-top:12px; border-top:1px dashed #e5e7eb;">
-          <label for="payNowTxn" style="font-size:.78rem; font-weight:800; color:#374151; display:block; margin-bottom:6px;">Transaction ID</label>
-          <input id="payNowTxn" type="text" required autocomplete="off" placeholder="e.g. MP240412.1234.A56789" style="min-height:40px;">
+          <label for="payNowTxn" style="font-size:.78rem; font-weight:800; color:#374151; display:block; margin-bottom:6px;">MoMo transaction ID</label>
+          <input id="payNowTxn" type="text" required autocomplete="off" placeholder="Enter the transaction ID from your MoMo SMS" aria-describedby="payNowTxnHint" style="min-height:40px;">
+          <div id="payNowTxnHint" style="font-size:.72rem; color:#6b7280; margin-top:4px;">This is the transaction ID from your payment confirmation SMS, not the order reference above.</div>
           <div class="pay-paste-row">
             <button type="button" id="payNowPasteBtn" class="button" style="background:#eef5f0; color:var(--forest); border:1px solid #c9decb;">📋 Paste MoMo SMS</button>
           </div>
@@ -4898,68 +4917,6 @@
         }
       }
       window.closeThankYou = close;
-
-      // ============================================================
-      // USSD RETURN DETECTION
-      // When the user dials a USSD code and navigates back to our app
-      // (pageshow / visibilitychange) we detect any pending payment and
-      // show the return banner inside the payment modal so they can
-      // confirm payment without hunting for the modal again.
-      // ============================================================
-      var PENDING_PAY_KEY = 'yebs_pending_payment';
-
-      window.savePendingPayment = function(order) {
-        try { localStorage.setItem(PENDING_PAY_KEY, JSON.stringify({ id: order.id, total: order.total, network: order.paymentNetwork, ts: Date.now() })); } catch(e){}
-      };
-      window.clearPendingPayment = function() {
-        try { localStorage.removeItem(PENDING_PAY_KEY); } catch(e){}
-      };
-
-      function checkReturn() {
-        var raw;
-        try { raw = localStorage.getItem(PENDING_PAY_KEY); } catch(e){ return; }
-        if (!raw) return;
-        try {
-          var pending = JSON.parse(raw);
-          // Only act on payments less than 20 minutes old
-          if (!pending || !pending.id || (Date.now() - pending.ts) > 20 * 60 * 1000) {
-            window.clearPendingPayment(); return;
-          }
-          // Show the return banner if the pay modal is already open
-          var banner = document.getElementById('payReturnBanner');
-          var modal2 = document.getElementById('payNowModal');
-          if (banner) {
-            banner.style.display = 'block';
-            banner.classList.add('show');
-            var refEl = document.getElementById('payReturnRef');
-            if (refEl) refEl.textContent = pending.id;
-            var amtEl = document.getElementById('payReturnAmt');
-            if (amtEl) amtEl.textContent = 'GH\u20b5' + Number(pending.total || 0).toFixed(2);
-          }
-          // Re-open the pay modal if it is closed
-          if (modal2 && modal2.style.display === 'none') {
-            if (window.openPayNowModal && window.currentPayOrder) {
-              window.openPayNowModal(window.currentPayOrder, pending.network);
-            } else if (modal2) {
-              // Fallback: just show the banner in a toast
-              var toast = document.createElement('div');
-              toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:99999;background:#065f46;color:white;padding:14px 22px;border-radius:14px;font-size:.9rem;font-weight:700;box-shadow:0 8px 30px rgba(0,0,0,.3);text-align:center;max-width:340px;';
-              toast.innerHTML = '✅ Welcome back! Tap <strong>\"I have paid\"</strong> in your payment screen to verify your MoMo payment for order <strong>' + pending.id + '</strong>.';
-              document.body.appendChild(toast);
-              setTimeout(function(){ if(toast.parentNode) toast.parentNode.removeChild(toast); }, 8000);
-            }
-          }
-        } catch(e){}
-      }
-
-      // Check on tab visibility change (user switched away to dial USSD, now back)
-      document.addEventListener('visibilitychange', function() {
-        if (document.visibilityState === 'visible') setTimeout(checkReturn, 400);
-      });
-      // Also check on page-show (back/forward cache)
-      window.addEventListener('pageshow', function(e) {
-        if (e.persisted) setTimeout(checkReturn, 400);
-      });
     })();
   </script>
 </body>

@@ -2833,7 +2833,7 @@ app.post('/api/payments/momo/sms/ingest', async (req, res) => {
 
   const sender = cleanString(body.sender, 80);
   req.body = { ...body, sender };
-  await processMomoSms(req, res, `MOMO_SMS_BRIDGE:${sender}`, momoSmsIngestKey(deviceId, messageId), false);
+  await processMomoSms(req, res, `MOMO_SMS_BRIDGE:${sender}`, momoSmsIngestKey(deviceId, messageId), true);
 });
 
 // Legacy receipt upload kept for compatibility; proof remains unverified until reviewed.

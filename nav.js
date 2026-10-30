@@ -10,6 +10,36 @@
 (function () {
   'use strict';
 
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator) || !/^https?:$/.test(window.location.protocol)) return;
+
+    var hadController = Boolean(navigator.serviceWorker.controller);
+    var updateNoticeShown = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController || updateNoticeShown) return;
+      updateNoticeShown = true;
+
+      var notice = document.createElement('div');
+      notice.setAttribute('role', 'status');
+      notice.setAttribute('aria-live', 'polite');
+      notice.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;z-index:1000000;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-radius:12px;background:#173d30;color:#fff;box-shadow:0 8px 28px rgba(0,0,0,.25);font:600 14px/1.4 system-ui,sans-serif;';
+
+      var message = document.createElement('span');
+      message.textContent = 'A YEBS update is ready. Refresh to load the latest fixes.';
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Refresh now';
+      button.style.cssText = 'border:0;border-radius:8px;padding:8px 12px;background:#e9bd68;color:#173d30;font-weight:800;white-space:nowrap;cursor:pointer;';
+      button.addEventListener('click', function () { window.location.reload(); });
+      notice.append(message, button);
+      document.body.appendChild(notice);
+    });
+
+    navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' })
+      .then(function (registration) { return registration.update(); })
+      .catch(function (error) { console.warn('Service worker update check failed:', error); });
+  }
+
   function init() {
     // Storefront already has a working hamburger.
     if (document.getElementById('mobileNavToggle')) return;
@@ -81,4 +111,5 @@
   } else {
     init();
   }
+  registerServiceWorker();
 })();

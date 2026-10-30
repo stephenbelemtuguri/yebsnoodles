@@ -135,20 +135,43 @@ describe('MoMo SMS ingestion bridge', () => {
     expect(missingReference.status).toBe(400);
   });
 
-  test('flags SMS matches for verification and deduplicates retry deliveries', async () => {
+  test('confirms trusted SMS matches and deduplicates retry deliveries', async () => {
     const accepted = await ingest();
-    expect(accepted.status).toBe(202);
-    expect(accepted.body.success).toBe(false);
-    expect(accepted.body.needsReview).toBe(true);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.success).toBe(true);
+    expect(accepted.body.needsReview).toBe(false);
     expect(accepted.body.terminal).toBe(true);
     expect(accepted.body.order.id).toBe(order.id);
-    expect(accepted.body.order.paymentStatus).toBe('review');
-    expect(accepted.body.order.paymentVerified).toBe(false);
+    expect(accepted.body.order.paymentStatus).toBe('paid');
+    expect(accepted.body.order.paymentVerified).toBe(true);
 
     const duplicate = await ingest();
     expect(duplicate.status).toBe(200);
     expect(duplicate.body.duplicate).toBe(true);
-    expect(duplicate.body.order.paymentStatus).toBe('review');
+    expect(duplicate.body.order.paymentStatus).toBe('paid');
+  });
+
+  test('does not confirm a trusted SMS when its amount differs from the order total', async () => {
+    const secondOrderResponse = await request(app).post('/api/orders').send({
+      customer: 'Mismatch Test',
+      phone: '0240000001',
+      fulfilment: 'Collection',
+      payment: 'MTN Mobile Money',
+      items: [{ menuId: 'test-meal', name: 'Test meal', price: 10, quantity: 1 }]
+    });
+    expect(secondOrderResponse.status).toBe(201);
+
+    const mismatch = await ingest({
+      deviceId: 'mismatch-device',
+      messageId: 'amount-mismatch',
+      sms: `You have received GHS 9.00. Transaction ID: MTN-7654321. Order ${secondOrderResponse.body.id}`
+    });
+
+    expect(mismatch.status).toBe(202);
+    expect(mismatch.body.success).toBe(false);
+    expect(mismatch.body.needsReview).toBe(true);
+    expect(mismatch.body.order.paymentStatus).toBe('review');
+    expect(mismatch.body.order.paymentVerified).toBe(false);
   });
 
   test('keeps unmatched messages retryable without confirming payment', async () => {

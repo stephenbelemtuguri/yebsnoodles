@@ -34,6 +34,45 @@ test('places a menu-backed order through the storefront', async ({ page }) => {
   expect(pageErrors).toEqual([]);
 });
 
+test('restores a pending MoMo payment after the customer returns to the storefront', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('dialog', dialog => dialog.accept());
+
+  await page.goto('/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+  const permissionSkip = page.locator('#custPermSkipBtn');
+  if (await permissionSkip.isVisible()) await permissionSkip.click();
+  await expect(page.locator('#menuGrid .menu-add-btn').first()).toBeVisible();
+  await page.locator('#menuGrid .menu-add-btn').first().click();
+  await page.locator('#customer').fill('MoMo Return Test Customer');
+  await page.locator('#phone').fill('0241234567');
+  await page.locator('#payerPhone').fill('0241234567');
+
+  const orderResponsePromise = page.waitForResponse(response =>
+    response.url().endsWith('/api/orders') && response.request().method() === 'POST'
+  );
+  await page.locator('#submitOrderBtn').click();
+
+  const orderResponse = await orderResponsePromise;
+  expect(orderResponse.status()).toBe(201);
+  const order = await orderResponse.json();
+  await expect(page.locator('#payNowModal')).toBeVisible();
+  const pendingPayment = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('yebs_pending_payment'))
+  );
+  expect(pendingPayment).toMatchObject({
+    orderId: order.id,
+    network: 'mtn',
+    total: order.total
+  });
+  expect(pendingPayment.at).toEqual(expect.any(Number));
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#payNowModal')).toBeVisible();
+  await expect(page.locator('#payNowOrderId')).toHaveText(order.id);
+  expect(pageErrors).toEqual([]);
+});
+
 test('rejects fabricated menu items at the API boundary', async ({ request }) => {
   const response = await request.post('/api/orders', {
     data: {

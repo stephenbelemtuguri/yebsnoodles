@@ -84,7 +84,11 @@ Object.assign(process.env, {
   ADMIN_PASSWORD: '',
   ADMIN_CREDENTIAL_RESET_VERSION: '',
   WHATSAPP_TOKEN: '',
-  WHATSAPP_PHONE_NUMBER_ID: ''
+  WHATSAPP_PHONE_NUMBER_ID: '',
+  MOMO_SUBSCRIPTION_KEY: '',
+  MOMO_API_USER: '',
+  MOMO_API_KEY: '',
+  MOMO_CALLBACK_HOST: ''
 });
 
 const { app, start } = require('../server');
@@ -218,6 +222,23 @@ describe('customer order to verified delivery flow', () => {
       .set('X-Order-Access-Token', order.trackingToken)
       .send({ receiptImage, amount: order.total });
     expect(missingReference.status).toBe(400);
+  });
+
+  test('returns the payment reference and keeps it distinct from the MoMo transaction ID', async () => {
+    const order = await createDelivery();
+    const paymentRequest = await request(app)
+      .post(`/api/orders/${order.id}/pay/request`)
+      .set('X-Order-Access-Token', order.trackingToken)
+      .send({ network: 'mtn', phone: '0241234567' });
+
+    expect(paymentRequest.status).toBe(200);
+    expect(paymentRequest.body).toMatchObject({
+      success: true,
+      requested: false,
+      mode: 'ussd',
+      reference: order.paymentRef,
+      amount: order.total
+    });
   });
 
   test('retains duplicate screenshot evidence for admin review without marking payment paid', async () => {
