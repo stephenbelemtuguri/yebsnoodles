@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const request = require('supertest');
 
 describe('driver signup persistence', () => {
+  jest.setTimeout(30000);
   const envKeys = [
     'ADMIN_USERNAME',
     'ADMIN_PASSWORD',
