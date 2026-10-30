@@ -484,6 +484,28 @@
       white-space: nowrap;
     }
     #liveTrackingMap, #liveTrackingMap .leaflet-container { touch-action: none; }
+    .tracking-map-controls {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 800;
+      display: grid;
+      gap: 7px;
+    }
+    .tracking-map-controls button {
+      width: 38px;
+      height: 38px;
+      border: 0;
+      border-radius: 10px;
+      background: #fff;
+      color: #173d30;
+      box-shadow: 0 2px 10px rgba(0,0,0,.18);
+      font-size: 22px;
+      line-height: 1;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .tracking-map-controls button:last-child { font-size: 16px; }
     .fee-row { font-size: .9rem !important; font-weight: 600 !important; color: var(--muted) !important; margin-top: 8px !important; }
     .fee-row.fee-free { color: #15803d !important; }
     .grand-total { padding-top: 12px; border-top: 1px solid #eceade; margin-top: 12px; }
@@ -710,6 +732,7 @@
     }
 
     #liveTrackingMap {
+      position: relative;
       height: 360px;
       width: 100%;
       border-radius: 12px;
@@ -2864,6 +2887,12 @@
 
       let newOrder = null;
       let orderErrorMessage = '';
+      const automaticWhatsAppTab = editingThisOrder
+        ? null
+        : window.open('', '_blank');
+      if (automaticWhatsAppTab) {
+        automaticWhatsAppTab.document.write('<!doctype html><title>Preparing WhatsApp</title><body style="font-family:Arial;background:#f4fbf7;color:#173d30;display:grid;place-items:center;height:100vh;margin:0">Preparing your WhatsApp order message...</body>');
+      }
       try {
         newOrder = await createOrder(orderPayload, editingOrderId);
         editingOrderId = '';
@@ -2878,6 +2907,7 @@
       }
 
       if (!newOrder) {
+        try { if (automaticWhatsAppTab) automaticWhatsAppTab.close(); } catch (e) {}
         formFeedback.textContent = orderErrorMessage || (editingThisOrder
           ? "Could not update the order. Please check the details and try again."
           : "Could not place the order. Please check your connection and try again.");
@@ -2904,6 +2934,14 @@
         `Items: ${(newOrder.items || []).map(item => `${item.qty || item.quantity || 1}x ${item.name}`).join(', ') || 'See order details'}`
       ].join('\n');
       const whatsappBotUrl = formatWhatsAppUrl('0559103452', whatsappOrderMessage);
+      if (automaticWhatsAppTab && !automaticWhatsAppTab.closed) {
+        automaticWhatsAppTab.location.replace(whatsappBotUrl);
+      } else if (!newOrder.notificationStatus || newOrder.notificationStatus !== 'sent') {
+        window.setTimeout(() => {
+          const fallback = window.open(whatsappBotUrl, '_blank', 'noopener,noreferrer');
+          if (!fallback) window.location.href = whatsappBotUrl;
+        }, 0);
+      }
 
       // Clear the cart so the order is not accidentally submitted twice.
       Object.keys(cart).forEach(k => delete cart[k]);
@@ -2971,6 +3009,19 @@
         fadeAnimation: true
       }).setView([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], 15);
       trackMap.zoomControl.setPosition('topright');
+      trackMap.zoomControl.remove();
+      const mapContainer = document.getElementById('liveTrackingMap');
+      const controls = document.createElement('div');
+      controls.className = 'tracking-map-controls';
+      controls.innerHTML = '<button type="button" data-track-map-action="in" aria-label="Zoom in">+</button><button type="button" data-track-map-action="out" aria-label="Zoom out">−</button><button type="button" data-track-map-action="fit" aria-label="Fit both locations">⌖</button>';
+      mapContainer.appendChild(controls);
+      controls.querySelector('[data-track-map-action="in"]').addEventListener('click', () => trackMap.zoomIn(1));
+      controls.querySelector('[data-track-map-action="out"]').addEventListener('click', () => trackMap.zoomOut(1));
+      controls.querySelector('[data-track-map-action="fit"]').addEventListener('click', () => {
+        const points = [trackDriverMarker, trackCustMarker].filter(marker => marker && marker.options.opacity !== 0)
+          .map(marker => marker.getLatLng());
+        if (points.length) trackMap.fitBounds(L.latLngBounds(points).pad(0.35), { maxZoom: 16 });
+      });
       addReliableBasemap(trackMap);
 
       const driverIcon = L.divIcon({
