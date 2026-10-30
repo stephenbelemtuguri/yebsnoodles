@@ -2085,7 +2085,15 @@
     function checkDriverAuth() {
       const token = sessionStorage.getItem('yebs_driver_token');
       const userRaw = sessionStorage.getItem('yebs_driver_user');
-      if (!token || token === 'undefined') {
+      if ((!token || token === 'undefined') && localStorage.getItem('yebs_driver_token_persist')) {
+        const rememberedToken = localStorage.getItem('yebs_driver_token_persist');
+        const rememberedUser = localStorage.getItem('yebs_driver_user_persist');
+        sessionStorage.setItem('yebs_driver_token', rememberedToken);
+        if (rememberedUser) sessionStorage.setItem('yebs_driver_user', rememberedUser);
+      }
+      const activeToken = sessionStorage.getItem('yebs_driver_token');
+      const activeUserRaw = sessionStorage.getItem('yebs_driver_user') || userRaw;
+      if (!activeToken || activeToken === 'undefined') {
         if (driverAuthModal) driverAuthModal.style.display = 'flex';
         if (driverUserBadge) driverUserBadge.style.display = 'none';
         if (driverLogoutBtn) driverLogoutBtn.style.display = 'none';
@@ -2095,9 +2103,9 @@
       if (driverUserBadge) driverUserBadge.style.display = 'inline-block';
       if (driverLogoutBtn) driverLogoutBtn.style.display = 'inline-block';
 
-      if (userRaw) {
+      if (activeUserRaw) {
         try {
-          const user = JSON.parse(userRaw);
+          const user = JSON.parse(activeUserRaw);
           const displayName = user.name || `${user.fname || ''} ${user.lname || ''}`.trim() || user.username;
           driverUserBadge.textContent = `🛵 ${displayName} (@${user.username})`;
           if (riderSelectDropdown) {
@@ -2413,6 +2421,10 @@
       const token = sessionStorage.getItem('yebs_driver_token');
       if (!token) return false;
       const info = await apiValidateSession('driver');
+      if (info && info.networkError) {
+        checkDriverAuth();
+        return true;
+      }
       if (!info || info.role !== 'driver') {
         sessionStorage.removeItem('yebs_driver_token');
         sessionStorage.removeItem('yebs_driver_user');

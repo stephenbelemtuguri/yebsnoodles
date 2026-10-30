@@ -3860,6 +3860,10 @@
       const session = readAdminSession();
       if (!session) return false;
       const info = await apiValidateSession('admin');
+      if (info && info.networkError) {
+        checkAdminAuth();
+        return true;
+      }
       if (!info || info.role !== 'admin') {
         clearAdminSession();
         checkAdminAuth();

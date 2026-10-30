@@ -1340,7 +1340,7 @@ export async function apiValidateSession(role) {
     if (!res.ok) return null;
     return await res.json();
   } catch (e) {
-    return null;
+    return { success: false, networkError: true };
   }
 }
 
@@ -1367,7 +1367,9 @@ export async function apiDriverSignup({ fname, lname, phone, email, password, ve
       }
       const token = data.token || (data.driver && data.driver.token);
       if (token) sessionStorage.setItem('yebs_driver_token', token);
+      if (token) localStorage.setItem('yebs_driver_token_persist', token);
       if (data.driver) sessionStorage.setItem('yebs_driver_user', JSON.stringify(data.driver));
+      if (data.driver) localStorage.setItem('yebs_driver_user_persist', JSON.stringify(data.driver));
       if (photo) sessionStorage.setItem('yebs_driver_photo', photo);
       rememberRegisteredDriver(data.driver);
       return { success: true, driver: data.driver };
@@ -1389,7 +1391,9 @@ export async function apiDriverLogin(username, password) {
     if (res.ok && data.success) {
       const token = data.token || (data.driver && data.driver.token);
       if (token) sessionStorage.setItem('yebs_driver_token', token);
+      if (token) localStorage.setItem('yebs_driver_token_persist', token);
       if (data.driver) sessionStorage.setItem('yebs_driver_user', JSON.stringify(data.driver));
+      if (data.driver) localStorage.setItem('yebs_driver_user_persist', JSON.stringify(data.driver));
       if (data.driver && data.driver.photo) {
         sessionStorage.setItem('yebs_driver_photo', data.driver.photo);
       }
