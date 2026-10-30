@@ -52,7 +52,7 @@ You should see:
 [supabase:key] connected. row=main menuItems=5 admins=[your-admin]
 ```
 
-Why this method: it uses HTTPS (PostgREST), so it works on Render, Netlify and
+Why this method: it uses HTTPS (PostgREST), so it works on Render and
 any IPv4-only network. No database password, no pooler, no `P1001`.
 
 ### Alternative — database password
@@ -102,9 +102,9 @@ This sets up:
 
 ---
 
-## Production (Render + Netlify)
+## Production (Render)
 
-Add these environment variables in both dashboards:
+Add these environment variables in the Render dashboard:
 
 | Key | Value |
 |---|---|
@@ -183,4 +183,4 @@ the running app.
 | Recovery code never arrives | Set `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `ADMIN_RECOVERY_PHONE`; without them the code is printed in the server log. |
 | `storage: local-file` | No Supabase key or password in the environment. |
 | `P1001` on Render | Use the session pooler or the Blueprint database; never `db.<ref>.supabase.co`. |
-| Data appears then disappears | The app is on `local-file` on one host. Set the same Supabase variables on Render **and** Netlify. |
+| Data appears then disappears | Verify `/api/health` reports a persistent, writable remote store, then check Render logs for `[store]` errors. |

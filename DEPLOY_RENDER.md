@@ -4,6 +4,12 @@ Render runs the whole app as one Node web service: the Express API and the
 static pages (`index.html`, `admin.html`, `driver.html`, `public/`) are served
 from the same origin, so nothing else is required.
 
+The current production health endpoint reports `supabase-postgres` as its
+database provider. Keep the existing `DATABASE_POOL_URL` configured in Render:
+it takes precedence over `DATABASE_URL`, and switching either URL without
+migrating `public.yebs_state` can make existing orders and accounts appear
+missing.
+
 ```
 Browser ──► Render web service (Express) ──► Render PostgreSQL (DATABASE_URL)
                                       └──► Supabase (optional alternative)
@@ -203,12 +209,6 @@ command, and Prisma is pointed at the IPv6-only Supabase direct host
    Prisma and Supabase are not involved at all.
 3. If you really want Supabase on Render, use the **session pooler** URI in
    `DATABASE_POOL_URL` (never the `db.<ref>.supabase.co` host).
-
-### Share the Render database with Netlify
-
-Render → `yebs-db` → **Connect** → copy the **External Database URL** and add it
-to Netlify as `DATABASE_URL`. Both the Render site and the Netlify site then read
-and write the same orders, menu and drivers — no Supabase key required.
 
 ## 4. First sign-in and setup
 

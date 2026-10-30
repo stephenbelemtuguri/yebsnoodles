@@ -5,7 +5,7 @@
 
 -- The Express API keeps its data in one JSON document (same shape as
 -- database.json). This table stores that document so orders, drivers and the
--- menu survive cold starts on Netlify and restarts on Render.
+-- menu survive restarts on Render.
 
 create table if not exists public.yebs_state (
   id          text primary key,

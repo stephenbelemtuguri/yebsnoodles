@@ -9,7 +9,7 @@
 // (the legacy "service_role" JWT also works).
 //
 // This is the easiest way to connect the app to Supabase: it uses HTTPS
-// (PostgREST), so it works from Render, Netlify and any IPv4-only network -
+// (PostgREST), so it works from Render and any IPv4-only network -
 // no database password, no pooler and no IPv6 problems.
 
 const fs = require('fs');

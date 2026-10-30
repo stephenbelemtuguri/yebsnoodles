@@ -3931,7 +3931,7 @@
               }, btn, 'Approving...');
             } catch (err) {
               alert('Could not approve ' + name + '.\n\n' + err.message +
-                '\n\nIf this keeps happening, confirm SUPABASE_SERVICE_ROLE_KEY and YEBS_AUTH_SECRET are set in Netlify, then try again.');
+                '\n\nIf this keeps happening, confirm SUPABASE_SERVICE_ROLE_KEY and YEBS_AUTH_SECRET are set in Render, then try again.');
             }
             if (result && result.driver && result.driver.username) {
               alert(name + ' approved.\n\nDriver username: ' + result.driver.username + '\nLogin is now enabled.');

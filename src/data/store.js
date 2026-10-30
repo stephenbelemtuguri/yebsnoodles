@@ -9,7 +9,7 @@
 //   • Local file - when neither is configured (npm start on your machine)
 //
 // The Postgres mode creates the yebs_state table automatically the first time
-// it connects, so hosting on Render or Netlify only needs the database URL.
+// it connects, so hosting on Render only needs the database URL.
 //
 // Reads happen once at boot (`init`); writes are queued in order and flushed
 // with `flush()` before a serverless invocation returns.
@@ -263,10 +263,8 @@ function init(loadLocal) {
 }
 
 /**
- * Netlify runs several instances of a function, each with its own memory. A
- * driver who signs up in instance A must be visible to an admin handled by
- * instance B, so re-read the shared row when the local copy is older than
- * READ_TTL_MS. Cheap (one row) and skipped entirely for local dev.
+ * Re-read the shared row periodically so changes made by another server
+ * instance become visible. Cheap (one row) and skipped entirely for local dev.
  */
 async function refresh(force = false) {
   if (!remoteEnabled) return cache;

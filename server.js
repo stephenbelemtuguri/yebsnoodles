@@ -2,9 +2,9 @@
 // Secure auth (bcrypt + HMAC signed sessions), provider-confirmed payments,
 // unified order IDs and shared pickup-point state.
 
-// Load .env for local development and self-hosted deployments. On Render,
-// Netlify and other hosts the values come from the platform, so a missing .env
-// is not an error. This must run before ./src/data/store reads process.env.
+// Load .env for local development and self-hosted deployments. On Render and
+// other hosts the values come from the platform, so a missing .env is not an
+// error. This must run before ./src/data/store reads process.env.
 try {
   require('dotenv').config();
 } catch (error) {
@@ -37,17 +37,6 @@ app.use(cors());
 // so the default 100kb JSON limit is far too small.
 app.use(express.json({ limit: '12mb' }));
 
-// serverless-http (Netlify Functions) hands the body over as a Buffer/string.
-// Normalise it so every JSON handler behaves the same in both modes.
-app.use((req, res, next) => {
-  if (Buffer.isBuffer(req.body)) {
-    const text = req.body.toString('utf8');
-    try { req.body = text ? JSON.parse(text) : {}; } catch (e) { req.body = {}; }
-  } else if (typeof req.body === 'string' && req.body.length) {
-    try { req.body = JSON.parse(req.body); } catch (e) { /* leave original value */ }
-  }
-  next();
-});
 app.use('/database.json', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.sendStatus(404);
@@ -508,9 +497,8 @@ const DEFAULT_ADMIN_PHONE = String(process.env.ADMIN_RECOVERY_PHONE || '05591034
 // A stable signing secret is generated once and never leaves this machine.
 let AUTH_SECRET = process.env.YEBS_AUTH_SECRET || '';
 if (!AUTH_SECRET && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY)) {
-  // Netlify function instances cannot share a generated secret file. Derive a
-  // stable one from the service key already present in the environment so an
-  // admin signed in on one instance stays signed in on the next.
+  // Derive a stable secret from the service key so sessions remain valid across
+  // server instances when an explicit signing secret has not been configured.
   AUTH_SECRET = crypto
     .createHmac('sha256', String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY))
     .update('yebs-auth-v1')
@@ -900,7 +888,6 @@ function isEphemeralHost() {
   return Boolean(
     process.env.RENDER ||
     process.env.RENDER_SERVICE_ID ||
-    process.env.NETLIFY ||
     process.env.AWS_LAMBDA_FUNCTION_NAME
   );
 }
@@ -1973,7 +1960,7 @@ function findDuplicateReceipt(db, hash, orderId) {
 // ----------------------------------------------------------
 // Every Ghanaian wallet settles into the same YEBS merchant number.
 // MTN additionally publishes a Collections API; when the owner adds the
-// real credentials (see DEPLOY_NETLIFY.md) the server pushes a payment
+// real credentials the server pushes a payment
 // prompt straight to the customer's phone. Without credentials we fall
 // back to the USSD flow on the exact same wallet rail, then the customer
 // confirms with the transaction ID / receipt.

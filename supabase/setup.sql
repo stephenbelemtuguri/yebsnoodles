@@ -16,7 +16,7 @@
 --     ADMIN_USERNAME=your-admin-name
 --     ADMIN_PASSWORD=a-strong-password
 --
---   Set the same variables in Render / Netlify, or run the app once with them
+--   Set the same variables in Render, or run the app once with them
 --   in .env. Change the password from Admin -> Settings after the first login.
 -- ============================================================================
 

@@ -18,7 +18,6 @@ const isolatedEnvironment = {
   SUPABASE_SECRET_KEY: '',
   RENDER: '',
   RENDER_SERVICE_ID: '',
-  NETLIFY: '',
   AWS_LAMBDA_FUNCTION_NAME: ''
 };
 

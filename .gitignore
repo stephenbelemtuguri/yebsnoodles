@@ -21,9 +21,8 @@ uploads/
 tmp/
 temp/
 
-# Netlify
+# Build output
 dist/
-.netlify/
 
 # OS junk
 .DS_Store

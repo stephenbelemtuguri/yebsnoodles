@@ -1,4 +1,4 @@
-// Build the static site for Netlify.
+// Build the static site assets.
 // Only browser-facing assets are copied to dist/ — server code, the local
 // database.json, secrets and the unrelated CAD folder stay out of the deploy.
 
@@ -72,7 +72,7 @@ for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
   copied += 1;
 }
 
-console.log(`[netlify] published ${copied} static files to dist/`);
+console.log(`[build] published ${copied} static files to dist/`);
 
 // Guard against broken food cards: every local menu photo must exist in dist/.
 try {
@@ -86,11 +86,11 @@ try {
     if (!fs.existsSync(path.join(dist, rel))) missing.push(`${item.name || item.id}: ${rel}`);
   }
   if (missing.length) {
-    console.error('[netlify] missing menu images:\n  ' + missing.join('\n  '));
+    console.error('[build] missing menu images:\n  ' + missing.join('\n  '));
     process.exitCode = 1;
   } else {
-    console.log('[netlify] all menu photos are present in dist/');
+    console.log('[build] all menu photos are present in dist/');
   }
 } catch (err) {
-  console.warn('[netlify] could not verify menu photos:', err.message);
+  console.warn('[build] could not verify menu photos:', err.message);
 }
