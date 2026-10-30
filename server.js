@@ -1851,7 +1851,12 @@ app.post('/api/drivers/:id/location', (req, res) => {
 // Public: All drivers (safe public fields only)
 app.get('/api/drivers', (req, res) => {
   const db = loadDatabase();
-  res.json(db.drivers.map(publicDriver));
+  const approvedActiveDrivers = db.drivers.filter(driver =>
+    driver.isActive !== false &&
+    (driver.approvalStatus === 'approved' || Boolean(driver.approvedAt) ||
+      (!driver.approvalStatus && driver.isActive === true))
+  );
+  res.json(approvedActiveDrivers.map(publicDriver));
 });
 
 // Public: Get active driver details for customers
