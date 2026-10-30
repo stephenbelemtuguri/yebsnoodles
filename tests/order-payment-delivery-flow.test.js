@@ -294,6 +294,7 @@ describe('customer order to verified delivery flow', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ paid: true, reason: 'Verified in integration test' });
     expect(approvedPayment.status).toBe(200);
+    expect(approvedPayment.body.persisted).toBe(true);
     expect(approvedPayment.body.order.paymentStatus).toBe('paid');
     expect(approvedPayment.body.order.paymentVerified).toBe(true);
 

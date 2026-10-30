@@ -3810,7 +3810,14 @@
 
     async function refreshDrivers() {
       if (!checkAdminAuth()) return;
-      liveDrivers = await apiFetchAllDrivers();
+      try {
+        liveDrivers = await apiFetchAllDrivers();
+      } catch (error) {
+        if (adminRiderRoster) {
+          adminRiderRoster.innerHTML = `<div class="action-meta" style="color:#b91c1c;">Could not refresh riders: ${escapeHtml(error.message)}</div>`;
+        }
+        return;
+      }
       refreshActionPanel();
       renderRiderRoster();
     }
@@ -3876,12 +3883,19 @@
     async function loadDriverManagement() {
       if (!checkAdminAuth()) return;
       const token = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
-      const all = await apiFetchAllDrivers();
-      const pending = all.filter(d => d.approvalStatus === 'pending' || (!d.approvalStatus && !d.approvedAt && !d.isActive));
-      const approved = all.filter(d => d.approvalStatus === 'approved' || (d.approvedAt && d.approvalStatus !== 'pending'));
-
       const pendingGrid = document.getElementById('pendingDriversGrid');
       const approvedGrid = document.getElementById('approvedDriversGrid');
+      let all;
+      try {
+        all = await apiFetchAllDrivers();
+      } catch (error) {
+        const message = `<div style="color:#b91c1c; padding:16px;">Could not load drivers: ${escapeHtml(error.message)}</div>`;
+        if (pendingGrid) pendingGrid.innerHTML = message;
+        if (approvedGrid) approvedGrid.innerHTML = message;
+        return;
+      }
+      const pending = all.filter(d => d.approvalStatus === 'pending' || (!d.approvalStatus && !d.approvedAt && !d.isActive));
+      const approved = all.filter(d => d.approvalStatus === 'approved' || (d.approvedAt && d.approvalStatus !== 'pending'));
 
       if (pendingGrid) {
         pendingGrid.innerHTML = pending.length === 0

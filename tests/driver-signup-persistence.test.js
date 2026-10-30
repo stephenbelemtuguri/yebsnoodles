@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const request = require('supertest');
 
 describe('driver signup persistence', () => {
@@ -37,9 +38,23 @@ describe('driver signup persistence', () => {
 
     jest.resetModules();
     const data = {
-      admins: [],
+      admins: [{
+        id: 'adm-driver-signup-test',
+        username: 'test-admin',
+        password: bcrypt.hashSync('test-admin-password', 10),
+        name: 'Test Admin',
+        role: 'SUPERADMIN',
+        sessionEpoch: 0
+      }],
       drivers: [],
-      orders: [],
+      orders: [{
+        id: 'YB-7319',
+        customer: 'Test Customer',
+        total: 25,
+        status: 'pending',
+        paymentStatus: 'review',
+        paymentVerified: false
+      }],
       sessions: [],
       auditLogs: [],
       menuItems: [],
@@ -110,5 +125,73 @@ describe('driver signup persistence', () => {
     expect(set).toHaveBeenCalledTimes(1);
     expect(data.drivers).toHaveLength(1);
     expect(data.drivers[0].approvalStatus).toBe('pending');
+
+    const login = await request(app)
+      .post('/api/auth/admin/login')
+      .send({ username: 'test-admin', password: 'test-admin-password' });
+    expect(login.status).toBe(200);
+    const token = login.body.token;
+
+    const roster = await request(app)
+      .get('/api/admin/drivers')
+      .set('Authorization', `Bearer ${token}`);
+    expect(roster.status).toBe(200);
+    expect(roster.body).toHaveLength(1);
+    expect(roster.body[0]).toMatchObject({
+      id: response.body.driverId,
+      approvalStatus: 'pending',
+      email: 'rider@example.test'
+    });
+    expect(roster.body[0]).not.toHaveProperty('password');
+
+    const approval = await request(app)
+      .post('/api/auth/driver/approve')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ driverId: response.body.driverId, approved: true });
+    expect(approval.status).toBe(200);
+    expect(approval.body).toMatchObject({ success: true, persisted: true });
+    expect(data.drivers[0]).toMatchObject({ approvalStatus: 'approved', isActive: true });
+  });
+
+  test('does not confirm driver approval when the database write fails', async () => {
+    const { app, set } = await createApp();
+    const signup = await request(app)
+      .post('/api/auth/driver/signup')
+      .send(signupPayload());
+    const login = await request(app)
+      .post('/api/auth/admin/login')
+      .send({ username: 'test-admin', password: 'test-admin-password' });
+    expect(login.status).toBe(200);
+
+    set.mockResolvedValue({ ok: false, mode: 'supabase', error: 'write denied' });
+    const approval = await request(app)
+      .post('/api/auth/driver/approve')
+      .set('Authorization', `Bearer ${login.body.token}`)
+      .send({ driverId: signup.body.driverId, approved: true });
+
+    expect(approval.status).toBe(503);
+    expect(approval.body).toMatchObject({ success: false, persisted: false });
+    expect(approval.body.message).toContain('NOT saved permanently');
+  });
+
+  test('does not report payment approval when the database write fails', async () => {
+    const { app, data, set } = await createApp();
+    const login = await request(app)
+      .post('/api/auth/admin/login')
+      .send({ username: 'test-admin', password: 'test-admin-password' });
+    expect(login.status).toBe(200);
+
+    set.mockResolvedValue({ ok: false, mode: 'supabase', error: 'write denied' });
+    const approval = await request(app)
+      .post('/api/orders/YB-7319/pay/review')
+      .set('Authorization', `Bearer ${login.body.token}`)
+      .send({ paid: true, reason: 'Verified in test' });
+
+    expect(approval.status).toBe(503);
+    expect(approval.body).toMatchObject({ success: false, persisted: false });
+    expect(data.orders[0]).toMatchObject({
+      paymentStatus: 'review',
+      paymentVerified: false
+    });
   });
 });

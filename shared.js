@@ -2019,16 +2019,21 @@ export function startLiveOrderSync(onUpdate, intervalMs = 5000) {
 
 export async function apiFetchAllDrivers() {
   try {
-    const res = await fetch(`${API_BASE}/api/drivers`, { cache: 'no-store' });
-    if (res.ok) {
-      const drivers = await res.json();
-      if (Array.isArray(drivers)) {
-        drivers.forEach(rememberRegisteredDriver);
-        return drivers;
-      }
+    const res = await fetch(`${API_BASE}/api/admin/drivers`, {
+      headers: authHeaders(),
+      cache: 'no-store'
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || `Could not load drivers (${res.status}).`);
     }
-  } catch (e) {}
-  return getDispatchDrivers();
+    if (!Array.isArray(data)) throw new Error('The server returned an invalid driver roster.');
+    data.forEach(rememberRegisteredDriver);
+    return data;
+  } catch (error) {
+    console.error('Could not load the admin driver roster:', error);
+    throw error;
+  }
 }
 
 export async function apiCheckHealth() {

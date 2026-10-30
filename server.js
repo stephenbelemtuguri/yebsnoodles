@@ -1308,65 +1308,75 @@ app.post('/api/auth/driver/signup', async (req, res) => {
     return res.status(400).json({ success: false, message: "A live face photo is required so customers can identify their driver." });
   }
 
-  const db = loadDatabase();
-  if (db.drivers.some(d => String(d.phone || '').replace(/\s+/g, '') === phone.replace(/\s+/g, ''))) {
-    return res.status(400).json({ success: false, message: "A driver with this phone number is already registered." });
+  let releaseMutationLock;
+  try {
+    releaseMutationLock = await store.acquireMutationLock();
+  } catch (error) {
+    return res.status(503).json({ success: false, message: `Could not load the latest registration data: ${error.message}` });
   }
 
-  const username = generateDriverUsername(fname, lname, db.drivers);
-  const newDriver = {
-    id: "drv-" + Date.now(),
-    username,
-    password: hashPassword(password),
-    fname,
-    lname,
-    name: `${fname} ${lname}`.trim(),
-    phone,
-    email: email || '',
-    vehicle,
-    photo,
-    isActive: false,          // Disabled until admin approves
-    approvalStatus: 'pending', // pending | approved | rejected
-    approvedAt: null,
-    approvedBy: null,
-    approvalNotified: false,
-    lat: 5.56246,
-    lng: -0.21289,
-    speedKmh: 0,
-    createdAt: new Date().toISOString()
-  };
+  try {
+    const db = loadDatabase();
+    if (db.drivers.some(d => String(d.phone || '').replace(/\s+/g, '') === phone.replace(/\s+/g, ''))) {
+      return res.status(400).json({ success: false, message: "A driver with this phone number is already registered." });
+    }
 
-  const previousAuditLogs = Array.isArray(db.auditLogs) ? db.auditLogs.slice() : db.auditLogs;
-  db.drivers.push(newDriver);
-  db.auditLogs = db.auditLogs || [];
-  db.auditLogs.unshift({
-    id: "log-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
-    timestamp: new Date().toISOString(),
-    action: "DRIVER_SIGNUP",
-    actor: username,
-    entity: "DRIVER_PORTAL",
-    details: JSON.stringify({ name: newDriver.name, phone, vehicle }),
-    ipOrAgent: (req.headers['x-forwarded-for'] || req.socket.remoteAddress || "LOCAL").toString()
-  });
-  if (db.auditLogs.length > 500) db.auditLogs.pop();
+    const username = generateDriverUsername(fname, lname, db.drivers);
+    const newDriver = {
+      id: "drv-" + Date.now(),
+      username,
+      password: hashPassword(password),
+      fname,
+      lname,
+      name: `${fname} ${lname}`.trim(),
+      phone,
+      email: email || '',
+      vehicle,
+      photo,
+      isActive: false,
+      approvalStatus: 'pending',
+      approvedAt: null,
+      approvedBy: null,
+      approvalNotified: false,
+      lat: 5.56246,
+      lng: -0.21289,
+      speedKmh: 0,
+      createdAt: new Date().toISOString()
+    };
 
-  const persistenceError = await requireDurableSave(db);
-  if (persistenceError) {
-    db.drivers = db.drivers.filter(driver => driver.id !== newDriver.id);
-    if (previousAuditLogs === undefined) delete db.auditLogs;
-    else db.auditLogs = previousAuditLogs;
-    return res.status(503).json({ success: false, message: persistenceError });
+    const previousAuditLogs = Array.isArray(db.auditLogs) ? db.auditLogs.slice() : db.auditLogs;
+    db.drivers.push(newDriver);
+    db.auditLogs = db.auditLogs || [];
+    db.auditLogs.unshift({
+      id: "log-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
+      timestamp: new Date().toISOString(),
+      action: "DRIVER_SIGNUP",
+      actor: username,
+      entity: "DRIVER_PORTAL",
+      details: JSON.stringify({ name: newDriver.name, phone, vehicle }),
+      ipOrAgent: (req.headers['x-forwarded-for'] || req.socket.remoteAddress || "LOCAL").toString()
+    });
+    if (db.auditLogs.length > 500) db.auditLogs.pop();
+
+    const persistenceError = await requireDurableSave(db);
+    if (persistenceError) {
+      db.drivers = db.drivers.filter(driver => driver.id !== newDriver.id);
+      if (previousAuditLogs === undefined) delete db.auditLogs;
+      else db.auditLogs = previousAuditLogs;
+      return res.status(503).json({ success: false, message: persistenceError });
+    }
+
+    res.status(201).json({
+      success: true,
+      pending: true,
+      message: `Registration successful! Your application is under review. You will be notified once the admin approves your account.`,
+      driverId: newDriver.id,
+      driverName: newDriver.name,
+      username: newDriver.username
+    });
+  } finally {
+    await releaseMutationLock();
   }
-
-  // No token on signup — driver must wait for admin approval before they can log in
-  res.status(201).json({
-    success: true,
-    pending: true,
-    message: `Registration successful! Your application is under review. You will be notified once the admin approves your account.`,
-    driverId: newDriver.id,
-    driverName: newDriver.name,
-    username: newDriver.username
-  });
 });
 
 // DRIVER LOGIN — username or phone, bcrypt verified.
@@ -1891,7 +1901,21 @@ app.post('/api/drivers/:id/location', (req, res) => {
   res.json({ success: true, driver: publicDriver(driver) });
 });
 
-// Public: All drivers (safe public fields only)
+// Admin roster includes pending applicants; public clients only see approved drivers.
+app.get('/api/admin/drivers', requireRole('admin'), async (req, res) => {
+  await store.refresh(true);
+  if (store.remoteMode !== 'local' && !store.canPersist()) {
+    return res.status(503).json({ success: false, message: `Could not sync the driver roster: ${store.status()}` });
+  }
+  const db = loadDatabase();
+  res.set('Cache-Control', 'no-store');
+  res.json(db.drivers.map(driver => ({
+    ...publicDriver(driver),
+    email: driver.email || ''
+  })));
+});
+
+// Public: Approved active drivers only (safe public fields only).
 app.get('/api/drivers', (req, res) => {
   const db = loadDatabase();
   const approvedActiveDrivers = db.drivers.filter(driver =>
@@ -2609,37 +2633,54 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), (req, res) 
 });
 
 // Admin override / review outcome.
-app.post('/api/orders/:id/pay/review', requireRole('admin'), (req, res) => {
-  const db = loadDatabase();
-  const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
-  if (!order) return res.status(404).json({ success: false, message: "Order not found" });
-  if (order.status === 'cancelled') return res.status(409).json({ success: false, message: "A cancelled order cannot be marked paid." });
-
-  const paid = (req.body || {}).paid !== false;
-  const reason = cleanString((req.body || {}).reason, 240);
-  const actor = req.auth.admin.name || req.auth.admin.username;
-
-  if (paid) {
-    order.paymentStatus = 'paid';
-    order.paymentVerified = true;
-    order.paidAt = order.paidAt || new Date().toISOString();
-    order.verificationMethod = order.verificationMethod || 'admin-manual';
-    if (order.momoReceipt) order.momoReceipt.verified = true;
-    addPaymentAudit(order, 'PAYMENT_APPROVED_BY_ADMIN', actor, { reason });
-  } else {
-    order.paymentStatus = 'review';
-    order.paymentVerified = false;
-    order.paidAt = null;
-    if (order.momoReceipt) order.momoReceipt.verified = false;
-    addPaymentAudit(order, 'PAYMENT_REJECTED_BY_ADMIN', actor, { reason });
+app.post('/api/orders/:id/pay/review', requireRole('admin'), async (req, res) => {
+  let releaseMutationLock;
+  try {
+    releaseMutationLock = await store.acquireMutationLock();
+  } catch (error) {
+    return res.status(503).json({ success: false, persisted: false, message: `Could not load the latest order data: ${error.message}` });
   }
+  try {
+    const db = loadDatabase();
+    const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    if (order.status === 'cancelled') return res.status(409).json({ success: false, message: "A cancelled order cannot be marked paid." });
 
-  saveDatabase(db);
-  logAction(paid ? 'PAYMENT_APPROVED_BY_ADMIN' : 'PAYMENT_REJECTED_BY_ADMIN', actor, order.id, { reason }, req);
-  if (typeof pushOrderUpdate === 'function') {
-    pushOrderUpdate(order.id, { type: 'payment-review', order: projectOrder(order, 'customer') });
+    const previousOrder = JSON.parse(JSON.stringify(order));
+    const paid = (req.body || {}).paid !== false;
+    const reason = cleanString((req.body || {}).reason, 240);
+    const actor = req.auth.admin.name || req.auth.admin.username;
+
+    if (paid) {
+      order.paymentStatus = 'paid';
+      order.paymentVerified = true;
+      order.paidAt = order.paidAt || new Date().toISOString();
+      order.verificationMethod = order.verificationMethod || 'admin-manual';
+      if (order.momoReceipt) order.momoReceipt.verified = true;
+      addPaymentAudit(order, 'PAYMENT_APPROVED_BY_ADMIN', actor, { reason });
+    } else {
+      order.paymentStatus = 'review';
+      order.paymentVerified = false;
+      order.paidAt = null;
+      if (order.momoReceipt) order.momoReceipt.verified = false;
+      addPaymentAudit(order, 'PAYMENT_REJECTED_BY_ADMIN', actor, { reason });
+    }
+
+    const persistenceError = await requireDurableSave(db);
+    if (persistenceError) {
+      Object.keys(order).forEach(key => delete order[key]);
+      Object.assign(order, previousOrder);
+      return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+    }
+
+    logAction(paid ? 'PAYMENT_APPROVED_BY_ADMIN' : 'PAYMENT_REJECTED_BY_ADMIN', actor, order.id, { reason }, req);
+    if (typeof pushOrderUpdate === 'function') {
+      pushOrderUpdate(order.id, { type: 'payment-review', order: projectOrder(order, 'customer') });
+    }
+    res.json({ success: true, persisted: true, message: paid ? 'Payment approved.' : 'Payment rejected and flagged for review.', order: projectOrder(order, 'admin') });
+  } finally {
+    await releaseMutationLock();
   }
-  res.json({ success: true, message: paid ? 'Payment approved.' : 'Payment rejected and flagged for review.', order: projectOrder(order, 'admin') });
 });
 
 // Match a forwarded MoMo SMS to an unpaid order; bridged messages remain for admin review.
@@ -3860,35 +3901,53 @@ app.post('/api/menu/reset', requireRole('admin'), async (req, res) => {
 // Override the existing signup to mark approvalStatus = 'pending'
 // (patch applied at the route level below)
 
-app.post('/api/auth/driver/approve', requireRole('admin'), (req, res) => {
+app.post('/api/auth/driver/approve', requireRole('admin'), async (req, res) => {
   const { driverId, approved, reason } = req.body || {};
   if (!driverId) return res.status(400).json({ success: false, message: "driverId required." });
-  const db = loadDatabase();
-  const driver = db.drivers.find(d => d.id === driverId);
-  if (!driver) return res.status(404).json({ success: false, message: "Driver not found." });
-  const actor = req.auth.admin.name || req.auth.admin.username;
-  if (approved) {
-    driver.approvalStatus = 'approved';
-    driver.approvedAt = new Date().toISOString();
-    driver.approvedBy = actor;
-    driver.isActive = true;
-    // Record push notification pending flag so driver gets notified on next login
-    driver.approvalNotified = false;
-    logAction("DRIVER_APPROVED", actor, driver.id, { name: driver.name, reason: reason || null }, req);
-  } else {
-    driver.approvalStatus = 'rejected';
-    driver.rejectedAt = new Date().toISOString();
-    driver.rejectedBy = actor;
-    driver.rejectionReason = cleanString(reason || 'Not approved', 300);
-    driver.isActive = false;
-    logAction("DRIVER_REJECTED", actor, driver.id, { name: driver.name, reason: reason || null }, req);
+  let releaseMutationLock;
+  try {
+    releaseMutationLock = await store.acquireMutationLock();
+  } catch (error) {
+    return res.status(503).json({ success: false, persisted: false, message: `Could not load the latest driver data: ${error.message}` });
   }
-  saveDatabase(db);
-  res.json({
-    success: true,
-    message: approved ? `${driver.name} approved and can now log in.` : `${driver.name} has been rejected.`,
-    driver: publicDriver(driver)
-  });
+  try {
+    const db = loadDatabase();
+    const driver = db.drivers.find(d => d.id === driverId);
+    if (!driver) return res.status(404).json({ success: false, message: "Driver not found." });
+    const previousDriver = JSON.parse(JSON.stringify(driver));
+    const actor = req.auth.admin.name || req.auth.admin.username;
+    if (approved) {
+      driver.approvalStatus = 'approved';
+      driver.approvedAt = new Date().toISOString();
+      driver.approvedBy = actor;
+      driver.isActive = true;
+      driver.approvalNotified = false;
+    } else {
+      driver.approvalStatus = 'rejected';
+      driver.rejectedAt = new Date().toISOString();
+      driver.rejectedBy = actor;
+      driver.rejectionReason = cleanString(reason || 'Not approved', 300);
+      driver.isActive = false;
+    }
+    const persistenceError = await requireDurableSave(db);
+    if (persistenceError) {
+      Object.keys(driver).forEach(key => delete driver[key]);
+      Object.assign(driver, previousDriver);
+      return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+    }
+    logAction(approved ? "DRIVER_APPROVED" : "DRIVER_REJECTED", actor, driver.id, {
+      name: driver.name,
+      reason: approved ? (reason || null) : driver.rejectionReason
+    }, req);
+    res.json({
+      success: true,
+      persisted: true,
+      message: approved ? `${driver.name} approved and can now log in.` : `${driver.name} has been rejected.`,
+      driver: publicDriver(driver)
+    });
+  } finally {
+    await releaseMutationLock();
+  }
 });
 
 // Remove / deactivate inactive drivers
