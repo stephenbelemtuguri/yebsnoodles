@@ -2874,7 +2874,9 @@
       // Here we only tell the customer what happens next.
       const notifyNote = newOrder.notificationStatus === 'sent'
         ? 'The kitchen has been notified automatically.'
-        : 'The kitchen sees your order instantly in the dashboard.';
+        : newOrder.notificationStatus === 'queued'
+          ? 'WhatsApp bot is working. Please wait while the order message is sent.'
+          : 'The kitchen sees your order instantly in the dashboard.';
 
       // Clear the cart so the order is not accidentally submitted twice.
       Object.keys(cart).forEach(k => delete cart[k]);

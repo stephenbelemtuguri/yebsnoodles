@@ -2455,3 +2455,22 @@ export async function apiUnclaimOrder(orderId) {
     return { success: false, message: 'Could not reach server to unclaim delivery.' };
   }
 }
+
+export async function apiSendDriverReport(message) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(`${API_BASE}/api/driver/report`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ message: String(message || '').slice(0, 10000) }),
+      signal: controller.signal
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ...data, ok: res.ok };
+  } catch (e) {
+    return { success: false, ok: false, message: 'Could not queue the driver report.' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}

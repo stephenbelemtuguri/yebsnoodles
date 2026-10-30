@@ -484,23 +484,21 @@ async function notifyOrderCreated(db, order) {
     message: orderWhatsAppText(order)
   };
 
-  const delivered = await sendOwnerWhatsApp(entry.message);
-  if (delivered.ok) {
-    entry.status = 'sent';
-    entry.provider = delivered.provider;
-    entry.providerId = delivered.providerId || null;
-    entry.sentAt = new Date().toISOString();
-  } else {
-    entry.status = 'not-configured';
-    entry.reason = delivered.reason;
-    console.warn('[whatsapp] order notification not delivered:', delivered.reason);
-  }
-
   order.notificationStatus = entry.status;
   db.notifications.unshift(entry);
   if (db.notifications.length > 500) db.notifications.length = 500;
   const persistenceError = await requireDurableSave(db);
   if (persistenceError) throw new Error(persistenceError);
+
+  void sendOwnerWhatsApp(entry.message).then(async delivered => {
+    entry.status = delivered.ok ? 'sent' : 'failed';
+    entry.provider = delivered.provider || null;
+    entry.providerId = delivered.providerId || null;
+    entry.reason = delivered.reason || null;
+    entry.sentAt = delivered.ok ? new Date().toISOString() : null;
+    if (!delivered.ok) console.warn('[whatsapp] order notification not delivered:', delivered.reason);
+    await requireDurableSave(db).catch(err => console.warn('[whatsapp] notification status persistence failed:', err.message));
+  });
   return entry;
 }
 
@@ -4886,6 +4884,67 @@ app.post('/api/reports/close-of-day', requireRole('admin'), (req, res) => {
     income: report.summary.totalIncome
   }, req);
   res.json({ success: true, report });
+});
+
+app.post('/api/driver/report', requireRole('driver'), async (req, res) => {
+  const db = loadDatabase();
+  const driver = req.auth.driver;
+  const driverId = String(driver.id || '');
+  const orders = (db.orders || []).filter(order =>
+    String(order.driverId || (order.driver && order.driver.id) || '') === driverId
+  );
+  const activeOrders = orders.filter(order => !['delivered', 'cancelled'].includes(order.status));
+  const lines = orders.slice(0, 30).map((order, index) => {
+    const items = (order.items || []).map(item => `${item.quantity || 1}x ${item.name}`).join(', ');
+    return `${index + 1}. Order #${order.id} - ${order.status || 'pending'}\nCustomer: ${order.customer || '-'} | ${order.phone || '-'}\nItems: ${items || '-'} | Total: GH${Number(order.total || 0).toFixed(2)}\nLocation: ${order.location || order.address || '-'}\nPIN: ${order.pickupPin || '-'}`;
+  });
+  const message = [
+    'YEBS DRIVER REPORT',
+    `Driver: ${driver.name || driver.username || 'Rider'}`,
+    `Phone: ${driver.phone || '-'}`,
+    `Submitted: ${new Date().toLocaleString()}`,
+    `Orders assigned: ${orders.length}`,
+    `Orders still active: ${activeOrders.length}`,
+    '',
+    lines.join('\n\n') || 'No assigned orders.'
+  ].join('\n');
+
+  const report = {
+    id: 'driver-report-' + Date.now(),
+    driverId,
+    driverName: driver.name || driver.username || 'Rider',
+    status: 'queued',
+    createdAt: new Date().toISOString(),
+    message
+  };
+  db.driverReports = db.driverReports || [];
+  db.driverReports.unshift(report);
+  if (db.driverReports.length > 200) db.driverReports.length = 200;
+  db.notifications = db.notifications || [];
+  db.notifications.unshift({
+    id: 'ntf-' + Date.now() + '-driver',
+    channel: 'whatsapp',
+    to: whatsappConfig().to,
+    createdAt: report.createdAt,
+    status: 'queued',
+    kind: 'driver-report',
+    driverReportId: report.id,
+    message
+  });
+
+  const saveError = await requireDurableSave(db);
+  if (saveError) return res.status(503).json({ success: false, persisted: false, message: saveError });
+  void sendOwnerWhatsApp(message).then(async delivered => {
+    report.status = delivered.ok ? 'sent' : 'failed';
+    report.provider = delivered.provider || null;
+    report.providerId = delivered.providerId || null;
+    report.reason = delivered.reason || null;
+    report.sentAt = delivered.ok ? new Date().toISOString() : null;
+    const notification = db.notifications.find(item => item.driverReportId === report.id);
+    if (notification) Object.assign(notification, report, { status: report.status });
+    await requireDurableSave(db).catch(err => console.warn('[whatsapp] driver report status persistence failed:', err.message));
+  });
+  res.json({ success: true, queued: true, status: 'queued', reportId: report.id, message, deliveryTarget: whatsappConfig().to });
 });
 
 // CSV export of daily report

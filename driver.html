@@ -841,6 +841,10 @@
           <div style="font-size:0.78rem; color:var(--muted); margin-top:4px; background:#f9f7f2; padding:8px 12px; border-radius:8px;">
             📡 This driver's photo, name, vehicle type, and phone will be visible to all customers tracking their delivery in real-time.
           </div>
+          <button id="sendDriverReportBtn" type="button" class="btn btn-orange" style="width:100%; margin-top:12px;">
+            💬 Send Driver Report to Admin WhatsApp
+          </button>
+          <div id="driverReportStatus" role="status" style="display:none; margin-top:8px; font-size:0.78rem; font-weight:700;"></div>
         </div>
       </div>
     </div>
@@ -1009,6 +1013,7 @@
       apiFetchOrder,
       apiClaimOrder,
       apiUnclaimOrder,
+      apiSendDriverReport,
       getPickupPoint,
       applyServerSession,
       startLiveOrderSync
@@ -1016,6 +1021,32 @@
     import { openRecovery } from './recovery.js';
 
     initStore();
+
+    const sendDriverReportBtn = document.getElementById('sendDriverReportBtn');
+    const driverReportStatus = document.getElementById('driverReportStatus');
+    if (sendDriverReportBtn) {
+      sendDriverReportBtn.addEventListener('click', async () => {
+        sendDriverReportBtn.disabled = true;
+        sendDriverReportBtn.textContent = 'Preparing order report…';
+        driverReportStatus.style.display = 'block';
+        driverReportStatus.style.color = '#173d30';
+        driverReportStatus.textContent = 'Bot is working. Please wait while the report is sent.';
+        const result = await apiSendDriverReport();
+        if (result && result.success) {
+          sendDriverReportBtn.textContent = '✅ Report Queued';
+          driverReportStatus.textContent = 'Report queued and sent to the admin WhatsApp. You can continue deliveries.';
+          setTimeout(() => {
+            sendDriverReportBtn.disabled = false;
+            sendDriverReportBtn.textContent = '💬 Send Driver Report to Admin WhatsApp';
+          }, 2500);
+        } else {
+          sendDriverReportBtn.disabled = false;
+          sendDriverReportBtn.textContent = '💬 Send Driver Report to Admin WhatsApp';
+          driverReportStatus.style.color = '#b91c1c';
+          driverReportStatus.textContent = result.message || 'Could not send the report.';
+        }
+      });
+    }
 
     let deferredPrompt = null;
     const pwaInstallBanner = document.getElementById('pwaInstallBanner');
