@@ -114,7 +114,11 @@ describe('MoMo SMS ingestion bridge', () => {
     const proof = await request(app)
       .post(`/api/orders/${order.id}/pay/momo`)
       .set('X-Order-Access-Token', trackingToken)
-      .send({ transactionRef: 'MTN-TEST-1', amount: 10 });
+      .send({
+        transactionRef: 'MTN-TEST-1',
+        amount: 10,
+        receiptImage: 'data:image/jpeg;base64,/9j/2Q=='
+      });
     expect(proof.status).toBe(202);
     expect(proof.body.needsReview).toBe(true);
     expect(proof.body.order.paymentVerified).toBe(false);

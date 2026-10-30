@@ -1918,6 +1918,15 @@ function validTxnRef(value) {
   return /^[A-Za-z0-9._-]{5,50}$/.test(ref) ? ref : '';
 }
 
+function validReceiptImage(value) {
+  if (typeof value !== 'string' || value.length > 11_200_000) return '';
+  const match = value.match(/^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/i);
+  if (!match) return '';
+  const image = Buffer.from(match[1], 'base64');
+  if (image.length === 0 || image.length > 8 * 1024 * 1024 || image.toString('base64') !== match[1]) return '';
+  return value;
+}
+
 function findDuplicateTxn(db, txn, orderId) {
   const needle = txn.toLowerCase();
   return db.orders.find(o =>
@@ -2216,6 +2225,19 @@ function applyMomoPayment(db, order, opts) {
   const txn = validTxnRef(transactionRef);
   const receiptHash = hashReceipt(receiptImage);
 
+  // Keep the submitted evidence available to an administrator even when it
+  // conflicts with another order and must be rejected for automatic payment.
+  order.momoTransactionRef = txn || order.momoTransactionRef || (receiptHash ? `RECEIPT-${receiptHash.slice(0, 8).toUpperCase()}` : null);
+  order.momoAmount = paidAmount;
+  order.momoSender = sender ? cleanString(sender, 40) : (order.momoSender || null);
+  order.momoReceipt = {
+    image: receiptImage || (order.momoReceipt && order.momoReceipt.image) || null,
+    transactionRef: order.momoTransactionRef,
+    uploadedAt: new Date().toISOString(),
+    verified: false,
+    hash: receiptHash || (order.momoReceipt && order.momoReceipt.hash) || null
+  };
+
   // A screenshot already used on another order is evidence of reuse/fraud.
   const dupReceipt = findDuplicateReceipt(db, receiptHash, order.id);
   if (dupReceipt) {
@@ -2245,18 +2267,6 @@ function applyMomoPayment(db, order, opts) {
     }
   }
 
-  // Store the submitted proof regardless of the outcome (full transparency).
-  order.momoTransactionRef = txn || order.momoTransactionRef || (receiptHash ? `RECEIPT-${receiptHash.slice(0, 8).toUpperCase()}` : null);
-  order.momoAmount = paidAmount;
-  order.momoSender = sender ? cleanString(sender, 40) : (order.momoSender || null);
-  order.momoReceipt = {
-    image: receiptImage || (order.momoReceipt && order.momoReceipt.image) || null,
-    transactionRef: order.momoTransactionRef,
-    uploadedAt: new Date().toISOString(),
-    verified: false,
-    hash: receiptHash || (order.momoReceipt && order.momoReceipt.hash) || null
-  };
-
   if (Math.abs(paidAmount - total) > 0.009) {
     order.paymentStatus = 'review';
     addPaymentAudit(order, 'MOMO_AMOUNT_MISMATCH', actor, { expected: total, received: paidAmount, note: note || null });
@@ -2265,7 +2275,7 @@ function applyMomoPayment(db, order, opts) {
       status: 202,
       order,
       needsReview: true,
-      message: `We received GH₵${paidAmount.toFixed(2)} but this order total is GH₵${total.toFixed(2)}. It has been flagged for a quick admin check — your order is still being prepared.`
+      message: `Proof submitted for GH₵${paidAmount.toFixed(2)}, but this order total is GH₵${total.toFixed(2)}. An administrator must review it before payment is confirmed.`
     };
   }
 
@@ -2288,7 +2298,7 @@ function applyMomoPayment(db, order, opts) {
       status: 202,
       order,
       needsReview: true,
-      message: 'Payment proof received. The order will be marked paid after the transaction is confirmed.'
+      message: 'Payment proof submitted successfully. An administrator will verify the transaction; your order will be marked paid only after confirmation.'
     };
   }
 
@@ -2318,12 +2328,20 @@ app.post('/api/orders/:id/pay/momo', (req, res) => {
   if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
 
   const body = req.body || {};
+  const transactionRef = validTxnRef(body.transactionRef);
+  const receiptImage = validReceiptImage(body.receiptImage);
+  if (!transactionRef) {
+    return res.status(400).json({ success: false, message: "Enter a valid MoMo transaction ID." });
+  }
+  if (!receiptImage) {
+    return res.status(400).json({ success: false, message: "Upload a valid JPEG, PNG, or WebP payment receipt screenshot." });
+  }
   const amount = toAmount(body.amount);
   const result = applyMomoPayment(db, order, {
-    transactionRef: body.transactionRef,
+    transactionRef,
     amount: amount === null ? Number(order.total) : amount,
     sender: body.senderPhone || body.sender,
-    receiptImage: body.receiptImage ? String(body.receiptImage).slice(0, 9 * 1024 * 1024) : null,
+    receiptImage,
     method: body.method,
     actor: order.customer || 'CUSTOMER',
     note: body.note
@@ -2810,11 +2828,19 @@ app.post('/api/orders/:id/receipt', (req, res) => {
   if (order.status === 'cancelled') return res.status(409).json({ success: false, message: "This order is cancelled and cannot accept payment proof." });
 
   const body = req.body || {};
+  const transactionRef = validTxnRef(body.transactionRef);
+  const receiptImage = validReceiptImage(body.receiptImage);
+  if (!transactionRef) {
+    return res.status(400).json({ success: false, message: "Enter a valid MoMo transaction ID." });
+  }
+  if (!receiptImage) {
+    return res.status(400).json({ success: false, message: "Upload a valid JPEG, PNG, or WebP payment receipt screenshot." });
+  }
   const result = applyMomoPayment(db, order, {
-    transactionRef: body.transactionRef,
+    transactionRef,
     amount: toAmount(body.amount) === null ? Number(order.total) : toAmount(body.amount),
     sender: body.senderPhone,
-    receiptImage: body.receiptImage ? String(body.receiptImage).slice(0, 9 * 1024 * 1024) : null,
+    receiptImage,
     method: 'auto-receipt',
     actor: order.customer || 'CUSTOMER'
   });

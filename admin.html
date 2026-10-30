@@ -1858,6 +1858,15 @@
     const actionPhoneHint = document.getElementById('actionPhoneHint');
     const actionReceiptReview = document.getElementById('actionReceiptReview');
     const actionPaymentSummary = document.getElementById('actionPaymentSummary');
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[char]);
+    }
     const actionVerifyMomoBtn = document.getElementById('actionVerifyMomoBtn');
     const actionRejectPaymentBtn = document.getElementById('actionRejectPaymentBtn');
     const actionOrderResolution = document.getElementById('actionOrderResolution');
@@ -2355,10 +2364,10 @@
             <span style="font-weight:800; color:var(--forest);">GH₵${Number(order.total || 0).toFixed(2)}</span>
           </div>
           <div style="margin-top:2px;">${mode} · ${order.payment || ''}</div>
-          <div style="margin-top:2px; font-family:ui-monospace,monospace;">Ref: ${order.paymentRef || order.id}${order.momoTransactionRef ? ` · Txn: ${order.momoTransactionRef}` : ''}</div>
+          <div style="margin-top:2px; font-family:ui-monospace,monospace;">Ref: ${escapeHtml(order.paymentRef || order.id)}${order.momoTransactionRef ? ` · Txn: ${escapeHtml(order.momoTransactionRef)}` : ''}</div>
           ${order.momoAmount ? `<div style="margin-top:2px;">Amount received: GH₵${Number(order.momoAmount).toFixed(2)}</div>` : ''}
           ${order.verificationMethod ? `<div style="margin-top:2px;">Verified by: ${order.verificationMethod}${when ? ` · ${when}` : ''}</div>` : ''}
-          ${review ? `<div style="margin-top:4px; color:#b45309;">Flagged for a quick check. The customer's order is still moving.</div>` : ''}
+          ${review ? `<div style="margin-top:4px; color:#b45309;">Proof is pending review. Confirm the transaction in the MoMo account before approving payment.</div>` : ''}
         `;
       }
       if (actionVerifyMomoBtn) {
@@ -2386,17 +2395,22 @@
       // MoMo receipt reviewer (the proof itself)
       if (actionReceiptReview) {
         const receipt = order.momoReceipt;
-        if (receipt && receipt.image) {
+        if (receipt) {
+          const receiptImage = typeof receipt.image === 'string'
+            && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(receipt.image)
+            ? receipt.image
+            : '';
           actionReceiptReview.classList.add('active');
           actionReceiptReview.innerHTML = `
             <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
               <strong style="color:#166534;">MoMo proof ${receipt.verified ? 'verified ✅' : 'awaiting check'}</strong>
-              <span style="font-size:0.72rem; color:var(--muted);">${receipt.transactionRef ? `Ref: ${receipt.transactionRef}` : 'No ref given'}</span>
+              <span style="font-size:0.72rem; color:var(--muted);">${receipt.transactionRef ? `Transaction ID: ${escapeHtml(receipt.transactionRef)}` : 'No transaction ID'}</span>
             </div>
-            <img src="${receipt.image}" alt="MoMo receipt for ${order.id}">
+            <div style="font-size:0.74rem; margin-top:4px;">Amount submitted: GH₵${Number(order.momoAmount || order.total || 0).toFixed(2)}${receipt.uploadedAt ? ` · Submitted ${escapeHtml(new Date(receipt.uploadedAt).toLocaleString())}` : ''}</div>
+            ${receiptImage ? `<img src="${receiptImage}" alt="MoMo receipt for ${escapeHtml(order.id)}">` : '<div style="margin-top:6px;color:#92400e;">No valid screenshot is attached to this proof.</div>'}
             <div style="display:flex; gap:6px; margin-top:8px;">
-              <button type="button" class="btn btn-success btn-sm" id="actionAcceptReceiptBtn" style="flex:1;">✅ Approve (paid)</button>
-              <button type="button" class="btn btn-outline btn-sm" id="actionRejectReceiptBtn" style="flex:1;">✖ Reject</button>
+              <button type="button" class="btn btn-success btn-sm" id="actionAcceptReceiptBtn" style="flex:1;" ${order.paymentStatus === 'paid' ? 'disabled' : ''}>✅ Approve (paid)</button>
+              <button type="button" class="btn btn-outline btn-sm" id="actionRejectReceiptBtn" style="flex:1;" ${order.paymentStatus === 'paid' ? 'disabled' : ''}>✖ Reject</button>
             </div>
           `;
           const acceptBtn = document.getElementById('actionAcceptReceiptBtn');
@@ -2414,8 +2428,15 @@
       const order = getOrderById(orderId);
       if (!order) return;
       try {
-        await apiReviewPayment(orderId, verified, verified ? 'Admin approved proof' : 'Admin rejected proof');
-      } catch (e) {}
+        const result = await apiReviewPayment(orderId, verified, verified ? 'Admin approved proof' : 'Admin rejected proof');
+        if (!result || !result.success) {
+          alert((result && result.message) || 'Could not update the payment review.');
+          return;
+        }
+      } catch (error) {
+        alert(error.message || 'Could not update the payment review.');
+        return;
+      }
       renderDashboard();
       refreshActionPanel();
       loadAuditLogs();

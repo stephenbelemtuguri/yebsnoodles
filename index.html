@@ -1615,20 +1615,20 @@
             On a computer the dial button may do nothing — copy the USSD code and dial it on your phone, or use the MoMo app.
           </div>
 
-          <!-- Instant payment verification: transaction ID and/or receipt -->
+          <!-- Payment proof requires both the transaction ID and receipt image. -->
           <div style="margin-top:12px; padding-top:12px; border-top:1px dashed #86efac;">
-            <div style="font-size:0.84rem; font-weight:800; color:#166534; margin-bottom:6px;">Already sent the money? Submit your transaction ID or receipt for verification.</div>
+            <div style="font-size:0.84rem; font-weight:800; color:#166534; margin-bottom:6px;">Already sent the money? Submit your transaction ID and receipt screenshot for verification.</div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
               <input type="number" step="0.01" min="0" id="momoAmountInput" placeholder="Amount paid (GH₵)" style="flex:1; min-width:130px; min-height:38px; font-size:0.82rem; padding:6px 10px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
-              <input type="text" id="momoRefInput" placeholder="Transaction ID (e.g. MP2404...)" style="flex:1.4; min-width:170px; min-height:38px; font-size:0.82rem; padding:6px 10px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
+              <input type="text" id="momoRefInput" required placeholder="Transaction ID (e.g. MP2404...)" style="flex:1.4; min-width:170px; min-height:38px; font-size:0.82rem; padding:6px 10px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px;">
-              <input type="file" id="momoReceiptFile" accept="image/*" style="flex:1; min-width:170px; font-size:0.75rem; padding:4px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
+              <input type="file" id="momoReceiptFile" accept="image/jpeg,image/png,image/webp" required style="flex:1; min-width:170px; font-size:0.75rem; padding:4px; border:1px solid #bbf7d0; border-radius:6px; background:white;">
               <button type="button" id="uploadMomoReceiptBtn" class="button" style="min-height:38px; padding:0 16px; font-size:0.82rem; background:#16a34a; color:white;">
                 ✅ Submit payment proof
               </button>
             </div>
-            <div style="font-size:0.72rem; color:#15803d; margin-top:5px;">Transaction IDs and screenshots are proof only; payment is not marked paid until verified against a provider message or approved by an administrator.</div>
+            <div style="font-size:0.72rem; color:#15803d; margin-top:5px;">Both are required. Your proof will be sent to the admin for review; payment is marked successful only after the transaction is confirmed.</div>
             <div id="momoReceiptStatus" style="font-size:0.8rem; margin-top:6px; color:#15803d; font-weight:600;"></div>
             <div id="momoReceiptPreview" style="margin-top:8px;"></div>
           </div>
@@ -3473,8 +3473,12 @@
         const ref = momoRefInput ? momoRefInput.value.trim() : "";
         const orderNow = getOrderById(currentlyTrackedOrderId);
 
-        if (!file && !ref) {
-          alert("Enter the MoMo transaction ID or choose a receipt screenshot so the payment can be verified.");
+        if (!ref || !file) {
+          alert("Enter the MoMo transaction ID and choose a receipt screenshot.");
+          return;
+        }
+        if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+          alert("Choose a JPEG, PNG, or WebP receipt image.");
           return;
         }
 
@@ -3491,10 +3495,10 @@
             : Number(orderNow ? orderNow.total : 0);
 
           const res = await apiPayMomo(currentlyTrackedOrderId, {
-            transactionRef: ref || null,
+            transactionRef: ref,
             amount: Number.isFinite(amountValue) ? amountValue : (orderNow ? orderNow.total : 0),
             receiptImage: dataUrl,
-            method: dataUrl && !ref ? "auto-receipt" : "auto-momo"
+            method: "customer-proof"
           });
 
           if (res && res.success) {
@@ -3507,8 +3511,8 @@
             if (momoReceiptFile) momoReceiptFile.value = "";
             playChime('arrival');
           } else if (res && res.needsReview) {
-            momoReceiptStatus.innerHTML = `⚠️ ${res.message}`;
-            momoReceiptStatus.style.color = "#b45309";
+            momoReceiptStatus.textContent = `✅ ${res.message}`;
+            momoReceiptStatus.style.color = "#166534";
           } else {
             momoReceiptStatus.innerHTML = `❌ ${(res && res.message) || "Could not verify this payment."}`;
             momoReceiptStatus.style.color = "#b91c1c";
@@ -4322,8 +4326,12 @@
       const ref = txnInput ? txnInput.value.trim() : '';
       const fileInput = document.getElementById('payNowReceipt');
       const file = fileInput && fileInput.files ? fileInput.files[0] : null;
-      if (!ref && !file) {
-        setPayNowStatus('Enter the transaction ID from your MoMo SMS, or upload the receipt screenshot.', 'error');
+      if (!ref || !file) {
+        setPayNowStatus('Enter the transaction ID and upload the receipt screenshot.', 'error');
+        return;
+      }
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        setPayNowStatus('Choose a JPEG, PNG, or WebP receipt image.', 'error');
         return;
       }
       const btn = document.getElementById('payNowConfirmBtn');
@@ -4335,18 +4343,18 @@
         const phoneInput = document.getElementById('payerPhone');
         const sender = phoneInput ? phoneInput.value.trim() : '';
         const res = await apiPayMomo(currentPayOrder.id, {
-          transactionRef: ref || null,
+          transactionRef: ref,
           amount: Number(currentPayOrder.total || 0),
           senderPhone: sender || null,
           receiptImage: dataUrl,
-          method: dataUrl && !ref ? 'auto-receipt' : 'auto-momo'
+          method: 'customer-proof'
         });
         if (res && res.success) {
           markPayNowPaid(res.alreadyPaid ? 'This order was already paid. Nothing else to do.' : ('Payment verified instantly. ' + (res.message || '')));
           return;
         }
         if (res && res.needsReview) {
-          setPayNowStatus(res.message, 'error');
+          setPayNowStatus('✅ ' + res.message, 'ok');
         } else {
           setPayNowStatus((res && res.message) || 'Could not verify this payment. Check the transaction ID and try again.', 'error');
         }
@@ -4642,7 +4650,7 @@
         </div>
         <div class="pay-step">
           <span class="num">3</span>
-          <div class="step-text">Enter the transaction ID from your MoMo SMS below (or upload a receipt); proof is checked against a provider message or by an administrator.</div>
+          <div class="step-text">Enter the transaction ID from your MoMo SMS and upload the receipt screenshot. An administrator will verify the proof before payment is marked successful.</div>
         </div>
 
         <div class="pay-actions">
@@ -4652,12 +4660,13 @@
         <div id="payNowPushStatus" style="font-size:.76rem; color:#15803d; margin-top:8px;" role="status" aria-live="polite"></div>
 
         <div style="margin-top:14px; padding-top:12px; border-top:1px dashed #e5e7eb;">
-          <label for="payNowTxn" style="font-size:.78rem; font-weight:800; color:#374151; display:block; margin-bottom:6px;">Transaction ID (or upload the receipt)</label>
-          <input id="payNowTxn" type="text" autocomplete="off" placeholder="e.g. MP240412.1234.A56789" style="min-height:40px;">
+          <label for="payNowTxn" style="font-size:.78rem; font-weight:800; color:#374151; display:block; margin-bottom:6px;">Transaction ID</label>
+          <input id="payNowTxn" type="text" required autocomplete="off" placeholder="e.g. MP240412.1234.A56789" style="min-height:40px;">
           <div class="pay-paste-row">
             <button type="button" id="payNowPasteBtn" class="button" style="background:#eef5f0; color:var(--forest); border:1px solid #c9decb;">📋 Paste MoMo SMS</button>
           </div>
-          <input id="payNowReceipt" type="file" accept="image/*" style="margin-top:8px; font-size:.75rem; padding:4px;">
+          <label for="payNowReceipt" style="font-size:.78rem; font-weight:800; color:#374151; display:block; margin-top:8px;">MoMo receipt screenshot (required)</label>
+          <input id="payNowReceipt" type="file" accept="image/jpeg,image/png,image/webp" required style="margin-top:4px; font-size:.75rem; padding:4px;">
           <button type="button" id="payNowConfirmBtn" class="button button-orange" style="width:100%; min-height:42px; margin-top:10px; font-size:.9rem;">I have paid &mdash; submit proof</button>
           <div id="payNowStatus" style="font-size:.8rem; margin-top:8px; font-weight:600; color:#6b7280;" role="status" aria-live="polite"></div>
           <p style="font-size:.7rem; color:#6b7280; margin-top:8px;">Never share your MoMo PIN with anyone. YEBS will never ask for it.</p>

@@ -11,6 +11,10 @@ const driverPassword = 'test-driver-password-2026';
 const driverId = 'drv-order-flow-test';
 const initialLocation = { lat: 5.5612, lng: -0.2155 };
 
+function receiptImageFor(orderId) {
+  return `data:image/jpeg;base64,${Buffer.from(`receipt-${orderId}`).toString('base64')}`;
+}
+
 fs.writeFileSync(databasePath, JSON.stringify({
   admins: [{
     id: 'adm-order-flow-test',
@@ -139,7 +143,8 @@ describe('customer order to verified delivery flow', () => {
       .set('X-Order-Access-Token', order.trackingToken)
       .send({
         transactionRef: `MTN-${order.id.slice(-4)}-${Date.now()}`,
-        amount: order.total
+        amount: order.total,
+        receiptImage: receiptImageFor(order.id)
       });
   }
 
@@ -199,14 +204,74 @@ describe('customer order to verified delivery flow', () => {
     expect(tracking.body.order.location).toBe('Updated delivery address');
   });
 
+  test('requires both a transaction ID and receipt screenshot for customer proof', async () => {
+    const order = await createDelivery();
+    const receiptImage = receiptImageFor(order.id);
+    const missingReceipt = await request(app)
+      .post(`/api/orders/${order.id}/pay/momo`)
+      .set('X-Order-Access-Token', order.trackingToken)
+      .send({ transactionRef: 'MTN-TEST-123', amount: order.total });
+    expect(missingReceipt.status).toBe(400);
+
+    const missingReference = await request(app)
+      .post(`/api/orders/${order.id}/receipt`)
+      .set('X-Order-Access-Token', order.trackingToken)
+      .send({ receiptImage, amount: order.total });
+    expect(missingReference.status).toBe(400);
+  });
+
+  test('retains duplicate screenshot evidence for admin review without marking payment paid', async () => {
+    const firstOrder = await createDelivery();
+    const secondOrder = await createDelivery();
+    const duplicateImage = receiptImageFor(firstOrder.id);
+    const firstProof = await request(app)
+      .post(`/api/orders/${firstOrder.id}/pay/momo`)
+      .set('X-Order-Access-Token', firstOrder.trackingToken)
+      .send({ transactionRef: 'MTN-FIRST-123', amount: firstOrder.total, receiptImage: duplicateImage });
+    expect(firstProof.status).toBe(202);
+
+    const duplicateProof = await request(app)
+      .post(`/api/orders/${secondOrder.id}/pay/momo`)
+      .set('X-Order-Access-Token', secondOrder.trackingToken)
+      .send({ transactionRef: 'MTN-SECOND-456', amount: secondOrder.total, receiptImage: duplicateImage });
+    expect(duplicateProof.status).toBe(409);
+    expect(duplicateProof.body.order.paymentStatus).toBe('review');
+    expect(duplicateProof.body.order.paymentVerified).toBe(false);
+    expect(duplicateProof.body.order.momoReceipt.image).toBe(duplicateImage);
+
+    const adminOrders = await request(app)
+      .get('/api/orders')
+      .set('Authorization', 'Bearer ' + adminToken);
+    const retainedOrder = adminOrders.body.find(item => item.id === secondOrder.id);
+    expect(retainedOrder.momoReceipt.image).toBe(duplicateImage);
+    expect(retainedOrder.momoTransactionRef).toBe('MTN-SECOND-456');
+  });
+
   test('holds unverified payment for review, then tracks GPS through PIN-confirmed delivery', async () => {
     const order = await createDelivery();
+    const receiptImage = receiptImageFor(order.id);
 
     const proof = await submitPaymentProof(order);
     expect(proof.status).toBe(202);
     expect(proof.body.needsReview).toBe(true);
     expect(proof.body.order.paymentStatus).toBe('review');
     expect(proof.body.order.paymentVerified).toBe(false);
+    expect(proof.body.order.momoReceipt).toMatchObject({
+      image: receiptImage,
+      transactionRef: proof.body.order.momoTransactionRef,
+      verified: false
+    });
+
+    const adminOrders = await request(app)
+      .get('/api/orders')
+      .set('Authorization', 'Bearer ' + adminToken);
+    expect(adminOrders.status).toBe(200);
+    expect(adminOrders.body.find(item => item.id === order.id).momoReceipt).toMatchObject({
+      image: receiptImage,
+      transactionRef: proof.body.order.momoTransactionRef,
+      verified: false
+    });
+    expect(adminOrders.body.find(item => item.id === order.id).momoAmount).toBe(order.total);
 
     const cannotEditAfterPayment = await request(app)
       .patch(`/api/orders/${order.id}/edit`)
