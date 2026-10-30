@@ -18,6 +18,12 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const store = require('./src/data/store');
+const { resolveAdminCredentialResetVersion } = require('./scripts/render-deploy-version');
+
+const resolvedAdminCredentialResetVersion = resolveAdminCredentialResetVersion();
+if (resolvedAdminCredentialResetVersion) {
+  process.env.ADMIN_CREDENTIAL_RESET_VERSION = resolvedAdminCredentialResetVersion;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -495,7 +501,7 @@ const DEFAULT_ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
 const ADMIN_PASSWORD_CONFIGURED = Boolean(
   DEFAULT_ADMIN_PASSWORD && DEFAULT_ADMIN_PASSWORD !== PUBLISHED_DEFAULT_ADMIN_PASSWORD
 );
-const ADMIN_CREDENTIAL_RESET_VERSION = String(process.env.ADMIN_CREDENTIAL_RESET_VERSION || '').trim();
+const ADMIN_CREDENTIAL_RESET_VERSION = resolvedAdminCredentialResetVersion;
 const DEFAULT_ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'yebsnoodles@gmail.com').trim();
 const DEFAULT_ADMIN_PHONE = String(process.env.ADMIN_RECOVERY_PHONE || '0559103452').trim();
 

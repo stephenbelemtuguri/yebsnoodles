@@ -53,7 +53,7 @@ a database key. Everything else is optional:
 | `NODE_ENV` | `production` | Production behaviour |
 | `ADMIN_USERNAME` | Your private administrator username | Initial administrator account |
 | `ADMIN_PASSWORD` | Unique, strong password (not `goodfood@123`) | Required to create or migrate the administrator |
-| `ADMIN_CREDENTIAL_RESET_VERSION` | A new label such as `recovery-1` | Optional, one-time reset of an existing administrator; see below |
+| `ADMIN_CREDENTIAL_RESET_VERSION` | A unique label | Manual reset outside Render; on Render it is derived from the deployed Git commit |
 | `DATABASE_URL` | from `yebs-db` (automatic) | Orders, menu and drivers |
 | `WHATSAPP_TOKEN` | Meta permanent token | Automatic order alerts |
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp phone number ID | Automatic order alerts |
@@ -68,23 +68,16 @@ a database key. Everything else is optional:
 
 ### Recovering an existing administrator login
 
-`ADMIN_USERNAME` and `ADMIN_PASSWORD` seed a new database and migrate the
-published legacy account. They do not normally overwrite an already-configured
-administrator password. If the admin login is unavailable, set both variables
-to the credentials you want and add a new, unique `ADMIN_CREDENTIAL_RESET_VERSION`
-in Render (for example, `recovery-1`), then redeploy.
+On Render, the app derives `ADMIN_CREDENTIAL_RESET_VERSION` from Render's
+`RENDER_GIT_COMMIT`; no script edits dashboard settings or needs a Render API
+token. Each new Git commit deploy therefore uses a fresh marker, while restarts
+of the same commit do not reset repeatedly. Outside Render, the app continues
+to use the manually configured `ADMIN_CREDENTIAL_RESET_VERSION`.
 
-On startup, the service applies that version once to the administrator whose
-username matches `ADMIN_USERNAME`. If there is exactly one administrator, it
-can apply the reset to that account and rename it. With multiple admins and no
-username match, the reset is refused; check the Render logs and use an existing
-admin username for the target before retrying with a new version label. The
-reset increments the session epoch, invalidating existing admin sessions.
-
-After confirming you can sign in, you may remove
-`ADMIN_CREDENTIAL_RESET_VERSION` from Render. The database remembers the
-applied version, so normal restarts and later GUI credential changes will not
-be overwritten. For another deliberate reset, set a different version label.
+**Important:** every new Git commit deployment resets the admin password back
+to the value in Render's `ADMIN_PASSWORD` and invalidates existing admin
+sessions. Keep that value current and private. Password changes made later in
+the admin GUI will be replaced by the Render value on the next code deployment.
 Never put passwords in source control or chat.
 | `MOMO_API_KEY` | MTN API key | Optional automatic MoMo |
 | `MOMO_CALLBACK_HOST` | `https://your-service.onrender.com` | Optional automatic MoMo |
