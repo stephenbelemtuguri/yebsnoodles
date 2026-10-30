@@ -1080,9 +1080,8 @@
     <!-- TAB 3: Food Cards & Poster Template Manager -->
     <div id="foodMenuTab" class="tab-content" style="display:none;">
       <div id="menuStorageWarning" style="display:none; margin-bottom:18px; padding:12px 16px; border-radius:10px; background:#fff4e5; border:1px solid #f0b775; color:#7a4a12; font-size:0.86rem; line-height:1.55;">
-        <strong>⚠️ These changes are not being stored permanently.</strong>
-        The server is running without a database connection, so edits disappear when it restarts or redeploys.
-        Connect Supabase (<code>SUPABASE_SERVICE_ROLE_KEY</code>) to keep every change until you edit it again.
+        <strong>⚠️ Persistent storage is unavailable.</strong>
+        Menu changes cannot be confirmed as saved. Check the service's database connection and <code>/api/health</code> before retrying.
       </div>
       <div class="card" style="margin-bottom:20px;">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
@@ -3930,8 +3929,7 @@
                 body: JSON.stringify({ driverId: id, approved: true })
               }, btn, 'Approving...');
             } catch (err) {
-              alert('Could not approve ' + name + '.\n\n' + err.message +
-                '\n\nIf this keeps happening, confirm SUPABASE_SERVICE_ROLE_KEY and YEBS_AUTH_SECRET are set in Render, then try again.');
+              alert('Could not approve ' + name + '.\n\n' + err.message);
             }
             if (result && result.driver && result.driver.username) {
               alert(name + ' approved.\n\nDriver username: ' + result.driver.username + '\nLogin is now enabled.');

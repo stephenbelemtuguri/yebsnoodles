@@ -40,6 +40,9 @@ services:
         value: https://dujmpwcarxliadnfdydr.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      # Render generates and persists this signing key for stable sessions.
+      - key: YEBS_AUTH_SECRET
+        generateValue: true
       - key: SUPABASE_STATE_TABLE
         value: yebs_state
       # Automatic WhatsApp kitchen alerts (optional).

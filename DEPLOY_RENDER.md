@@ -12,7 +12,7 @@ missing.
 
 ```
 Browser ──► Render web service (Express) ──► Render PostgreSQL (DATABASE_URL)
-                                      └──► Supabase (optional alternative)
+                                      └──► Supabase Postgres (DATABASE_POOL_URL, current production)
 ```
 
 `render.yaml` in the repo root is a Blueprint: Render creates the web service
@@ -66,8 +66,9 @@ a database key. Everything else is optional:
 | `WHATSAPP_TO` | `233559103452` | Kitchen number |
 | `WHATSAPP_API_VERSION` | `v20.0` | Graph API version |
 | `SUPABASE_URL` | `https://dujmpwcarxliadnfdydr.supabase.co` | Optional shared DB |
-| `SUPABASE_SERVICE_ROLE_KEY` | service-role key | Optional shared DB (REST) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role secret | Optional shared DB (REST) |
 | `SUPABASE_STATE_TABLE` | `yebs_state` | Optional shared DB |
+| `YEBS_AUTH_SECRET` | Generated and stored by Render Blueprint | Stable session signing across deploys |
 | `DATABASE_POOL_URL` | Supabase session-pooler URI | Optional PostgreSQL connection; takes precedence over `DATABASE_URL` when set |
 | `MOMO_SUBSCRIPTION_KEY` | MTN key | Optional automatic MoMo |
 | `MOMO_API_USER` | MTN API user | Optional automatic MoMo |
@@ -85,6 +86,13 @@ a database key. Everything else is optional:
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID | Password recovery SMS |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token | Password recovery SMS |
 | `TWILIO_FROM_NUMBER` | Twilio-enabled sender number | Password recovery SMS |
+
+The Blueprint keeps `SUPABASE_SERVICE_ROLE_KEY` as a secret input; it is never
+committed to Git. If using Supabase REST storage, set it in Render from
+**Supabase → Project Settings → API**. Production currently reports
+`supabase-postgres`, so database reads and writes use `DATABASE_POOL_URL`;
+that PostgreSQL connection does not require the REST service-role key.
+`YEBS_AUTH_SECRET` is generated and persisted by Render for stable sessions.
 
 ### Recovering an existing administrator login
 
