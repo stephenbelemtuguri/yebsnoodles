@@ -1012,6 +1012,7 @@
       apiPayCash,
       apiFetchOrder,
       apiClaimOrder,
+      apiOrderNotification,
       apiUnclaimOrder,
       apiSendDriverReport,
       getPickupPoint,
@@ -1728,6 +1729,82 @@
 
     }
 
+    // The rider's hand-over report is sent to the owner's WhatsApp by the
+    // backend bot. While it works we show "Bot working…"; if no credential is
+    // configured, we open WhatsApp with the report already typed from the
+    // database order details so the rider only taps Send.
+    function showDeliveryReportStatus(orderId, report, whatsapp) {
+      const previous = document.getElementById('yebsDriverReportBanner');
+      if (previous) previous.remove();
+
+      const banner = document.createElement('div');
+      banner.id = 'yebsDriverReportBanner';
+      banner.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:16px; z-index:9999; max-width:440px; width:calc(100% - 24px); background:#0f172a; color:#fff; border-radius:14px; padding:12px 14px; font-size:.85rem; line-height:1.45; box-shadow:0 10px 30px rgba(0,0,0,.35);';
+
+      const statusLine = document.createElement('div');
+      statusLine.textContent = '🤖 Bot working — sending the delivery report to the owner\'s WhatsApp…';
+      banner.appendChild(statusLine);
+
+      const actions = document.createElement('div');
+      actions.style.cssText = 'margin-top:9px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;';
+
+      const continueBtn = document.createElement('button');
+      continueBtn.type = 'button';
+      continueBtn.textContent = 'Continue';
+      continueBtn.style.cssText = 'background:#1e293b; color:#fff; border:1px solid #334155; border-radius:8px; padding:6px 12px; font-size:.78rem; cursor:pointer;';
+      continueBtn.addEventListener('click', () => banner.remove());
+      actions.appendChild(continueBtn);
+
+      let waBtn = null;
+      const ensureWhatsAppButton = (url) => {
+        if (waBtn || !url) return;
+        waBtn = document.createElement('a');
+        waBtn.href = url;
+        waBtn.target = '_blank';
+        waBtn.rel = 'noopener noreferrer';
+        waBtn.textContent = '📲 Send report on WhatsApp';
+        waBtn.style.cssText = 'background:#25D366; color:#06301c; border-radius:8px; padding:6px 12px; font-size:.78rem; font-weight:700; text-decoration:none;';
+        actions.appendChild(waBtn);
+      };
+
+      const markSent = () => {
+        statusLine.textContent = '✅ Delivery report sent to the owner\'s WhatsApp automatically.';
+        statusLine.style.color = '#86efac';
+        window.setTimeout(() => banner.remove(), 5000);
+      };
+
+      banner.appendChild(actions);
+      document.body.appendChild(banner);
+
+      if (report && report.status === 'sent') { markSent(); return; }
+
+      const fallbackUrl = (report && report.fallbackUrl) || '';
+      // No credential configured: reroute the rider straight to the owner's
+      // chat with the full report pre-typed (the popup may be blocked, so the
+      // banner keeps a visible button as well).
+      if (fallbackUrl && whatsapp && whatsapp.configured === false) {
+        ensureWhatsAppButton(fallbackUrl);
+        window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+      }
+
+      (async () => {
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const state = await apiOrderNotification(orderId, 'report');
+          const current = state && state.notification;
+          if (!current) continue;
+          if (current.status === 'sent') { markSent(); return; }
+          if (current.status !== 'sending') {
+            ensureWhatsAppButton(current.fallbackUrl || fallbackUrl);
+            statusLine.textContent = 'Your delivery is recorded. Tap "Send report on WhatsApp" to forward the same details to the owner.';
+            return;
+          }
+        }
+        ensureWhatsAppButton(fallbackUrl);
+        statusLine.textContent = 'Your delivery is recorded. Tap "Send report on WhatsApp" to forward the same details to the owner.';
+      })();
+    }
+
     // PIN Verification Button Listener
     sessionPackagesList.addEventListener('click', async (e) => {
       if (e.target.classList.contains('verify-pin-btn')) {
@@ -1746,6 +1823,7 @@
         if (res.success) {
           renderSessionPackages();
           if (lookedUpOrderId === orderId) renderLookupResult(getOrders().find(o => o.id === orderId));
+          showDeliveryReportStatus(orderId, res.report || null, res.whatsapp || null);
         } else {
           alert(res.message);
         }

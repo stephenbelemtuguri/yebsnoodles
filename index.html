@@ -1850,6 +1850,7 @@
       apiMomoStatus,
       apiFetchPaymentNetworks,
       apiFetchOrder,
+      apiOrderNotification,
       mergeServerOrders,
       getOrderAccessToken,
       API_BASE,
@@ -2958,15 +2959,11 @@
         return;
       }
 
-      // The backend has already sent the kitchen a WhatsApp alert in the
-      // background (no redirect, no "send" tap needed from the customer).
-      // Here we only tell the customer what happens next.
-      const notifyNote = newOrder.notificationStatus === 'sent'
-        ? 'The kitchen has been notified automatically.'
-        : newOrder.notificationStatus === 'queued'
-          ? 'WhatsApp bot is working. Please wait while the order message is sent.'
-          : 'WhatsApp delivery is pending configuration. Your order is saved and visible in the admin dashboard.';
-
+      // The kitchen alert is queued together with the order and delivered by
+      // the backend bot in the background. Show "Bot working…", poll until it
+      // finishes, and if no WhatsApp credential is configured yet offer the
+      // pre-typed hand-off instead of silently losing the message.
+      const notification = newOrder.notification || null;
       const whatsappOrderMessage = [
         '*NEW YEBS NOODLES ORDER*',
         `Order: ${newOrder.id}`,
@@ -2977,13 +2974,8 @@
         `Location: ${newOrder.location || 'Not provided'}`,
         `Items: ${(newOrder.items || []).map(item => `${item.qty || item.quantity || 1}x ${item.name}`).join(', ') || 'See order details'}`
       ].join('\n');
-      const whatsappBotUrl = formatWhatsAppUrl('0559103452', whatsappOrderMessage);
-      if (!newOrder.notificationStatus || newOrder.notificationStatus !== 'sent') {
-        window.setTimeout(() => {
-          const whatsappTab = window.open(whatsappBotUrl, '_blank', 'noopener,noreferrer');
-          if (!whatsappTab) window.location.assign(whatsappBotUrl);
-        }, 0);
-      }
+      const whatsappBotUrl = (notification && notification.fallbackUrl)
+        || formatWhatsAppUrl('0559103452', whatsappOrderMessage);
 
       // Clear the cart so the order is not accidentally submitted twice.
       Object.keys(cart).forEach(k => delete cart[k]);
@@ -2993,7 +2985,53 @@
       formFeedback.style.color = "#166534";
       formFeedback.textContent = `✅ Order ${newOrder.id} ${editingThisOrder ? 'updated' : 'placed'}! ${newOrder.fulfilment === 'Collection'
         ? 'Collect it free at ' + (newOrder.pickupPointName || sharedPickupPoint.name) + '.'
-        : 'The rider will bring it to ' + (newOrder.location || 'your address') + '.'} ${newOrder.congratulationsMessage || ''} ${notifyNote}`;
+        : 'The rider will bring it to ' + (newOrder.location || 'your address') + '.'} ${newOrder.congratulationsMessage || ''}`;
+
+      const botStatus = document.createElement('div');
+      botStatus.id = 'yebsBotStatus';
+      botStatus.style.cssText = 'margin-top:10px; font-size:.85rem; line-height:1.45; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:10px 12px;';
+      botStatus.textContent = '🤖 Bot working — please wait while the order message finishes sending to the kitchen WhatsApp…';
+      formFeedback.appendChild(botStatus);
+
+      let fallbackButton = null;
+      const showWhatsAppFallback = (url) => {
+        if (fallbackButton) return;
+        botStatus.style.color = '#92400e';
+        botStatus.style.background = '#fffbeb';
+        botStatus.style.borderColor = '#fde68a';
+        botStatus.textContent = 'Your order is saved and visible to the kitchen. You can continue — tap below to also send the same details on WhatsApp.';
+        fallbackButton = document.createElement('button');
+        fallbackButton.type = 'button';
+        fallbackButton.className = 'btn btn-whatsapp';
+        fallbackButton.textContent = '📲 Send order details on WhatsApp';
+        fallbackButton.style.marginTop = '8px';
+        fallbackButton.addEventListener('click', () => window.open(url, '_blank', 'noopener,noreferrer'));
+        botStatus.appendChild(fallbackButton);
+      };
+
+      const markBotSent = () => {
+        botStatus.style.color = '#166534';
+        botStatus.style.background = '#f0fdf4';
+        botStatus.style.borderColor = '#bbf7d0';
+        botStatus.textContent = '✅ Kitchen notified automatically on WhatsApp. You can continue — we will keep you updated as your order moves.';
+      };
+
+      (async () => {
+        if (notification && notification.status === 'sent') { markBotSent(); return; }
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const state = await apiOrderNotification(newOrder.id, 'order');
+          const current = state && state.notification;
+          if (!current) continue;
+          if (current.status === 'sent') { markBotSent(); return; }
+          if (current.status !== 'sending') {
+            showWhatsAppFallback(current.fallbackUrl || whatsappBotUrl);
+            return;
+          }
+        }
+        showWhatsAppFallback(whatsappBotUrl);
+      })();
+
       localStorage.setItem('yebs_active_order_id', newOrder.id);
       currentlyTrackedOrderId = newOrder.id;
       try {
@@ -3005,14 +3043,6 @@
       updateActiveOrderPill();
 
       showOrderIdModal(newOrder);
-      const waButton = document.createElement('button');
-      waButton.type = 'button';
-      waButton.className = 'btn btn-whatsapp';
-      waButton.textContent = 'Send Order to Kitchen WhatsApp';
-      waButton.style.marginTop = '12px';
-      waButton.addEventListener('click', () => window.open(whatsappBotUrl, '_blank', 'noopener,noreferrer'));
-      formFeedback.appendChild(document.createElement('br'));
-      formFeedback.appendChild(waButton);
 
       // Celebrate every successful order (the mobile-money flow celebrates
       // again once the payment is verified).

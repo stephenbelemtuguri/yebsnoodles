@@ -507,9 +507,135 @@ async function notifyOrderCreated(db, order) {
   return entry;
 }
 
+// A WhatsApp hand-off that always works: even when no API credential is
+// configured yet, the customer/rider can open this link with the full message
+// already typed in, so nothing is ever lost.
+function whatsappFallbackUrl(text, to) {
+  const target = String(to || whatsappConfig().to || '').replace(/[^\d]/g, '');
+  return 'https://wa.me/' + target + '?text=' + encodeURIComponent(String(text || '').slice(0, 3000));
+}
+
+// Which provider (if any) can deliver automatically right now.
+function whatsappReadiness() {
+  const cfg = whatsappConfig();
+  const bot = callmebotConfig();
+  const provider = (cfg.token && cfg.phoneId)
+    ? 'whatsapp-cloud'
+    : ((bot.apiKey && bot.phone) ? 'callmebot' : null);
+  return { configured: Boolean(provider), provider, to: cfg.to };
+}
+
+function notificationView(entry) {
+  if (!entry) return null;
+  return {
+    id: entry.id,
+    kind: entry.kind || 'order',
+    status: entry.status,
+    provider: entry.provider || null,
+    reason: entry.reason || null,
+    createdAt: entry.createdAt || null,
+    sentAt: entry.sentAt || null,
+    autoSent: entry.status === 'sent',
+    fallbackUrl: entry.fallbackUrl || whatsappFallbackUrl(entry.message || '')
+  };
+}
+
+// Register the message before the response is sent so the client can poll it
+// while the bot works in the background.
+function queueNotification(db, order, kind, message) {
+  db.notifications = db.notifications || [];
+  const entry = {
+    id: 'ntf-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+    orderId: order.id,
+    kind,
+    channel: 'whatsapp',
+    to: whatsappConfig().to,
+    createdAt: new Date().toISOString(),
+    status: 'sending',
+    message,
+    fallbackUrl: whatsappFallbackUrl(message)
+  };
+  db.notifications.unshift(entry);
+  if (db.notifications.length > 500) db.notifications.length = 500;
+  return entry;
+}
+
+// Runs after the HTTP response: tries Cloud API then CallMeBot, updates the
+// ledger, persists it, and pushes the result over SSE so open screens update.
+async function deliverNotification(entryId) {
+  const db = loadDatabase();
+  const entry = (db.notifications || []).find(n => n.id === entryId);
+  if (!entry) return null;
+  const readiness = whatsappReadiness();
+  let delivered;
+  try {
+    delivered = await sendOwnerWhatsApp(entry.message);
+  } catch (err) {
+    delivered = { ok: false, reason: err.message };
+  }
+  if (delivered.ok) {
+    entry.status = 'sent';
+    entry.provider = delivered.provider;
+    entry.providerId = delivered.providerId || null;
+    entry.sentAt = new Date().toISOString();
+  } else {
+    entry.status = readiness.configured ? 'failed' : 'not-configured';
+    entry.reason = delivered.reason;
+    console.warn('[whatsapp] ' + entry.kind + ' notification not delivered:', delivered.reason);
+  }
+  const order = (db.orders || []).find(o => String(o.id).toUpperCase() === String(entry.orderId).toUpperCase());
+  if (order && entry.kind === 'order') order.notificationStatus = entry.status;
+  try {
+    const persistenceError = await requireDurableSave(db);
+    if (persistenceError) console.warn('[whatsapp] notification ledger not persisted:', persistenceError);
+  } catch (err) {
+    console.warn('[whatsapp] notification ledger save failed:', err.message);
+  }
+  pushOrderUpdate(entry.orderId, { type: 'notification', notification: notificationView(entry) });
+  return entry;
+}
+
+// The delivery report the rider's hand-over triggers, built from the database
+// copy of the order (never from stale browser storage).
+function deliveryReportText(order, actor) {
+  const items = (order.items || [])
+    .map(i => (i.quantity || 1) + ' x ' + i.name)
+    .join(', ');
+  const deliveredAt = order.deliveredAt ? new Date(order.deliveredAt) : new Date();
+  return [
+    '*YEBS NOODLES - DELIVERY COMPLETED*',
+    'Order: ' + order.id + ' (PIN ' + (order.pickupPin || '-') + ' verified)',
+    'Customer: ' + order.customer + ' - ' + (order.phone || '-'),
+    'Items: ' + (items || '-'),
+    'Total: GH' + Number(order.total || 0).toFixed(2) + ' - ' + (order.payment || '-') + ' (' + (order.paymentStatus || 'unpaid') + ')',
+    'Fulfilment: ' + (order.fulfilment || '-') + ' - ' + (order.location || '-'),
+    'Rider: ' + (actor || order.driverName || 'RIDER'),
+    'Delivered: ' + deliveredAt.toLocaleString('en-GB', { timeZone: 'Africa/Accra' })
+  ].join('\n');
+}
+
 app.get('/api/admin/notifications', requireRole('admin'), (req, res) => {
   const db = loadDatabase();
   res.json({ success: true, notifications: (db.notifications || []).slice(0, 100) });
+});
+
+// Customer/rider polling endpoint: "is the bot done sending this message?"
+app.get('/api/orders/:id/notification', (req, res) => {
+  const db = loadDatabase();
+  const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
+  if (!order) return res.status(404).json({ success: false, message: 'Order not found.' });
+  if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: 'Order access token required.' });
+  const kind = cleanString(req.query.kind || '', 20).toLowerCase();
+  const entries = (db.notifications || [])
+    .filter(n => String(n.orderId).toUpperCase() === order.id.toUpperCase() && (!kind || (n.kind || 'order') === kind))
+    .slice(0, 5)
+    .map(notificationView);
+  res.json({
+    success: true,
+    notification: entries[0] || null,
+    notifications: entries,
+    whatsapp: whatsappReadiness()
+  });
 });
 
 // Send one plain text message to an individual WhatsApp phone. Used by the
@@ -2569,9 +2695,13 @@ app.post('/api/orders/:id/pay/request', async (req, res) => {
     order.momoRequestId = referenceId;
     order.momoRequestStatus = 'pending';
     order.momoRequestAt = new Date().toISOString();
+    // A pushed prompt that is never approved must not block the order forever:
+    // the status endpoint marks it expired after 10 minutes and invites a retry.
+    order.momoRequestExpiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   } else {
     order.momoRequestId = null;
     order.momoRequestStatus = result.configured ? (result.status || 'failed') : 'ussd';
+    order.momoRequestExpiresAt = null;
   }
 
   addPaymentAudit(order, result.ok ? 'MOMO_REQUEST_SENT' : 'MOMO_USSD_INSTRUCTIONS', order.customer, {
@@ -2616,7 +2746,22 @@ app.get('/api/orders/:id/pay/status', async (req, res) => {
 
   let networkStatus = order.momoRequestStatus || null;
 
-  if (order.paymentStatus !== 'paid' && order.momoRequestId) {
+  // A prompt left unanswered for 10 minutes expires instead of hanging forever.
+  if (order.paymentStatus !== 'paid'
+    && networkStatus === 'pending'
+    && order.momoRequestExpiresAt
+    && Date.now() > Date.parse(order.momoRequestExpiresAt)) {
+    order.momoRequestStatus = 'expired';
+    networkStatus = 'expired';
+    addPaymentAudit(order, 'MOMO_REQUEST_EXPIRED', 'SYSTEM', {
+      referenceId: order.momoRequestId,
+      requestedAt: order.momoRequestAt,
+      expiresAt: order.momoRequestExpiresAt
+    });
+    saveDatabase(db);
+  }
+
+  if (order.paymentStatus !== 'paid' && order.momoRequestId && networkStatus !== 'expired') {
     const state = await fetchMomoRequestStatus(order.momoRequestId);
     if (state.configured && state.status && state.status !== 'unknown') {
       networkStatus = state.status;
@@ -2650,9 +2795,64 @@ app.get('/api/orders/:id/pay/status', async (req, res) => {
     requestStatus: networkStatus,
     message: order.paymentStatus === 'paid'
       ? 'Payment confirmed by the mobile money network.'
-      : (networkStatus === 'failed' ? 'The mobile money network declined this request. Try again or use the USSD code.' : 'Waiting for the customer to approve the payment prompt.'),
+      : (networkStatus === 'expired'
+        ? 'That payment prompt expired. Request a new prompt or pay with the USSD code below.'
+        : (networkStatus === 'failed' ? 'The mobile money network declined this request. Try again or use the USSD code.' : 'Waiting for the customer to approve the payment prompt.')),
     order: projectOrder(order, 'public')
   });
+});
+
+// MTN MoMo Collections calls this URL when a request-to-pay settles (the URL is
+// already advertised by requestMomoCollection via X-Callback-Url). The body is
+// never trusted on its own: the settlement is re-checked against the MTN API.
+app.post('/api/payments/momo/callback', async (req, res) => {
+  const cfg = momoApiConfig();
+  if (!cfg.configured) {
+    return res.status(503).json({ success: false, message: 'Mobile money API is not configured.' });
+  }
+  const body = req.body || {};
+  const referenceId = String(
+    body.referenceId || body.reference_id || body.externalId || body.external_id ||
+    (body.data && (body.data.referenceId || body.data.externalId)) || ''
+  ).trim();
+  if (!referenceId) return res.status(400).json({ success: false, message: 'referenceId is required.' });
+
+  const db = loadDatabase();
+  const order = (db.orders || []).find(o => String(o.momoRequestId || '') === referenceId);
+  if (!order) return res.status(404).json({ success: false, message: 'Unknown payment reference.' });
+  if (order.paymentStatus === 'paid') return res.json({ success: true, alreadyPaid: true, orderId: order.id });
+
+  const state = await fetchMomoRequestStatus(referenceId);
+  if (!state.configured || state.status !== 'successful') {
+    return res.json({ success: true, applied: false, status: state.status || 'pending', orderId: order.id });
+  }
+  const received = Number(state.amount);
+  if (!(Math.abs(received - Number(order.total)) <= 0.009)) {
+    order.paymentStatus = 'review';
+    order.paymentVerified = false;
+    addPaymentAudit(order, 'MOMO_PROVIDER_AMOUNT_MISMATCH', 'MTN MOMO CALLBACK', {
+      expected: Number(order.total), received: Number.isFinite(received) ? received : null
+    });
+    await requireDurableSave(db);
+    return res.json({ success: true, applied: false, status: 'review', orderId: order.id });
+  }
+
+  applyMomoPayment(db, order, {
+    transactionRef: referenceId,
+    amount: Number(order.total),
+    sender: order.momoPayerPhone,
+    method: 'mtn-api',
+    providerVerified: true,
+    actor: 'MTN MOMO CALLBACK',
+    note: 'Settled via MTN Collections callback'
+  });
+  order.momoRequestStatus = 'successful';
+  await requireDurableSave(db);
+  logAction('MOMO_CALLBACK_SETTLED', 'MTN MOMO CALLBACK', order.id, { amount: order.total, referenceId }, req);
+  if (typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(order.id, { type: 'payment', order: projectOrder(order, 'customer') });
+  }
+  res.json({ success: true, applied: true, paid: true, orderId: order.id });
 });
 
 // Rider collects cash on delivery — auto-validated against the order total.
@@ -3281,9 +3481,15 @@ app.post('/api/orders', async (req, res) => {
   };
 
   db.orders.unshift(newOrder);
+  // Register the kitchen alert together with the order in the same durable
+  // write, then deliver it in the background after the customer already has
+  // their confirmation (the "bot working" status is polled by the UI).
+  const orderNotification = queueNotification(db, newOrder, 'order', orderWhatsAppText(newOrder));
+  newOrder.notificationStatus = 'sending';
   const orderPersistenceError = await requireDurableSave(db);
   if (orderPersistenceError) {
     db.orders.shift();
+    db.notifications = (db.notifications || []).filter(n => n.id !== orderNotification.id);
     return res.status(503).json({ success: false, persisted: false, message: orderPersistenceError });
   }
 
@@ -3293,19 +3499,21 @@ app.post('/api/orders', async (req, res) => {
     paymentMode: newOrder.paymentMode
   }, req);
 
-  // Notify the kitchen through the configured provider when available. The
-  // customer portal also supplies a pre-filled wa.me handoff for this order.
-  try {
-    await notifyOrderCreated(db, newOrder);
-  } catch (err) {
-    console.warn('[whatsapp] notification skipped:', err.message);
-  }
+  // Fire-and-forget: Cloud API → CallMeBot retries happen here while the
+  // customer sees "Bot working — please wait while the message is sent."
+  Promise.resolve().then(() => deliverNotification(orderNotification.id))
+    .catch(err => console.warn('[whatsapp] order notification skipped:', err.message));
 
   if (typeof pushOrderUpdate === 'function') {
     pushOrderUpdate(newOrder.id, { type: 'created', order: projectOrder(newOrder, 'customer') });
   }
 
-  res.status(201).json({ ...projectOrder(newOrder, 'checkout'), trackingToken: customerAccessToken });
+  res.status(201).json({
+    ...projectOrder(newOrder, 'checkout'),
+    trackingToken: customerAccessToken,
+    notification: notificationView(orderNotification),
+    whatsapp: whatsappReadiness()
+  });
 });
 
 app.patch('/api/orders/:id/edit', (req, res) => {
@@ -3688,7 +3896,7 @@ app.post('/api/orders/:id/unclaim', requireRole('driver', 'admin'), (req, res) =
 });
 
 // Handover validation uses the separate pickup PIN stored on the order.
-app.post('/api/orders/:id/verify-pin', requireRole('driver', 'admin'), (req, res) => {
+app.post('/api/orders/:id/verify-pin', requireRole('driver', 'admin'), async (req, res) => {
   const db = loadDatabase();
   const id = normalizeOrderId(req.params.id);
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
@@ -3708,19 +3916,32 @@ app.post('/api/orders/:id/verify-pin', requireRole('driver', 'admin'), (req, res
   const expected = String(order.pickupPin || '');
 
   if (entered && entered === expected) {
+    const actorName = req.auth.payload.role === 'admin'
+      ? (req.auth.admin.username || 'ADMIN')
+      : (req.auth.driver.name || req.auth.driver.username || 'RIDER');
     order.verifiedByDriver = true;
     order.verifiedAt = new Date().toISOString();
     order.status = 'delivered';
     order.deliveredAt = new Date().toISOString();
-    saveDatabase(db);
-    logAction("PIN_VERIFIED", req.auth.payload.role === 'admin' ? req.auth.admin.username : (req.auth.driver.name || 'DRIVER'), order.id, { customer: order.customer }, req);
+    // The rider's hand-over report is built from the database copy of the
+    // order and queued in the same write, then delivered in the background.
+    const reportEntry = queueNotification(db, order, 'report', deliveryReportText(order, actorName));
+    const persistenceError = await requireDurableSave(db);
+    if (persistenceError) {
+      return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+    }
+    logAction("PIN_VERIFIED", actorName, order.id, { customer: order.customer }, req);
     if (typeof pushOrderUpdate === 'function') {
       pushOrderUpdate(order.id, { type: 'delivered', order: projectOrder(order, 'customer') });
     }
+    Promise.resolve().then(() => deliverNotification(reportEntry.id))
+      .catch(err => console.warn('[whatsapp] delivery report skipped:', err.message));
     return res.json({
       success: true,
       message: `Order ID verified ✅ Hand ${order.id} to ${order.customer}.`,
-      order: projectOrder(order, req.auth.payload.role === 'admin' ? 'admin' : 'driver')
+      order: projectOrder(order, req.auth.payload.role === 'admin' ? 'admin' : 'driver'),
+      report: notificationView(reportEntry),
+      whatsapp: whatsappReadiness()
     });
   }
 
@@ -5239,7 +5460,8 @@ app.get('/api/health', (req, res) => {
     pickupPoint: pickup,
     deliveryFee: Number(db.settings && db.settings.deliveryFee) || 15,
     whatsapp: {
-      configured: Boolean(wa.token && wa.phoneId),
+      configured: whatsappReadiness().configured,
+      provider: whatsappReadiness().provider,
       to: wa.to ? wa.to.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1 $2 $3") : null,
       apiVersion: wa.version
     },
@@ -5248,7 +5470,7 @@ app.get('/api/health', (req, res) => {
       sendGridConfigured: recoveryEmailSendGridReady,
       smtpConfigured: recoveryEmailSmtpReady,
       twilioConfigured: recoveryPhoneTwilioReady,
-      whatsappConfigured: Boolean(wa.token && wa.phoneId),
+      whatsappConfigured: whatsappReadiness().configured,
       adminOwnerLogFallback: true
     },
     momo: {

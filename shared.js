@@ -1068,7 +1068,13 @@ export async function verifyOrderPin(orderId, enteredPin) {
       if (data.order) mergeServerOrders([data.order]);
       playChime('arrival');
       broadcastEvent("ORDER_PIN_VERIFIED", { orderId, customer: data.order ? data.order.customer : "" });
-      return { success: true, message: data.message, order: data.order || null };
+      return {
+        success: true,
+        message: data.message,
+        order: data.order || null,
+        report: data.report || null,
+        whatsapp: data.whatsapp || null
+      };
     }
     return { success: false, message: data.message || `Incorrect code for #${orderId}.` };
   } catch (e) {
@@ -1893,6 +1899,20 @@ export async function apiFetchOrder(orderId) {
   return null;
 }
 
+// "Is the WhatsApp bot done sending this order/report?" — polled by the
+// customer checkout screen and the rider hand-over screen while it works.
+export async function apiOrderNotification(orderId, kind = '') {
+  try {
+    const query = kind ? `?kind=${encodeURIComponent(kind)}` : '';
+    const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/notification${query}`, {
+      headers: orderAccessHeaders(orderId, authHeaders()),
+      cache: 'no-store'
+    });
+    if (res.ok) return await res.json();
+  } catch (e) {}
+  return null;
+}
+
 export async function apiUploadMomoReceipt(orderId, receiptImage, transactionRef, amount = null) {
   try {
     const res = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/receipt`, {
@@ -2238,19 +2258,19 @@ export async function drawRoadRoute(map, from, to, opts = {}) {
       const route = data.routes && data.routes[0];
       if (route && route.geometry && route.geometry.coordinates) {
         if (routeRequestId !== map[routeStateKey]) return null;
-        const latlngs = route.geometry.coordinates
+        const rawLatLngs = route.geometry.coordinates
           .map(([lng, lat]) => [Number(lat), Number(lng)])
           .filter(point => point.every(Number.isFinite))
           .filter((point, index, points) => index === 0 || point[0] !== points[index - 1][0] || point[1] !== points[index - 1][1]);
-        const cleanedLatLngs = latlngs.filter((point, index) => {
-          if (index === 0 || index === latlngs.length - 1) return true;
-          const previous = latlngs[index - 1];
-          const next = latlngs[index + 1];
+        const cleanedLatLngs = rawLatLngs.filter((point, index) => {
+          if (index === 0 || index === rawLatLngs.length - 1) return true;
+          const previous = rawLatLngs[index - 1];
+          const next = rawLatLngs[index + 1];
           const inStep = Math.hypot(point[0] - previous[0], point[1] - previous[1]);
           const outStep = Math.hypot(next[0] - point[0], next[1] - point[1]);
           return inStep < 0.018 && outStep < 0.018;
         });
-        const routeLatLngs = cleanedLatLngs.length >= 2 ? cleanedLatLngs : latlngs;
+        const routeLatLngs = cleanedLatLngs.length >= 2 ? cleanedLatLngs : rawLatLngs;
         const latlngs = routeLatLngs;
         if (latlngs.length < 2) throw new Error('OSRM returned an unusable route.');
         const group = L.layerGroup().addTo(map);
