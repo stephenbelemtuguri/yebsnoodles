@@ -183,8 +183,12 @@
     .track-input:focus { border-color: var(--forest); }
 
     /* Hero Section */
-    .hero { min-height: 180vh; padding: 0; overflow: clip; }
-    .hero-grid { position: sticky; top: 80px; height: calc(100vh - 80px); min-height: 620px; display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: 48px; }
+    .hero { position: relative; min-height: 180vh; padding: 0; overflow: clip; isolation: isolate; background: #f7f3e8; }
+    .hero-scroll-video { position: fixed; top: 0; left: 0; z-index: 0; display: block; width: 100vw; height: 100vh; object-fit: cover; object-position: center; opacity: 0; transition: opacity .2s linear; pointer-events: none; }
+    .hero-scroll-frame { position: fixed; inset: 0; z-index: 1; visibility: hidden; pointer-events: none; }
+    .hero-scroll-frame.is-visible { visibility: visible; }
+    .hero-scroll-overlay { position: absolute; inset: 0; background: linear-gradient(90deg, rgb(247 243 232 / 97%) 0%, rgb(247 243 232 / 89%) 42%, rgb(247 243 232 / 20%) 72%, rgb(247 243 232 / 10%) 100%); }
+    .hero-grid { position: sticky; z-index: 2; top: 80px; height: calc(100vh - 80px); min-height: 620px; display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: 48px; }
     .eyebrow { display: flex; align-items: center; gap: 9px; margin: 0 0 16px; color: var(--leaf); font-size: .75rem; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; }
     .eyebrow::before { width: 27px; height: 2px; content: ""; background: var(--orange); }
     h1, h2, h3, p { margin-top: 0; }
@@ -198,7 +202,7 @@
     .hero-stamp { position: absolute; right: 0px; bottom: 30px; width: 120px; height: 120px; display: grid; align-content: center; justify-items: center; border: 5px solid var(--cream); border-radius: 50%; background: rgb(23 61 48 / 88%); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: white; text-align: center; transform: rotate(8deg); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
     .hero-stamp strong { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; color: var(--gold); }
     .hero-stamp span { color: #e4d6b7; font-size: .62rem; letter-spacing: .13em; text-transform: uppercase; }
-    .meal-story { position: relative; height: min(520px, calc(100vh - 150px)); overflow: hidden; border-radius: 8px; background: #073d2b; isolation: isolate; box-shadow: 0 24px 60px rgb(23 61 48 / 18%); }
+    .meal-story { position: relative; aspect-ratio: 1; height: auto; min-height: 0; overflow: hidden; border-radius: 50%; background: #073d2b; isolation: isolate; box-shadow: 0 24px 60px rgb(23 61 48 / 18%); }
     .meal-story::after { position: absolute; inset: 0; z-index: 2; content: ''; pointer-events: none; background: linear-gradient(180deg, rgb(6 39 29 / 6%), rgb(6 39 29 / 5%) 68%, rgb(6 39 29 / 52%)); }
     .meal-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; }
     .meal-plated { position: absolute; z-index: 2; left: 50%; top: 52%; width: min(92%, 520px); aspect-ratio: 1.18; transform: translate(-50%, -50%) scale(.64); opacity: 0; object-fit: cover; border-radius: 50%; filter: saturate(.92) contrast(1.04); box-shadow: 0 28px 70px rgb(0 0 0 / 38%); will-change: transform, opacity; }
@@ -212,7 +216,7 @@
     .meal-copy strong { display: block; font-family: var(--serif); font-size: clamp(1.25rem, 3vw, 1.8rem); }
     .meal-copy span { font-size: .78rem; }
     .meal-steam { position: absolute; z-index: 4; left: 50%; top: 25%; width: 8px; height: 90px; border-radius: 50%; opacity: 0; background: linear-gradient(to top, rgb(255 255 255 / 70%), transparent); filter: blur(6px); transform: rotate(10deg); }
-    @media (max-width: 760px) { .hero { min-height: 150vh; } .hero-grid { top: 70px; height: calc(100vh - 70px); min-height: 660px; grid-template-columns: 1fr; align-content: center; gap: 24px; } .hero-grid > div:first-child { position: relative; z-index: 3; } h1 { font-size: clamp(2.55rem, 13vw, 4rem); } .hero-copy { font-size: .94rem; line-height: 1.55; } .meal-story { height: min(42vh, 330px); } }
+    @media (max-width: 760px) { .hero { min-height: 150vh; } .hero-scroll-frame { height: 150vh; } .hero-scroll-overlay { background: linear-gradient(180deg, rgb(247 243 232 / 96%) 0%, rgb(247 243 232 / 90%) 52%, rgb(247 243 232 / 36%) 100%); } .hero-grid { top: 70px; height: calc(100vh - 70px); min-height: 660px; grid-template-columns: 1fr; align-content: center; gap: 24px; } .hero-grid > div:first-child { position: relative; z-index: 3; } h1 { font-size: clamp(2.55rem, 13vw, 4rem); } .hero-copy { font-size: .94rem; line-height: 1.55; } .meal-story { width: min(42vh, 330px); justify-self: center; } }
     @media (prefers-reduced-motion: reduce) { .meal-ingredient, .meal-plated, .meal-steam { transition: none !important; } }
 
     .intro-strip { border-block: 1px solid var(--line); background: #fffdf8; }
@@ -1104,6 +1108,10 @@
   <main>
     <!-- Hero Section -->
     <section class="hero">
+      <div class="hero-scroll-frame" aria-hidden="true">
+        <video class="hero-scroll-video" id="heroScrollVideo" src="assets/yebs-exploded-view.mp4" muted playsinline preload="auto"></video>
+        <div class="hero-scroll-overlay"></div>
+      </div>
       <div class="wrap hero-grid">
         <div>
           <p class="eyebrow">Comfort food, made fresh</p>
@@ -1121,7 +1129,7 @@
           </div>
         </div>
         <div class="hero-visual meal-story" id="mealStory" aria-label="Exploded video view of the ingredients in YEBS spaghetti">
-          <video class="meal-video" id="heroExplodedVideo" src="assets/yebs-exploded-view.mp4" muted playsinline preload="auto" aria-label="YEBS spaghetti ingredients exploded view"></video>
+          <video class="meal-video" id="heroExplodedVideo" src="assets/yebs-exploded-view.mp4" muted autoplay loop playsinline preload="auto" aria-label="YEBS spaghetti ingredients video"></video>
           <div class="meal-copy" aria-live="polite">
             <strong id="mealStageTitle">Every ingredient matters</strong>
             <span id="mealStageText">Watch the YEBS meal come together</span>
@@ -1898,6 +1906,8 @@
 
     const hero = document.querySelector('.hero');
     const heroVideo = document.getElementById('heroExplodedVideo');
+    const heroScrollVideo = document.getElementById('heroScrollVideo');
+    const heroScrollFrame = hero.querySelector('.hero-scroll-frame');
     const mealTitle = document.getElementById('mealStageTitle');
     const mealText = document.getElementById('mealStageText');
     if (hero && heroVideo) {
@@ -1914,12 +1924,15 @@
         const rect = hero.getBoundingClientRect();
         const travel = Math.max(1, hero.offsetHeight - window.innerHeight);
         const progress = Math.max(0, Math.min(1, -rect.top / travel));
-        if (Number.isFinite(heroVideo.duration) && heroVideo.duration > 0) {
-          const target = heroVideo.duration * progress;
-          if (Math.abs(heroVideo.currentTime - target) > 0.045) {
-            heroVideo.currentTime = target;
+        if (Number.isFinite(heroScrollVideo.duration) && heroScrollVideo.duration > 0) {
+          const target = heroScrollVideo.duration * progress;
+          if (Math.abs(heroScrollVideo.currentTime - target) > 0.035) {
+            heroScrollVideo.currentTime = target;
           }
         }
+        const visible = rect.bottom > 0 && rect.top < window.innerHeight;
+        heroScrollFrame.classList.toggle('is-visible', visible);
+        heroScrollVideo.style.opacity = visible ? String(Math.min(1, Math.max(0, (window.innerHeight - rect.top) / 180))) : '0';
         const stage = stages.reduce((current, next) => progress >= next[0] ? next : current, stages[0]);
         mealTitle.textContent = stage[1];
         mealText.textContent = stage[2];
@@ -1930,8 +1943,9 @@
         heroFrame = requestAnimationFrame(syncHeroVideo);
       }
 
-      heroVideo.pause();
-      heroVideo.addEventListener('loadedmetadata', syncHeroVideo, { once: true });
+      heroScrollVideo.pause();
+      heroScrollVideo.addEventListener('loadedmetadata', syncHeroVideo, { once: true });
+      heroVideo.play().catch(() => {});
       window.addEventListener('scroll', scheduleHeroVideoSync, { passive: true });
       window.addEventListener('resize', scheduleHeroVideoSync);
       syncHeroVideo();
