@@ -69,6 +69,14 @@ services:
         sync: false
       - key: SENDGRID_FROM_NAME
         value: YEBS Noodles
+      - key: EMAIL_FROM
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_RECOVERY_PHONE
+        value: "0559103452"
+      - key: RECOVERY_SHOW_CODE
+        value: "0"
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT

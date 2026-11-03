@@ -1878,7 +1878,7 @@ async function sendRecoveryEmail(toEmail, code, role, name) {
       const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${sendGridKey}`,
+          Authorization: 'Bearer ' + sendGridKey,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

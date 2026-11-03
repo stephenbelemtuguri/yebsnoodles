@@ -187,7 +187,8 @@ values ('main', $yebs${
       "template": "poster-capsule"
     }
   ],
-  "notifications": []
+  "notifications": [],
+  "recoveryCodes": []
 }$yebs$::jsonb)
 on conflict (id) do nothing;
 
