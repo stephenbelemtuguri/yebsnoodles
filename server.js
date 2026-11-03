@@ -53,6 +53,58 @@ app.use(cors());
 // so the default 100kb JSON limit is far too small.
 app.use(express.json({ limit: '12mb' }));
 
+app.post('/api/ai/chat', async (req, res) => {
+  const message = String(req.body && req.body.message || '').trim().slice(0, 1200);
+  if (!message) return res.status(400).json({ success: false, reply: 'Please ask a question.' });
+
+  const knowledge = `You are YEBS Noodles' helpful website assistant. Answer clearly and accurately from this knowledge:
+YEBS provides cooked-to-order noodles and pasta meals, delivery, and pickup in Ghana. Customers browse the menu, choose dishes and quantities, enter delivery details, place an order, track it live, pay by Mobile Money or cash, and view receipts. Delivery fees are calculated by distance/address. Payment options shown at checkout are the available options. Orders can be collected when stated by the business. Live order tracking shows driver location and order status. The app includes order history, saved addresses, reviews, loyalty rewards, referrals, notifications, receipts, a customer wallet, and driver/admin portals. For payments, Mobile Money is initiated in checkout and requires approval in the customer's phone/payment prompt; cash can be chosen when offered. For WhatsApp support, use the button in checkout or order tracking. Never invent prices, opening hours, promotions, or exact delivery times. If information is not shown in the app, say it should be confirmed with YEBS through WhatsApp. General questions can also be answered naturally while staying helpful.`;
+
+  const providerUrl = process.env.AI_API_URL || process.env.OPENAI_BASE_URL || 'https://api.groq.com/openai/v1';
+  const apiKey = process.env.AI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+  const model = process.env.AI_MODEL || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  if (apiKey) {
+    try {
+      const response = await fetch(providerUrl.replace(/\/$/, '') + '/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          temperature: 0.4,
+          max_tokens: 350,
+          messages: [{ role: 'system', content: knowledge }, { role: 'user', content: message }]
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+      const data = await response.json();
+      const reply = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (response.ok && reply) return res.json({ success: true, reply: reply.trim(), provider: 'configured' });
+      console.error('[ai] provider rejected request:', response.status, data.error || data);
+    } catch (err) {
+      console.error('[ai] provider request failed:', err.message);
+    }
+  }
+
+  const lower = message.toLowerCase();
+  let reply;
+  if (/pay|payment|momo|mobile money|cash/.test(lower)) {
+    reply = 'At checkout, choose Mobile Money or Cash if those options are available. Mobile Money opens a payment request that you approve on your phone, after which the order payment status updates automatically. Cash is for eligible orders and should be paid only to the assigned driver or at collection.';
+  } else if (/track|where.*order|status/.test(lower)) {
+    reply = 'Open your receipt or tracking page and enter/use the order number shown after checkout. Available statuses include preparing, ready, assigned, picked up, and delivered, with the driver location shown when sharing is active.';
+  } else if (/deliver|delivery|collect|pickup/.test(lower)) {
+    reply = 'Add your address or delivery pin at checkout so delivery can be calculated. Delivery availability and fee depend on the address and distance. Pickup or collection is available only where it is shown for your area/order.';
+  } else if (/popular|recommend|eat|food|menu|meal/.test(lower)) {
+    reply = 'Browse the YEBS menu and use the meal cards to see what is available. Start with our popular spaghetti meals, or tell me what taste, spice level, protein, or budget you prefer and I will narrow it down.';
+  } else if (/receipt|order history/.test(lower)) {
+    reply = 'Your receipt is shown after checkout. You can also find recent orders and receipts from the customer/account area, then view, print, save, or download them where supported.';
+  } else if (/loyal|reward|refer/.test(lower)) {
+    reply = 'YEBS loyalty rewards customers with points and tier benefits, and referrals can provide rewards to eligible customers. Open Loyalty or Referrals in the customer area to see your current progress and available rewards.';
+  } else {
+    reply = 'YEBS helps you order fresh noodles and pasta for delivery or pickup, pay securely in supported ways, track the driver, earn loyalty rewards, and manage receipts. Tell me whether you need help choosing a meal, paying, tracking an order, delivery, or an account feature.';
+  }
+  return res.json({ success: true, reply, provider: 'app-knowledge-fallback' });
+});
+
 // Week 1/2 feature API modules.
 app.use('/api/customers', require('./src/routes/customers'));
 app.use('/api/drivers', require('./src/routes/drivers'));

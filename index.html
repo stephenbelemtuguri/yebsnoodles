@@ -186,6 +186,9 @@
     /* Hero Section */
     .page-video-frame { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: #071f17; }
     .page-exploded-video { width: 100%; height: 100%; object-fit: cover; object-position: center; opacity: 0; filter: saturate(.88) contrast(1.06); transform: scale(1.018); will-change: opacity, transform; transition: opacity .4s ease; }
+    .theme-toggle-btn { position: fixed; left: 18px; bottom: 18px; z-index: 12000; width: 58px; height: 58px; border: 0; border-radius: 50%; display: grid; place-items: center; background: #163f31; color: white; box-shadow: 0 10px 30px rgba(0,0,0,.28); font-size: 24px; cursor: pointer; }
+    .auto-brightness-btn { position: fixed; left: 82px; bottom: 18px; z-index: 12000; min-height: 58px; border: 0; border-radius: 999px; padding: 0 16px; background: rgba(22,63,49,.94); color: white; box-shadow: 0 10px 30px rgba(0,0,0,.28); font-weight: 800; cursor: pointer; }
+    html[data-theme="dark"] .page-video-frame::after { background: rgba(0,0,0,.28); }
     .page-video-frame::after { position: absolute; inset: 0; content: ""; background: linear-gradient(90deg, rgba(247,243,232,.28) 0%, rgba(247,243,232,.12) 42%, rgba(247,243,232,.04) 78%), linear-gradient(180deg, rgba(7,31,23,.02), rgba(7,31,23,.12)); }
     .hero { position: relative; min-height: 180vh; padding: 0; overflow: clip; isolation: isolate; background: transparent; }
     main, footer, .live-track-bar, header { position: relative; z-index: 2; }
@@ -986,7 +989,7 @@
 </head>
 <body>
   <div class="page-video-frame" aria-hidden="true">
-    <video class="page-exploded-video" id="pageExplodedVideo" src="assets/yebs-exploded-view.mp4" muted playsinline preload="metadata" disablepictureinpicture></video>
+    <video class="page-exploded-video" id="pageExplodedVideo" src="assets/yebs-exploded-view.mp4" poster="img_food_1.jpg" muted playsinline preload="none" disablepictureinpicture></video>
   </div>
   <script>
     if (location.protocol === 'file:') {
@@ -1952,6 +1955,7 @@
       }
 
       pageVideo.pause();
+      pageVideo.load();
       pageVideo.addEventListener('loadedmetadata', () => {
         pageVideo.style.opacity = '1';
         syncHeroVideo();
@@ -5244,6 +5248,7 @@
 
   <!-- Dark / Light Mode Toggle (floating) -->
   <button class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle dark/light mode" title="Toggle dark/light mode">🌙</button>
+  <button class="auto-brightness-btn" id="autoBrightnessBtn" type="button" aria-pressed="false" title="Adjust brightness for the surrounding light">☀ Auto brightness</button>
 
   <script>
     // ============================================================
@@ -5277,6 +5282,49 @@
       }
 
       window.applyTheme = applyTheme;
+    })();
+
+    // AmbientLightSensor is available only in supported browsers with permission.
+    // CSS media-query and vision-based fallbacks keep the control useful elsewhere.
+    (function () {
+      var btn = document.getElementById('autoBrightnessBtn');
+      var enabled = false;
+      var sensor = null;
+      function setAmbient(enabledValue, lux) {
+        var brightness = lux === undefined ? 1 : Math.max(.72, Math.min(1, .72 + lux / 500));
+        document.documentElement.style.filter = window.applyTheme && document.documentElement.dataset.theme === 'dark'
+          ? 'brightness(' + Math.max(.62, brightness * .88) + ')'
+          : 'brightness(' + brightness + ')';
+      }
+      function stop() {
+        enabled = false;
+        if (sensor) sensor.stop();
+        document.documentElement.style.filter = '';
+        btn.setAttribute('aria-pressed', 'false');
+        btn.textContent = '☀ Auto brightness';
+      }
+      async function start() {
+        enabled = true;
+        btn.setAttribute('aria-pressed', 'true');
+        btn.textContent = '☀ Auto: on';
+        try {
+          if ('AmbientLightSensor' in window) {
+            sensor = new window.AmbientLightSensor({ frequency: 2 });
+            sensor.addEventListener('reading', () => setAmbient(true, sensor.illuminance));
+            sensor.start();
+            return;
+          }
+          if ('DeviceLightEvent' in window) {
+            window.addEventListener('devicelight', event => setAmbient(true, event.value));
+            return;
+          }
+          const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          setAmbient(true, dark ? 80 : 240);
+        } catch (_) {
+          stop();
+        }
+      }
+      btn.addEventListener('click', () => enabled ? stop() : start());
     })();
 
     // ============================================================
@@ -5414,12 +5462,23 @@
 
       async function answer(question) {
         addMessage(question, true);
-        await loadRecommendations();
-        const names = recommendations.map(item => item.name || item.title).filter(Boolean);
-        const response = names.length
-          ? 'Based on your tastes and popular orders, try: ' + names.join(', ') + '. Tap a meal card to add it to your order.'
-          : 'I recommend starting with our signature Ghanaian spaghetti and chicken. Use the menu filters to find spicy, vegetarian, or coming-soon options.';
-        addMessage(response);
+        const typing = document.createElement('div');
+        typing.className = 'yebs-ai-message';
+        typing.textContent = 'Thinking...';
+        messages.appendChild(typing);
+        try {
+          const response = await fetch('/api/ai/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: question })
+          });
+          const data = await response.json();
+          typing.remove();
+          addMessage(data.reply || data.message || 'Sorry, I could not answer that right now.');
+        } catch (_) {
+          typing.remove();
+          addMessage('Sorry, the AI is temporarily unavailable. I can still help with menu, ordering, payment, delivery, tracking, loyalty, and refunds.');
+        }
       }
 
       launcher.addEventListener('click', () => {
