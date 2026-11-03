@@ -25,25 +25,19 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
     * { box-sizing: border-box; }
+    html {
+      min-height: 100%;
+      background: #d9ddd7 url("./assets/admin-background.jpg") center center / cover fixed no-repeat !important;
+    }
     body {
       margin: 0;
-      background-color: #d9ddd7;
+      background: linear-gradient(rgba(8, 35, 27, 0.18), rgba(8, 35, 27, 0.32)),
+        url("./assets/admin-background.jpg") center center / cover fixed no-repeat !important;
       color: var(--ink);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       position: relative;
-      isolation: isolate;
-    }
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      z-index: -1;
-      background:
-        linear-gradient(rgba(8, 35, 27, 0.18), rgba(8, 35, 27, 0.32)),
-        url("./assets/admin-background.jpg") center / cover no-repeat;
-      pointer-events: none;
     }
     header {
       background: var(--forest);
@@ -672,8 +666,8 @@
     .auth-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(15, 40, 32, 0.94);
-      backdrop-filter: blur(10px);
+      background: rgba(15, 40, 32, 0.42);
+      backdrop-filter: blur(3px);
       z-index: 99999;
       display: flex;
       align-items: center;
