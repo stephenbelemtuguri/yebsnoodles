@@ -202,6 +202,7 @@ General capability:
       const configuredGeminiModel = String(process.env.GEMINI_MODEL || process.env.AI_MODEL || '').trim();
       const geminiModels = [...new Set([
         configuredGeminiModel,
+        'gemini-2.5-flash-lite',
         'gemini-2.5-flash',
         'gemini-2.0-flash',
         'gemini-flash-latest'
