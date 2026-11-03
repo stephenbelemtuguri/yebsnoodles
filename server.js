@@ -229,7 +229,9 @@ General capability:
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
         let modelCompleted = false;
         for (let turn = 0; turn < 4 && !modelCompleted; turn++) {
-        const response = await fetch(geminiUrl, {
+        let response;
+        try {
+          response = await fetch(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
           body: JSON.stringify({
@@ -239,8 +241,12 @@ General capability:
             toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
             generationConfig: { temperature: 0.25, maxOutputTokens: 700 }
           }),
-          signal: AbortSignal.timeout(20000)
-        });
+          signal: AbortSignal.timeout(12000)
+          });
+        } catch (error) {
+          geminiFailureReason = error.name === 'TimeoutError' ? 'Gemini model request timed out.' : error.message;
+          continue;
+        }
         const rawData = await response.text();
         let data;
         try {
