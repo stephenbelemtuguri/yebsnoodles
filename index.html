@@ -3176,6 +3176,10 @@
 
       (async () => {
         if (notification && notification.status === 'sent') { markBotSent(); return; }
+        if (notification && ['not-configured', 'failed'].includes(String(notification.status))) {
+          showWhatsAppFallback(notification.fallbackUrl || whatsappBotUrl);
+          return;
+        }
         for (let attempt = 0; attempt < 12; attempt += 1) {
           await new Promise(resolve => setTimeout(resolve, 2000));
           const state = await apiOrderNotification(newOrder.id, 'order');
