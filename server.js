@@ -196,6 +196,7 @@ General capability:
 - Do not present unavailable live records as facts.`;
 
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+  let geminiFailureReason = '';
   if (geminiKey) {
     try {
       const configuredGeminiModel = String(process.env.GEMINI_MODEL || process.env.AI_MODEL || '').trim();
@@ -251,6 +252,7 @@ General capability:
         const parts = candidate && candidate.content && candidate.content.parts || [];
         if (!response.ok) {
           geminiError = data.error && data.error.message || `Gemini returned HTTP ${response.status}`;
+          geminiFailureReason = geminiError;
           if (response.status === 404 || /not found|is not supported/i.test(geminiError)) continue;
           break;
         }
@@ -319,6 +321,7 @@ General capability:
       console.error('[ai] Gemini returned no text response');
     } catch (err) {
       console.error('[ai] Gemini request failed:', err.message);
+      geminiFailureReason = err.message;
     }
   }
 
@@ -358,6 +361,14 @@ General capability:
   }
 
   console.error('[ai] No configured model was able to answer the request.');
+  if (geminiKey) {
+    return res.status(502).json({
+      success: false,
+      provider: 'gemini',
+      message: 'Gemini could not complete the request.',
+      reason: geminiFailureReason || 'The configured API key was rejected or the provider is unavailable.'
+    });
+  }
   return res.status(503).json({
     success: false,
     provider: 'not-configured',
