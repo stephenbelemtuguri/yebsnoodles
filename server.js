@@ -138,8 +138,20 @@ YEBS provides cooked-to-order noodles and pasta meals, delivery, and pickup in G
 
   const lower = message.toLowerCase();
   let reply;
+  const db = loadDatabase();
+  const momo = getMomoSettings(db);
   if (/pay|payment|momo|mobile money|cash/.test(lower)) {
-    reply = 'At checkout, choose Mobile Money or Cash if those options are available. Mobile Money opens a payment request that you approve on your phone, after which the order payment status updates automatically. Cash is for eligible orders and should be paid only to the assigned driver or at collection.';
+    if (/number|send to|pay to|which.*pay|where.*pay/.test(lower)) {
+      reply = `YEBS Mobile Money payments should be sent to ${momo.payToLabel || momo.payTo} (${momo.accountName || 'YEBS Noodles'}), using the order number as reference. In checkout, enter your MoMo number and approve the payment prompt. If no prompt arrives, use the USSD/manual payment instructions shown for that order.`;
+    } else {
+      reply = 'At checkout, choose Mobile Money or Cash if available. Mobile Money sends a request to your phone; approve it with your MoMo PIN. Payment status updates automatically when confirmed. For manual USSD payment, use the number and order reference displayed in checkout and keep the transaction ID.';
+    }
+  } else if (/support|contact|customer care|call|whatsapp/.test(lower)) {
+    reply = 'For customer support, contact YEBS on WhatsApp at 055 910 3452. Include your order number, phone number, and delivery issue so the team can help quickly.';
+  } else if (/admin|administrator|manager|owner/.test(lower)) {
+    reply = 'The YEBS admin manages orders, drivers, menu items, payments, and customer support through the private admin portal. Please contact YEBS support if you need help with an order.';
+  } else if (/how long|long.*deliver|delivery.*time|eta|arrive/.test(lower)) {
+    reply = 'Delivery time depends on preparation, distance, traffic, weather, and driver availability. Preparation commonly takes 20–40 minutes, followed by the driver route ETA shown on the live tracking page.';
   } else if (/track|where.*order|status/.test(lower)) {
     reply = 'Open your receipt or tracking page and enter/use the order number shown after checkout. Available statuses include preparing, ready, assigned, picked up, and delivered, with the driver location shown when sharing is active.';
   } else if (/deliver|delivery|collect|pickup/.test(lower)) {
