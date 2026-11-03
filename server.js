@@ -107,9 +107,192 @@ app.use(express.json({ limit: '12mb' }));
 app.post('/api/ai/chat', async (req, res) => {
   const message = String(req.body && req.body.message || '').trim().slice(0, 1200);
   if (!message) return res.status(400).json({ success: false, reply: 'Please ask a question.' });
+  const suppliedHistory = Array.isArray(req.body.history) ? req.body.history : [];
+  let role = ['customer', 'driver', 'admin'].includes(String(req.body.role || '').toLowerCase())
+    ? String(req.body.role).toLowerCase()
+    : 'customer';
+  const authenticated = authenticate(req);
+  if (authenticated) role = authenticated.payload.role;
 
-  const knowledge = `You are YEBS Noodles' helpful website assistant. Answer clearly and accurately from this knowledge:
-YEBS provides cooked-to-order noodles and pasta meals, delivery, and pickup in Ghana. Customers browse the menu, choose dishes and quantities, enter delivery details, place an order, track it live, pay by Mobile Money or cash, and view receipts. Delivery fees are calculated by distance/address. Payment options shown at checkout are the available options. Orders can be collected when stated by the business. Live order tracking shows driver location and order status. The app includes order history, saved addresses, reviews, loyalty rewards, referrals, notifications, receipts, a customer wallet, and driver/admin portals. For payments, Mobile Money is initiated in checkout and requires approval in the customer's phone/payment prompt; cash can be chosen when offered. For WhatsApp support, use the button in checkout or order tracking. Never invent prices, opening hours, promotions, or exact delivery times. If information is not shown in the app, say it should be confirmed with YEBS through WhatsApp. General questions can also be answered naturally while staying helpful.`;
+  const db = loadDatabase();
+  const momo = getMomoSettings(db);
+  const menuItems = (db.menuItems || []).filter(item => item && item.available !== false).slice(0, 80);
+  const menuKnowledge = menuItems.map(item => {
+    const price = Number(item.price);
+    return `${item.name}${Number.isFinite(price) ? ` - GH₵${price.toFixed(2)}` : ''}${item.category ? ` (${item.category})` : ''}`;
+  }).join('; ');
+  const asArray = value => Array.isArray(value) ? value : [];
+  const buildAiBusinessSnapshot = () => {
+    const live = loadDatabase();
+    const orders = asArray(live.orders);
+    const drivers = asArray(live.drivers);
+    const payouts = asArray(live.payouts);
+    const delivered = orders.filter(order => String(order.status || '').toLowerCase() === 'delivered');
+    const active = orders.filter(order => !['delivered', 'cancelled'].includes(String(order.status || '').toLowerCase()));
+    const cancelled = orders.filter(order => String(order.status || '').toLowerCase() === 'cancelled');
+    const paid = orders.filter(order => order.paymentVerified === true || String(order.paymentStatus || '').toLowerCase() === 'paid');
+    const pendingPayments = orders.filter(order =>
+      ['pending', 'review'].includes(String(order.paymentStatus || '').toLowerCase()) ||
+      String(order.momoRequestStatus || '').toLowerCase() === 'pending'
+    );
+    const itemTotals = new Map();
+    orders.filter(order => String(order.status || '').toLowerCase() !== 'cancelled').forEach(order => {
+      for (const item of asArray(order.items)) {
+        const key = String(item.name || 'Menu item');
+        const quantity = Math.max(0, Number(item.quantity) || 0);
+        const current = itemTotals.get(key) || { name: key, quantity: 0, revenue: 0 };
+        current.quantity += quantity;
+        current.revenue += quantity * (Number(item.price) || 0);
+        itemTotals.set(key, current);
+      }
+    });
+    const totalRevenue = orders.filter(order => String(order.status || '').toLowerCase() !== 'cancelled')
+      .reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+    return {
+      generatedAt: new Date().toISOString(),
+      orders: { total: orders.length, active: active.length, delivered: delivered.length, cancelled: cancelled.length,       revenue: Math.round(totalRevenue * 100) / 100 },
+      payments: { paid: paid.length, pendingReview: pendingPayments.length, paidRevenue: Math.round(paid.reduce((sum, order) => sum + (Number(order.total) || 0), 0) * 100) / 100 },
+      drivers: {
+        total: drivers.length,
+        approved: drivers.filter(driver => driver.approvalStatus === 'approved' || driver.approved === true).length,
+        online: drivers.filter(driver => driver.isOnline === true || driver.isActive === true).length
+      },
+      payouts: { requested: payouts.filter(payout => String(payout.status || '').toLowerCase() === 'requested').length },
+      topItems: Array.from(itemTotals.values()).sort((a, b) => b.quantity - a.quantity || b.revenue - a.revenue).slice(0, 8),
+      statuses: orders.reduce((result, order) => {
+        const status = String(order.status || 'pending').toLowerCase();
+        result[status] = (result[status] || 0) + 1;
+        return result;
+      }, {})
+    };
+  };
+  const roleKnowledge = role === 'admin'
+    ? 'Admin guidance: explain how to manage orders, approve drivers, update menu and inventory, review payments/refunds, use analytics, broadcast notifications, and configure business settings. Do not invent account balances or pending records; direct the admin to the relevant dashboard data when live values are needed.'
+    : role === 'driver'
+      ? 'Driver guidance: explain claiming and unclaiming orders, pickup, navigation, delivery status updates, PIN confirmation, cash/receipt verification, earnings, payouts, availability, and the driver map. Never claim a delivery, payment, or payout is complete unless the live status confirms it.'
+      : 'Customer guidance: explain the menu, cart, checkout, delivery/pickup, address pin, payment prompts, tracking, receipts, order history, saved addresses, reviews, loyalty, referrals, wallet, cancellation, refunds, and customer support.';
+  const knowledge = `You are YEBS's conversational website assistant. Be concise, natural, and useful.
+
+Business facts:
+- YEBS Noodles serves fresh, cooked-to-order noodles and pasta in Ghana.
+- Customers choose meals, add quantities, enter details, place orders, track live delivery, and view receipts.
+- Payment choices are Mobile Money and Cash only when those choices are shown in checkout.
+- Mobile Money payments start from checkout with a request sent to the customer's phone. The customer approves it using their MoMo PIN and should wait for confirmation in the app.
+- YEBS Mobile Money destination: ${momo.payToLabel || momo.payTo || '0559103452'} (${momo.accountName || 'MATHEW TIA'}).
+- Customers can select a delivery address or pickup pin. Delivery fees depend on the route and address. Exact preparation and delivery times depend on kitchen workload, traffic, distance, weather, and driver availability.
+- Customer support is on WhatsApp at 0559103452. Ask customers to include their order number for faster help.
+- The website also has order history, receipts, saved addresses, live tracking, loyalty rewards, referrals, reviews, notifications, and a wallet where implemented.
+- If a customer asks about a current balance, order status, menu availability, exact price, promotion, opening hours, payment confirmation, or other live account data that is not in the supplied conversation, ask them to check the relevant app page and say which page to use. Do not guess.
+- You may answer general questions normally, but connect answers back to YEBS when relevant.
+- Never claim a payment succeeded unless confirmation is returned by the payment system.
+- Ask one focused follow-up question when details are missing.
+
+${roleKnowledge}
+Current public menu items from the app database: ${menuKnowledge || 'The menu will be available when menu items are loaded.'}
+
+General capability:
+- Answer ordinary questions clearly and independently of a prepared FAQ.
+- When asked about software, explain practical steps with the app's relevant screen.
+- Do not present unavailable live records as facts.`;
+
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      const geminiModel = process.env.GEMINI_MODEL || process.env.AI_MODEL || 'gemini-2.0-flash';
+      const contents = suppliedHistory.slice(-10).filter(entry =>
+        entry && typeof entry.content === 'string' && ['user', 'assistant', 'model'].includes(entry.role)
+      ).map(entry => ({
+        role: entry.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: entry.content.slice(0, 1200) }]
+      }));
+      contents.push({ role: 'user', parts: [{ text: message }] });
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
+      const tools = [{
+        functionDeclarations: [
+          { name: 'inspect_dashboard', description: 'Inspect live YEBS operations counts and risks. Use for summaries, validation, maintenance checks, and staff requests.', parameters: { type: 'object', properties: {} } },
+          { name: 'analyze_business', description: 'Analyze live orders, revenue, payment risk, menu demand, cancellations, and staff performance, then provide prioritized recommendations.', parameters: { type: 'object', properties: {} } },
+          { name: 'list_orders', description: 'List and inspect live orders, optionally filtered by status.', parameters: { type: 'object', properties: { status: { type: 'string', description: 'Exact order status such as preparing, ready, delivered, or cancelled' }, limit: { type: 'number' } } } },
+          { name: 'inspect_payments', description: 'Inspect payment review queue, pending Mobile Money payments, and payment mismatches.', parameters: { type: 'object', properties: {} } },
+          { name: 'notify_team', description: 'Create an in-app notification for admin or driver staff.', parameters: { type: 'object', properties: { title: { type: 'string' }, message: { type: 'string' }, audience: { type: 'string', enum: ['admin', 'driver', 'all'] }, confirmed: { type: 'boolean' } }, required: ['title', 'message', 'audience', 'confirmed'] } },
+          { name: 'driver_update_availability', description: 'Update the authenticated driver availability when the driver explicitly confirms it.', parameters: { type: 'object', properties: { available: { type: 'boolean' }, confirmed: { type: 'boolean' } }, required: ['available', 'confirmed'] } }
+        ]
+      }];
+      let lastReply = '';
+      for (let turn = 0; turn < 4; turn++) {
+        const response = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: knowledge + '\nYou can inspect live data and perform authorized staff operations with tools. For destructive or externally visible actions, require explicit confirmation and explain what you are about to do. Never expose secrets, tokens, passwords, API keys, private customer addresses, phone numbers, or internal database fields. Base conclusions on tool output, not guesses. Keep answers practical and natural; do not repeat the user.' }] },
+            contents,
+            tools,
+            toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+            generationConfig: { temperature: 0.25, maxOutputTokens: 700 }
+          }),
+          signal: AbortSignal.timeout(20000)
+        });
+        const data = await response.json();
+        const candidate = data.candidates && data.candidates[0];
+        const parts = candidate && candidate.content && candidate.content.parts || [];
+        if (!response.ok) throw new Error(data.error && data.error.message || `Gemini returned HTTP ${response.status}`);
+        const calls = parts.filter(part => part.functionCall);
+        const textPart = parts.map(part => part.text || '').join('').trim();
+        if (textPart) lastReply = textPart;
+        if (!calls.length) break;
+        const functionResponses = [];
+        for (const call of calls) {
+          const args = call.functionCall.args || {};
+          let output;
+          const live = loadDatabase();
+          if (call.functionCall.name === 'inspect_dashboard') {
+            output = buildAiBusinessSnapshot();
+          } else if (call.functionCall.name === 'analyze_business') {
+            const snapshot = buildAiBusinessSnapshot();
+            const deliveryRate = snapshot.orders.total ? Math.round((snapshot.orders.delivered / snapshot.orders.total) * 100) : 0;
+            const cancellationRate = snapshot.orders.total ? Math.round((snapshot.orders.cancelled / snapshot.orders.total) * 100) : 0;
+            output = {
+              ...snapshot,
+              analysis: {
+                deliveryRatePercent: deliveryRate,
+                cancellationRatePercent: cancellationRate,
+                priorities: [
+                  snapshot.payments.pendingReview ? `${snapshot.payments.pendingReview} payment(s) need review before fulfilment or revenue confirmation.` : 'No payment-review backlog.',
+                  snapshot.orders.active ? `${snapshot.orders.active} active order(s) require status and bottleneck monitoring.` : 'No active order backlog.',
+                  snapshot.drivers.approved === 0 ? 'No approved driver is currently available for assignment.' : `${snapshot.drivers.approved} approved driver(s) exist and ${snapshot.drivers.online} are online.`,
+                  snapshot.orders.cancelled ? 'Investigate cancellation patterns and customer complaints.' : 'Cancellation rate is currently controlled.'
+                ]
+              }
+            };
+          } else if (call.functionCall.name === 'list_orders') {
+            output = asArray(live.orders).filter(o => !args.status || String(o.status).toLowerCase() === String(args.status).toLowerCase()).slice(0, Math.min(Number(args.limit) || 12, 25)).map(o => ({ id: o.id, status: o.status, paymentStatus: o.paymentStatus, fulfilment: o.fulfilment, total: o.total, createdAt: o.createdAt }));
+          } else if (call.functionCall.name === 'inspect_payments') {
+            output = live.orders.filter(o => o.paymentStatus === 'review' || o.paymentStatus === 'pending' || o.momoRequestStatus === 'pending').slice(0, 25).map(o => ({ id: o.id, total: o.total, paymentStatus: o.paymentStatus, momoRequestStatus: o.momoRequestStatus, paymentMode: o.paymentMode }));
+          } else if (call.functionCall.name === 'notify_team' && role !== 'customer' && args.confirmed === true) {
+            live.notifications = Array.isArray(live.notifications) ? live.notifications : [];
+            live.notifications.unshift({ id: 'ai-' + Date.now(), title: String(args.title).slice(0, 120), message: String(args.message).slice(0, 500), audience: args.audience, createdAt: new Date().toISOString(), source: 'ai-assistant' });
+            saveDatabase(live);
+            output = { ok: true, audience: args.audience, message: 'In-app notification created.' };
+          } else if (call.functionCall.name === 'driver_update_availability' && role === 'driver' && authenticated && args.confirmed === true) {
+            const driver = live.drivers.find(d => String(d.id) === String(authenticated.driver.id));
+            if (!driver) output = { ok: false, reason: 'Authenticated driver not found.' };
+            else {
+              driver.isActive = Boolean(args.available);
+              driver.availability = args.available ? 'available' : 'offline';
+              saveDatabase(live);
+              output = { ok: true, available: driver.isActive };
+            }
+          } else if (args.confirmed !== true) output = { ok: false, requiresConfirmation: true };
+          else output = { ok: false, reason: 'Unauthorized for this role.' };
+          functionResponses.push({ functionResponse: { name: call.functionCall.name, response: output } });
+        }
+        contents.push({ role: 'model', parts }, { role: 'user', parts: functionResponses });
+      }
+      if (lastReply) return res.json({ success: true, reply: lastReply, provider: 'gemini' });
+      console.error('[ai] Gemini returned no text response');
+    } catch (err) {
+      console.error('[ai] Gemini request failed:', err.message);
+    }
+  }
 
   const providerUrl = process.env.AI_API_URL || process.env.OPENAI_BASE_URL || 'https://api.groq.com/openai/v1';
   const apiKey = process.env.AI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
@@ -123,7 +306,17 @@ YEBS provides cooked-to-order noodles and pasta meals, delivery, and pickup in G
           model,
           temperature: 0.4,
           max_tokens: 350,
-          messages: [{ role: 'system', content: knowledge }, { role: 'user', content: message }]
+          messages: [
+            { role: 'system', content: knowledge },
+            ...suppliedHistory.slice(-10).filter(entry =>
+              entry && typeof entry.content === 'string' &&
+              ['user', 'assistant'].includes(entry.role)
+            ).map(entry => ({
+              role: entry.role === 'assistant' ? 'assistant' : 'user',
+              content: entry.content.slice(0, 1200)
+            })),
+            { role: 'user', content: message }
+          ]
         }),
         signal: AbortSignal.timeout(15000)
       });
@@ -136,36 +329,12 @@ YEBS provides cooked-to-order noodles and pasta meals, delivery, and pickup in G
     }
   }
 
-  const lower = message.toLowerCase();
-  let reply;
-  const db = loadDatabase();
-  const momo = getMomoSettings(db);
-  if (/pay|payment|momo|mobile money|cash/.test(lower)) {
-    if (/number|send to|pay to|which.*pay|where.*pay/.test(lower)) {
-      reply = `YEBS Mobile Money payments should be sent to ${momo.payToLabel || momo.payTo} (${momo.accountName || 'YEBS Noodles'}), using the order number as reference. In checkout, enter your MoMo number and approve the payment prompt. If no prompt arrives, use the USSD/manual payment instructions shown for that order.`;
-    } else {
-      reply = 'At checkout, choose Mobile Money or Cash if available. Mobile Money sends a request to your phone; approve it with your MoMo PIN. Payment status updates automatically when confirmed. For manual USSD payment, use the number and order reference displayed in checkout and keep the transaction ID.';
-    }
-  } else if (/support|contact|customer care|call|whatsapp/.test(lower)) {
-    reply = 'For customer support, contact YEBS on WhatsApp at 055 910 3452. Include your order number, phone number, and delivery issue so the team can help quickly.';
-  } else if (/admin|administrator|manager|owner/.test(lower)) {
-    reply = 'The YEBS admin manages orders, drivers, menu items, payments, and customer support through the private admin portal. Please contact YEBS support if you need help with an order.';
-  } else if (/how long|long.*deliver|delivery.*time|eta|arrive/.test(lower)) {
-    reply = 'Delivery time depends on preparation, distance, traffic, weather, and driver availability. Preparation commonly takes 20–40 minutes, followed by the driver route ETA shown on the live tracking page.';
-  } else if (/track|where.*order|status/.test(lower)) {
-    reply = 'Open your receipt or tracking page and enter/use the order number shown after checkout. Available statuses include preparing, ready, assigned, picked up, and delivered, with the driver location shown when sharing is active.';
-  } else if (/deliver|delivery|collect|pickup/.test(lower)) {
-    reply = 'Add your address or delivery pin at checkout so delivery can be calculated. Delivery availability and fee depend on the address and distance. Pickup or collection is available only where it is shown for your area/order.';
-  } else if (/popular|recommend|eat|food|menu|meal/.test(lower)) {
-    reply = 'Browse the YEBS menu and use the meal cards to see what is available. Start with our popular spaghetti meals, or tell me what taste, spice level, protein, or budget you prefer and I will narrow it down.';
-  } else if (/receipt|order history/.test(lower)) {
-    reply = 'Your receipt is shown after checkout. You can also find recent orders and receipts from the customer/account area, then view, print, save, or download them where supported.';
-  } else if (/loyal|reward|refer/.test(lower)) {
-    reply = 'YEBS loyalty rewards customers with points and tier benefits, and referrals can provide rewards to eligible customers. Open Loyalty or Referrals in the customer area to see your current progress and available rewards.';
-  } else {
-    reply = 'YEBS helps you order fresh noodles and pasta for delivery or pickup, pay securely in supported ways, track the driver, earn loyalty rewards, and manage receipts. Tell me whether you need help choosing a meal, paying, tracking an order, delivery, or an account feature.';
-  }
-  return res.json({ success: true, reply, provider: 'app-knowledge-fallback' });
+  console.error('[ai] No configured model was able to answer the request.');
+  return res.status(503).json({
+    success: false,
+    provider: 'not-configured',
+    reply: 'The AI model is not connected yet. Set GEMINI_API_KEY on Render and redeploy. YEBS support: 0559103452.'
+  });
 });
 
 // Week 1/2 feature API modules.
@@ -6061,7 +6230,7 @@ app.get('/api/health', (req, res) => {
       networks: listMomoNetworks().map(n => ({ id: n.id, ussd: n.ussd, apiReady: n.apiReady }))
     },
     ai: {
-      configured: Boolean(process.env.AI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY),
+      configured: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.AI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY),
       providerFallback: true
     }
   });
@@ -6073,7 +6242,7 @@ app.get('/api/ready', (req, res) => {
     database: store.canPersist() || store.remoteMode === 'local',
     whatsapp: whatsappReadiness().configured,
     momo: momoApiConfig().configured,
-    ai: Boolean(process.env.AI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY)
+    ai: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.AI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY)
   };
   const ready = checks.database;
   res.status(ready ? 200 : 503).json({

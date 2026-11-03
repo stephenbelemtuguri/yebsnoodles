@@ -1,0 +1,14 @@
+.yebs-portals-ai{position:fixed;right:22px;bottom:22px;z-index:2147483000;font-family:Arial,sans-serif}
+.yebs-portals-ai-launcher{width:58px;height:58px;border:0;border-radius:50%;background:#173d30;color:#fff;font-size:25px;box-shadow:0 12px 30px rgba(0,0,0,.28);cursor:pointer}
+.yebs-portals-ai-panel{position:absolute;right:0;bottom:70px;width:min(390px,calc(100vw - 32px));height:min(590px,calc(100vh - 110px));background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;display:none;flex-direction:column;border:1px solid rgba(23,61,48,.15)}
+.yebs-portals-ai-panel.open{display:flex}
+.yebs-portals-ai-panel header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:#173d30;color:#fff}
+.yebs-portals-ai-panel header div{display:flex;flex-direction:column}
+.yebs-portals-ai-panel header small{opacity:.78;margin-top:3px}
+.yebs-portals-ai-panel header button{border:0;background:none;color:#fff;font-size:26px;cursor:pointer}
+.yebs-portals-ai-messages{flex:1;overflow-y:auto;padding:14px;background:#f7f5ef}
+.yebs-portals-ai-message{max-width:86%;padding:10px 12px;border-radius:13px 13px 13px 3px;background:#fff;color:#26332d;margin-bottom:10px;white-space:pre-wrap;line-height:1.42;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.yebs-portals-ai-message.user{margin-left:auto;border-radius:13px 13px 3px 13px;background:#173d30;color:#fff}
+.yebs-portals-ai-panel form{display:flex;gap:8px;padding:10px;border-top:1px solid #ddd}
+.yebs-portals-ai-panel input{flex:1;min-width:0;border:1px solid #ccd4d0;border-radius:22px;padding:11px 14px;outline:none}
+.yebs-portals-ai-panel form button{border:0;border-radius:50%;width:42px;height:42px;background:#e57a45;color:#fff;font-size:18px;cursor:pointer}

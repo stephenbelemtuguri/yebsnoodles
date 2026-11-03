@@ -147,9 +147,9 @@ export function addReliableBasemap(map) {
   const carto = makeCartoLayer();
   const google = makeGoogleLayer();
 
-  const sequence = [street, carto, google];
+  const sequence = [google, carto, street];
   let index = 0;
-  let active = street;
+  let active = google;
   let errorStreak = 0;
   let switching = false;
   let gaveUp = false;

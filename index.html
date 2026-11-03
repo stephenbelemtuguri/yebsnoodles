@@ -5461,6 +5461,7 @@
       const input = document.getElementById('yebsAiInput');
       const messages = document.getElementById('yebsAiMessages');
       let recommendations = [];
+      const aiHistory = [];
 
       function addMessage(text, user = false) {
         const item = document.createElement('div');
@@ -5488,11 +5489,13 @@
           const response = await fetch('/api/ai/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: question })
+            body: JSON.stringify({ message: question, history: aiHistory.slice(-10) })
           });
           const data = await response.json();
           typing.remove();
-          addMessage(data.reply || data.message || 'Sorry, I could not answer that right now.');
+          const reply = data.reply || data.message || 'Sorry, I could not answer that right now.';
+          addMessage(reply);
+          aiHistory.push({ role: 'user', content: question }, { role: 'assistant', content: reply });
         } catch (_) {
           typing.remove();
           addMessage('Sorry, the AI is temporarily unavailable. I can still help with menu, ordering, payment, delivery, tracking, loyalty, and refunds.');
