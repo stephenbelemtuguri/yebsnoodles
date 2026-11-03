@@ -31,6 +31,24 @@ if (resolvedAdminCredentialResetVersion) {
 const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
+const operationalMetrics = { requests: 0, ordersCreated: 0, paymentAttempts: 0, errors: 0, startedAt: Date.now() };
+app.use((req, res, next) => {
+  operationalMetrics.requests += 1;
+  res.on('finish', () => {
+    if (res.statusCode >= 500) operationalMetrics.errors += 1;
+  });
+  const unsafeMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+  const origin = String(req.get('origin') || '').trim();
+  if (unsafeMethod && origin) {
+    const allowedHost = String(req.get('host') || '').toLowerCase();
+    let originHost = '';
+    try { originHost = new URL(origin).host.toLowerCase(); } catch (_) {}
+    if (originHost && originHost !== allowedHost) {
+      return res.status(403).json({ success: false, message: 'Cross-site request blocked.' });
+    }
+  }
+  next();
+});
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
@@ -4197,6 +4215,24 @@ app.post('/api/orders/:id/refund/review', requireRole('admin'), (req, res) => {
   });
 });
 
+app.post('/api/orders/:id/refund/complete', requireRole('admin'), (req, res) => {
+  const db = loadDatabase();
+  const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
+  if (!order || !order.refund || order.refund.status !== 'approved') {
+    return res.status(409).json({ success: false, message: 'Only an approved refund can be marked as sent.' });
+  }
+  const method = cleanString((req.body || {}).method || 'Mobile Money', 40);
+  const reference = cleanString((req.body || {}).reference || '', 80);
+  if (!reference) return res.status(400).json({ success: false, message: 'A payment or transfer reference is required.' });
+  order.refund.status = 'completed';
+  order.refund.completedAt = new Date().toISOString();
+  order.refund.method = method;
+  order.refund.reference = reference;
+  saveDatabase(db);
+  logAction('ORDER_REFUND_COMPLETED', req.auth.admin.username, order.id, { method, reference, amount: order.refund.amount }, req);
+  res.json({ success: true, message: 'Refund marked as completed.', order: projectOrder(order, 'admin') });
+});
+
 // Driver or Admin claims / accepts an order for delivery
 app.post('/api/orders/:id/claim', requireRole('driver'), async (req, res) => {
   const db = loadDatabase();
@@ -5981,6 +6017,46 @@ app.get('/api/ready', (req, res) => {
     },
     time: new Date().toISOString()
   });
+});
+
+app.get('/api/admin/operations-metrics', requireRole('admin'), (req, res) => {
+  const db = loadDatabase();
+  const orders = Array.isArray(db.orders) ? db.orders : [];
+  res.json({
+    success: true,
+    uptimeSeconds: Math.round((Date.now() - operationalMetrics.startedAt) / 1000),
+    requests: operationalMetrics.requests,
+    serverErrors: operationalMetrics.errors,
+    activeOrders: orders.filter(o => !['delivered', 'cancelled'].includes(String(o.status))).length,
+    paidOrders: orders.filter(o => o.paymentStatus === 'paid').length,
+    pendingCancellations: orders.filter(o => o.cancellation && o.cancellation.status === 'pending').length,
+    pendingRefunds: orders.filter(o => o.refund && o.refund.status === 'pending').length,
+    time: new Date().toISOString()
+  });
+});
+
+app.post('/api/privacy/data-request', (req, res) => {
+  const db = loadDatabase();
+  const phone = cleanString((req.body || {}).phone || '', 30);
+  const email = cleanString((req.body || {}).email || '', 120);
+  const requestType = ['access', 'correction', 'export', 'deletion'].includes((req.body || {}).type)
+    ? (req.body || {}).type
+    : '';
+  const details = cleanString((req.body || {}).details || '', 1000);
+  if (!phone && !email) return res.status(400).json({ success: false, message: 'A phone number or email is required.' });
+  if (!requestType) return res.status(400).json({ success: false, message: 'Choose the type of privacy request.' });
+  db.privacyRequests = Array.isArray(db.privacyRequests) ? db.privacyRequests : [];
+  db.privacyRequests.unshift({
+    id: 'PR-' + Date.now().toString(36).toUpper(),
+    type: requestType,
+    phone,
+    email,
+    details,
+    status: 'pending',
+    requestedAt: new Date().toISOString()
+  });
+  saveDatabase(db);
+  res.status(202).json({ success: true, message: 'Your privacy request has been submitted for review.' });
 });
 
 // Friendly JSON error handler (e.g. oversized photo / receipt payload)

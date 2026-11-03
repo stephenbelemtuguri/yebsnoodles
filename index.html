@@ -20,6 +20,16 @@
   <meta name="twitter:image" content="https://yebsnoodles.onrender.com/logo.png">
   <meta name="description" content="Fresh, satisfying spaghetti and noodles from YEBS Noodles. Order for pickup or delivery with live real-time GPS tracking in Accra.">
   <title>YEBS Noodles | Fresh from our kitchen & Live Order Tracking</title>
+  <style>
+    .skip-link { position: fixed; left: 12px; top: -80px; z-index: 99999; padding: 12px 16px; background: #fff; color: #173d30; font-weight: 800; border-radius: 8px; }
+    .skip-link:focus { top: 12px; }
+    .cookie-consent { position: fixed; left: 50%; bottom: 20px; z-index: 15000; transform: translateX(-50%); width: min(680px, calc(100% - 28px)); display: none; gap: 16px; align-items: center; justify-content: space-between; padding: 16px; border-radius: 14px; background: #173d30; color: white; box-shadow: 0 18px 50px rgba(0,0,0,.32); }
+    .cookie-consent.open { display: flex; }
+    .cookie-consent p { margin: 0; font-size: .88rem; }
+    .cookie-consent a { color: #e9bd68; text-decoration: underline; }
+    .cookie-consent button { border: 0; border-radius: 999px; padding: 10px 16px; background: #e9bd68; color: #173d30; font-weight: 800; white-space: nowrap; }
+    @media (max-width: 640px) { .cookie-consent { align-items: stretch; flex-direction: column; } }
+  </style>
   <link rel="canonical" href="https://yebsnoodles.onrender.com/">
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css" onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';">
@@ -989,6 +999,11 @@
   <link rel="stylesheet" href="mobile.css">
 </head>
 <body>
+  <a class="skip-link" href="#mainContent">Skip to main content</a>
+  <div class="cookie-consent" id="cookieConsent" role="dialog" aria-live="polite" aria-label="Privacy choices">
+    <p>YEBS uses essential storage for orders, secure sign-in, preferences, and delivery tracking. Optional preferences can be changed anytime. <a href="/privacy.html">Privacy policy</a></p>
+    <button type="button" id="acceptCookies">Accept</button>
+  </div>
   <div class="page-video-frame" aria-hidden="true">
     <video class="page-exploded-video" id="pageExplodedVideo" src="assets/yebs-exploded-view.mp4" poster="img_food_1.jpg" muted playsinline preload="auto" disablepictureinpicture></video>
   </div>
@@ -1117,7 +1132,7 @@
     </div>
   </div>
 
-  <main>
+  <main id="mainContent">
     <!-- Hero Section -->
     <section class="hero">
       <div class="wrap hero-grid">
@@ -5492,6 +5507,20 @@
       form.addEventListener('submit', (event) => { event.preventDefault(); const value = input.value.trim(); if (value) { input.value = ''; answer(value); } });
       document.querySelectorAll('[data-question]').forEach(button => button.addEventListener('click', () => answer(button.dataset.question)));
       loadRecommendations();
+    })();
+    (() => {
+      const banner = document.getElementById('cookieConsent');
+      const accept = document.getElementById('acceptCookies');
+      if (!banner || !accept) return;
+      try {
+        if (!localStorage.getItem('yebs_cookie_choice')) banner.classList.add('open');
+      } catch (_) {
+        banner.classList.add('open');
+      }
+      accept.addEventListener('click', () => {
+        try { localStorage.setItem('yebs_cookie_choice', 'essential-and-preferences'); } catch (_) {}
+        banner.classList.remove('open');
+      });
     })();
   </script>
 </body>
