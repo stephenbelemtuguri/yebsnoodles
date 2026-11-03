@@ -2265,7 +2265,8 @@
 
       if (res.success) {
         checkDriverAuth();
-        bootDriverDashboard();
+        const valid = await validateDriverSessionOnServer();
+        if (valid) bootDriverDashboard();
       } else if (res.pending) {
         // Account pending admin approval — show waiting screen
         showApprovalPendingScreen(res.driverId, res.driverName || username, username);

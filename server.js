@@ -32,7 +32,8 @@ app.use((req, res, next) => {
   const host = String(req.get('host') || '').split(':')[0].toLowerCase();
   const forwardedProto = String(req.get('x-forwarded-proto') || '').split(',')[0].trim();
   const productionHost = host === 'yebsnoodles.onrender.com' || process.env.RENDER === 'true';
-  if (productionHost && req.method === 'GET' && !['yebsnoodles.onrender.com'].includes(host)) {
+  const canonicalHost = 'yebsnoodles.onrender.com';
+  if (productionHost && req.method === 'GET' && host && host !== canonicalHost) {
     return res.redirect(308, `https://yebsnoodles.onrender.com${req.originalUrl}`);
   }
   if (productionHost && forwardedProto === 'http' && req.method === 'GET' && host === 'yebsnoodles.onrender.com') {

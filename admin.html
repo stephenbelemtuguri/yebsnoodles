@@ -3833,7 +3833,8 @@
         const remember = document.getElementById('adminRememberMe');
         persistAdminSession(!!(remember && remember.checked));
         adminPasswordInput.value = '';
-        unlockDashboard();
+        const valid = await validateAdminSessionOnServer();
+        if (valid) unlockDashboard();
       } else {
         // Check for rate-limit with countdown
         const retryMs = res.retryAfterMs || 0;
