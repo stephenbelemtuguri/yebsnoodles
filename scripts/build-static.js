@@ -21,7 +21,7 @@ const FILES = [
   'sitemap.xml'
 ];
 
-const DIRS = ['public', 'vendor'];
+const DIRS = ['public', 'vendor', 'assets'];
 
 const ROOT_ASSET_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico', '.gif', '.css', '.woff', '.woff2']);
 

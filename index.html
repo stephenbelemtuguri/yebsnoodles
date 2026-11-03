@@ -183,8 +183,8 @@
     .track-input:focus { border-color: var(--forest); }
 
     /* Hero Section */
-    .hero { padding: 48px 0 54px; overflow: hidden; }
-    .hero-grid { display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: 48px; }
+    .hero { min-height: 180vh; padding: 0; overflow: clip; }
+    .hero-grid { position: sticky; top: 80px; height: calc(100vh - 80px); min-height: 620px; display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: 48px; }
     .eyebrow { display: flex; align-items: center; gap: 9px; margin: 0 0 16px; color: var(--leaf); font-size: .75rem; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; }
     .eyebrow::before { width: 27px; height: 2px; content: ""; background: var(--orange); }
     h1, h2, h3, p { margin-top: 0; }
@@ -198,9 +198,9 @@
     .hero-stamp { position: absolute; right: 0px; bottom: 30px; width: 120px; height: 120px; display: grid; align-content: center; justify-items: center; border: 5px solid var(--cream); border-radius: 50%; background: rgb(23 61 48 / 88%); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: white; text-align: center; transform: rotate(8deg); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
     .hero-stamp strong { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; color: var(--gold); }
     .hero-stamp span { color: #e4d6b7; font-size: .62rem; letter-spacing: .13em; text-transform: uppercase; }
-    .meal-story { position: relative; height: 520px; overflow: hidden; border-radius: 8px; background: #073d2b; isolation: isolate; }
-    .meal-story::before { position: absolute; inset: 0; z-index: 0; content: ''; background: radial-gradient(circle at 60% 45%, rgb(255 206 92 / 20%), transparent 32%), linear-gradient(145deg, #073d2b, #06271d); }
-    .meal-stage { position: absolute; inset: 0; }
+    .meal-story { position: relative; height: min(520px, calc(100vh - 150px)); overflow: hidden; border-radius: 8px; background: #073d2b; isolation: isolate; box-shadow: 0 24px 60px rgb(23 61 48 / 18%); }
+    .meal-story::after { position: absolute; inset: 0; z-index: 2; content: ''; pointer-events: none; background: linear-gradient(180deg, rgb(6 39 29 / 6%), rgb(6 39 29 / 5%) 68%, rgb(6 39 29 / 52%)); }
+    .meal-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; }
     .meal-plated { position: absolute; z-index: 2; left: 50%; top: 52%; width: min(92%, 520px); aspect-ratio: 1.18; transform: translate(-50%, -50%) scale(.64); opacity: 0; object-fit: cover; border-radius: 50%; filter: saturate(.92) contrast(1.04); box-shadow: 0 28px 70px rgb(0 0 0 / 38%); will-change: transform, opacity; }
     .meal-ingredient { position: absolute; z-index: 3; left: 50%; top: 50%; width: 82px; height: 82px; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / 55%); border-radius: 50%; background: rgb(255 250 235 / 94%); color: #173d30; font-size: .68rem; font-weight: 900; text-align: center; box-shadow: 0 14px 32px rgb(0 0 0 / 28%); will-change: transform, opacity; }
     .meal-ingredient:nth-of-type(1) { --x: -170px; --y: -150px; }
@@ -212,7 +212,7 @@
     .meal-copy strong { display: block; font-family: var(--serif); font-size: clamp(1.25rem, 3vw, 1.8rem); }
     .meal-copy span { font-size: .78rem; }
     .meal-steam { position: absolute; z-index: 4; left: 50%; top: 25%; width: 8px; height: 90px; border-radius: 50%; opacity: 0; background: linear-gradient(to top, rgb(255 255 255 / 70%), transparent); filter: blur(6px); transform: rotate(10deg); }
-    @media (max-width: 760px) { .meal-story { height: 430px; } .meal-ingredient { width: 68px; height: 68px; font-size: .62rem; } .meal-ingredient:nth-of-type(1) { --x: -118px; --y: -125px; } .meal-ingredient:nth-of-type(2) { --x: 118px; --y: -105px; } .meal-ingredient:nth-of-type(3) { --x: -135px; --y: 80px; } .meal-ingredient:nth-of-type(4) { --x: 135px; --y: 95px; } }
+    @media (max-width: 760px) { .hero { min-height: 150vh; } .hero-grid { top: 70px; height: calc(100vh - 70px); min-height: 660px; grid-template-columns: 1fr; align-content: center; gap: 24px; } .hero-grid > div:first-child { position: relative; z-index: 3; } h1 { font-size: clamp(2.55rem, 13vw, 4rem); } .hero-copy { font-size: .94rem; line-height: 1.55; } .meal-story { height: min(42vh, 330px); } }
     @media (prefers-reduced-motion: reduce) { .meal-ingredient, .meal-plated, .meal-steam { transition: none !important; } }
 
     .intro-strip { border-block: 1px solid var(--line); background: #fffdf8; }
@@ -1120,19 +1120,11 @@
             </button>
           </div>
         </div>
-        <div class="hero-visual meal-story" id="mealStory" aria-label="The fresh ingredients and cooking process behind YEBS spaghetti">
-          <div class="meal-stage">
-            <div class="meal-ingredient" style="--x:-170px;--y:-150px">Raw spaghetti</div>
-            <div class="meal-ingredient" style="--x:170px;--y:-125px">Fresh vegetables</div>
-            <div class="meal-ingredient" style="--x:-205px;--y:95px">Chicken &amp; sausage</div>
-            <div class="meal-ingredient" style="--x:205px;--y:115px">House sauce</div>
-            <div class="meal-ingredient" style="--x:0px;--y:-205px">Golden egg</div>
-            <div class="meal-steam" aria-hidden="true"></div>
-            <img class="meal-plated" src="food_photo.png" alt="Completed YEBS spaghetti meal with chicken, sausage, vegetables and egg" fetchpriority="high">
-          </div>
+        <div class="hero-visual meal-story" id="mealStory" aria-label="Exploded video view of the ingredients in YEBS spaghetti">
+          <video class="meal-video" id="heroExplodedVideo" src="assets/yebs-exploded-view.mp4" muted playsinline preload="auto" aria-label="YEBS spaghetti ingredients exploded view"></video>
           <div class="meal-copy" aria-live="polite">
-            <strong id="mealStageTitle">Fresh ingredients</strong>
-            <span id="mealStageText">Selected and prepared for every order</span>
+            <strong id="mealStageTitle">Every ingredient matters</strong>
+            <span id="mealStageText">Watch the YEBS meal come together</span>
           </div>
         </div>
       </div>
@@ -1904,55 +1896,45 @@
 
     initStore();
 
-    const mealStory = document.getElementById('mealStory');
-    if (mealStory && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const mealPlate = mealStory.querySelector('.meal-plated');
-      const mealIngredients = [...mealStory.querySelectorAll('.meal-ingredient')];
-      const mealSteam = mealStory.querySelector('.meal-steam');
-      const mealTitle = document.getElementById('mealStageTitle');
-      const mealText = document.getElementById('mealStageText');
+    const hero = document.querySelector('.hero');
+    const heroVideo = document.getElementById('heroExplodedVideo');
+    const mealTitle = document.getElementById('mealStageTitle');
+    const mealText = document.getElementById('mealStageText');
+    if (hero && heroVideo) {
       const stages = [
-        ['Fresh ingredients', 'Selected and prepared for every order'],
-        ['Tossed with care', 'Vegetables meet the sizzling sauce'],
-        ['Cooked over open heat', 'Spaghetti, chicken and sausage come together'],
-        ['Ready to serve', 'A complete fresh YEBS meal']
+        [0, 'Every ingredient matters', 'Watch the fresh YEBS meal come together'],
+        [.28, 'Prepared with care', 'Spaghetti, sausage, vegetables and golden egg'],
+        [.58, 'Cooked fresh to order', 'One colourful serving, ready to enjoy'],
+        [.82, 'Your YEBS meal', 'The standard of delicacy in every bite']
       ];
-      let mealFrame = 0;
+      let heroFrame = 0;
 
-      function paintMealStory() {
-        const rect = mealStory.getBoundingClientRect();
-        const viewport = window.innerHeight || 800;
-        const travel = Math.max(1, rect.height + viewport * 0.7);
-        const progress = Math.max(0, Math.min(1, (viewport * 0.82 - rect.top) / travel));
-        mealIngredients.forEach((item, index) => {
-          const delay = index * 0.035;
-          const local = Math.max(0, Math.min(1, (progress - delay) / 0.56));
-          const x = parseFloat(getComputedStyle(item).getPropertyValue('--x')) || 0;
-          const y = parseFloat(getComputedStyle(item).getPropertyValue('--y')) || 0;
-          item.style.opacity = String(local < 0.97 ? 1 - local * 0.12 : 0.88);
-          item.style.transform = `translate(calc(-50% + ${x * (1 - local)}px), calc(-50% + ${y * (1 - local)}px)) rotate(${(1 - local) * (index % 2 ? 18 : -18)}deg) scale(${0.86 + local * 0.14})`;
-        });
-        const plated = Math.max(0, Math.min(1, (progress - 0.48) / 0.42));
-        mealPlate.style.opacity = String(plated);
-        mealPlate.style.transform = `translate(-50%, -50%) scale(${0.64 + plated * 0.36}) rotate(${(1 - plated) * 3}deg)`;
-        mealSteam.style.opacity = String(Math.max(0, Math.min(1, (progress - 0.72) / 0.18)));
-        mealSteam.style.transform = `translateX(-50%) translateY(${30 - progress * 70}px) rotate(10deg)`;
-        const stage = Math.min(stages.length - 1, Math.floor(progress * stages.length));
-        mealTitle.textContent = stages[stage][0];
-        mealText.textContent = stages[stage][1];
+      function syncHeroVideo() {
+        heroFrame = 0;
+        const rect = hero.getBoundingClientRect();
+        const travel = Math.max(1, hero.offsetHeight - window.innerHeight);
+        const progress = Math.max(0, Math.min(1, -rect.top / travel));
+        if (Number.isFinite(heroVideo.duration) && heroVideo.duration > 0) {
+          const target = heroVideo.duration * progress;
+          if (Math.abs(heroVideo.currentTime - target) > 0.045) {
+            heroVideo.currentTime = target;
+          }
+        }
+        const stage = stages.reduce((current, next) => progress >= next[0] ? next : current, stages[0]);
+        mealTitle.textContent = stage[1];
+        mealText.textContent = stage[2];
       }
 
-      function scheduleMealPaint() {
-        if (mealFrame) return;
-        mealFrame = requestAnimationFrame(() => {
-          mealFrame = 0;
-          paintMealStory();
-        });
+      function scheduleHeroVideoSync() {
+        if (heroFrame) return;
+        heroFrame = requestAnimationFrame(syncHeroVideo);
       }
 
-      window.addEventListener('scroll', scheduleMealPaint, { passive: true });
-      window.addEventListener('resize', scheduleMealPaint);
-      paintMealStory();
+      heroVideo.pause();
+      heroVideo.addEventListener('loadedmetadata', syncHeroVideo, { once: true });
+      window.addEventListener('scroll', scheduleHeroVideoSync, { passive: true });
+      window.addEventListener('resize', scheduleHeroVideoSync);
+      syncHeroVideo();
     }
 
     const cart = {};
