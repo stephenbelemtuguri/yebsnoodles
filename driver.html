@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <meta name="theme-color" content="#173d30">
   <link rel="manifest" href="manifest.json">
   <title>YEBS Noodles | Driver Batch Dispatch & Pickup Point Verification</title>
@@ -901,12 +902,20 @@
             </button>
             <button type="button" id="driverForgotBtn" class="auth-forgot-link">Forgot your password?</button>
           </form>
+          <div id="driverGoogleLoginButton" style="margin-top:12px;"></div>
           <div style="background:#f8f6f0; border:1px solid #e8e3d6; border-radius:8px; padding:12px; margin-top:14px; font-size:0.8rem; color:var(--muted); line-height:1.4;">
             New rider joining YEBS? Click the <strong>Driver Sign Up</strong> tab above to create an account and receive your auto-generated rider username.
           </div>
         </div>
         <div id="driverSignupFormWrap" style="display:none;">
           <form id="driverSignupForm">
+            <div id="driverGoogleSignupStep">
+              <div style="font-weight:800;color:var(--forest);margin-bottom:6px;">1. Verify with Google</div>
+              <div style="font-size:.78rem;color:var(--muted);margin-bottom:10px;">Google verifies your identity first. You will then add your number and live face photo.</div>
+              <div id="driverGoogleSignupButton"></div>
+              <div id="driverGoogleStatus" style="font-size:.78rem;color:var(--muted);margin-top:8px;"></div>
+            </div>
+            <div id="driverSignupDetails" style="display:none;">
             <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px;">
               <div class="auth-form-group">
                 <label for="driverSignupFname">First Name</label>
@@ -950,9 +959,9 @@
               <label for="driverSignupPlate">Number Plate / Registration (Optional)</label>
               <input type="text" id="driverSignupPlate" class="auth-input" placeholder="e.g. GN-4819-24" autocomplete="off">
             </div>
-            <div class="auth-form-group">
+            <div class="auth-form-group" id="driverSignupPasswordWrap">
               <label for="driverSignupPassword">Create Password</label>
-              <input type="password" id="driverSignupPassword" class="auth-input" placeholder="••••••••" required minlength="6" autocomplete="new-password">
+              <input type="password" id="driverSignupPassword" class="auth-input" placeholder="••••••••" minlength="6" autocomplete="new-password">
             </div>
             <div class="webcam-capture-box" id="webcamCaptureBox">
               <div style="font-weight:700; color:var(--forest); font-size:0.88rem; margin-bottom:6px;">Live face photo (customers see this)</div>
@@ -975,6 +984,7 @@
             <button type="submit" id="driverSignupSubmitBtn" class="btn btn-forest" style="width:100%; padding:12px; font-size:0.95rem; margin-top:8px;">
               &#9989; Submit application for approval
             </button>
+            </div>
           </form>
         </div>
       </div>
@@ -1008,6 +1018,8 @@
       formatTelHref,
       addReliableBasemap,
       OWNER_WHATSAPP_NUMBER,
+      apiDriverGoogleLogin,
+      apiGoogleClientId,
       apiDriverSignup,
       apiDriverLogin,
       apiSetPickupPoint,
@@ -2149,6 +2161,55 @@
     const driverSignupForm = document.getElementById('driverSignupForm');
     const driverAuthError = document.getElementById('driverAuthError');
     const driverSignupSuccessBox = document.getElementById('driverSignupSuccessBox');
+    let driverGoogleCredential = '';
+
+    function handleGoogleCredential(response, mode) {
+      if (mode === 'login') {
+        apiDriverGoogleLogin(response.credential).then(result => {
+          if (result.success) {
+            checkDriverAuth();
+            validateDriverSessionOnServer().then(valid => { if (valid) bootDriverDashboard(); });
+          } else if (result.pending) {
+            showApprovalPendingScreen(result.driverId || '', '', '');
+          } else {
+            driverAuthError.textContent = result.message || 'Google account is not registered as an approved driver.';
+            driverAuthError.style.display = 'block';
+          }
+        });
+        return;
+      }
+      driverGoogleCredential = response.credential;
+      try {
+        const payload = JSON.parse(atob(response.credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        const email = document.getElementById('driverSignupEmail');
+        const fname = document.getElementById('driverSignupFname');
+        const lname = document.getElementById('driverSignupLname');
+        if (email && !email.value) email.value = payload.email || '';
+        if (fname && !fname.value) fname.value = payload.given_name || '';
+        if (lname && !lname.value) lname.value = payload.family_name || '';
+      } catch (_) {}
+      document.getElementById('driverGoogleStatus').textContent = 'Google verified. Completing your driver details…';
+      document.getElementById('driverGoogleSignupStep').style.display = 'none';
+      document.getElementById('driverSignupDetails').style.display = 'block';
+      document.getElementById('driverSignupPasswordWrap').style.display = 'none';
+      startLiveCamera(true);
+    }
+
+    async function initializeGoogleSignIn() {
+      const config = await apiGoogleClientId();
+      if (!config.configured || !window.google || !window.google.accounts) return;
+      window.google.accounts.id.initialize({
+        client_id: config.clientId,
+        callback: response => handleGoogleCredential(response, document.getElementById('driverSignupFormWrap').style.display === 'none' ? 'login' : 'signup')
+      });
+      window.google.accounts.id.renderButton(document.getElementById('driverGoogleLoginButton'), { theme: 'outline', size: 'large', width: 280 });
+      window.google.accounts.id.initialize({
+        client_id: config.clientId,
+        callback: response => handleGoogleCredential(response, document.getElementById('driverSignupFormWrap').style.display === 'none' ? 'login' : 'signup')
+      });
+      window.google.accounts.id.renderButton(document.getElementById('driverGoogleSignupButton'), { theme: 'filled_blue', size: 'large', text: 'continue_with', width: 280 });
+    }
+    window.addEventListener('load', () => setTimeout(initializeGoogleSignIn, 300));
 
     function bootDriverDashboard() {
       initPickupPoints();
@@ -2263,8 +2324,8 @@
       driverLoginFormWrap.style.display = 'none';
       driverAuthError.style.display = 'none';
       if (driverAuthModal) driverAuthModal.scrollTop = 0;
-      // A live face photo is mandatory, so open the webcam immediately.
-      if (!capturedPhotoData) startLiveCamera(true);
+      // The live camera starts after Google verification so personal details
+      // are requested in the intended order.
     });
 
     // Handle Driver Login
@@ -2469,7 +2530,7 @@
       btn.disabled = true;
       btn.textContent = 'Creating account & generating username...';
 
-      const res = await apiDriverSignup({ fname, lname, phone, email, password, vehicle: vehicleFull, photo: capturedPhotoData });
+      const res = await apiDriverSignup({ fname, lname, phone, email, password, vehicle: vehicleFull, photo: capturedPhotoData, googleCredential: driverGoogleCredential });
       btn.disabled = false;
       btn.textContent = '✨ Submit application for approval';
 

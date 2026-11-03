@@ -1378,12 +1378,42 @@ export async function apiValidateSession(role) {
   }
 }
 
-export async function apiDriverSignup({ fname, lname, phone, email, password, vehicle, photo }) {
+export async function apiDriverGoogleLogin(credential) {
+  try {
+    const response = await fetch(`${API_BASE}/api/auth/driver/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && data.success && data.token) {
+      sessionStorage.setItem('yebs_driver_token', data.token);
+      localStorage.setItem('yebs_driver_token_persist', data.token);
+      sessionStorage.setItem('yebs_driver_user', JSON.stringify(data.driver));
+      localStorage.setItem('yebs_driver_user_persist', JSON.stringify(data.driver));
+      return data;
+    }
+    return { success: false, pending: !!data.pending, rejected: !!data.rejected, driverId: data.driverId, message: data.message };
+  } catch (_) {
+    return { success: false, message: 'Cannot reach the YEBS server.' };
+  }
+}
+
+export async function apiGoogleClientId() {
+  try {
+    const response = await fetch(`${API_BASE}/api/auth/google/client-id`);
+    return await response.json();
+  } catch (_) {
+    return { success: false, configured: false };
+  }
+}
+
+export async function apiDriverSignup({ fname, lname, phone, email, password, vehicle, photo, googleCredential }) {
   try {
     const res = await fetch(`${API_BASE}/api/auth/driver/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fname, lname, phone, email, password, vehicle, photo })
+      body: JSON.stringify({ fname, lname, phone, email, password, vehicle, photo, googleCredential })
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.success) {
