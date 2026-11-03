@@ -1102,7 +1102,12 @@ function ensureSystemAccounts(db) {
 
 function loadDatabase() {
   const cached = store.get();
-  if (cached) return cached;
+  if (cached) {
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports']) {
+      if (!Array.isArray(cached[key])) cached[key] = [];
+    }
+    return cached;
+  }
 
   if (!fs.existsSync(DB_FILE)) {
     const initialData = {
@@ -1147,12 +1152,18 @@ function loadDatabase() {
       try { fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2)); } catch (e) { /* read-only fs */ }
     }
     ensureSystemAccounts(initialData);
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports']) {
+      if (!Array.isArray(initialData[key])) initialData[key] = [];
+    }
     return initialData;
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     if (ensureSystemAccounts(parsed) && store.remoteMode === 'local') {
       try { fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2)); } catch (e) { /* read-only fs */ }
+    }
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports']) {
+      if (!Array.isArray(parsed[key])) parsed[key] = [];
     }
     return parsed;
   } catch (e) {

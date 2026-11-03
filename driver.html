@@ -1911,6 +1911,19 @@
           drawRouteToTarget(lat, lng);
         }
       }
+
+      const mapButton = goButton || e.target.closest('.view-on-map-btn');
+      if (mapButton && mapContainer) {
+        mapContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => {
+          map.invalidateSize();
+          const lat = parseFloat(mapButton.dataset.lat);
+          const lng = parseFloat(mapButton.dataset.lng);
+          if (mapButton.classList.contains('view-on-map-btn') && Number.isFinite(lat) && Number.isFinite(lng)) {
+            map.setView([lat, lng], 16);
+          }
+        }, 350);
+      }
     });
 
     // ----------------------------------------------------
