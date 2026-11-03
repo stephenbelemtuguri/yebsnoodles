@@ -24,8 +24,8 @@ const ASSETS_TO_CACHE = [
   './img_food_4.jpg',
   './ghana_spag_chicken.jpg',
   './assets/yebs-exploded-view.mp4',
-  './assets/admin-background.jfif',
-  './assets/delivery-background.jfif',
+  './assets/admin-background.jpg',
+  './assets/delivery-background.jpg',
   './manifest.json'
 ];
 
