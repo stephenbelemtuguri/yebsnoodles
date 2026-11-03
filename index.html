@@ -5355,5 +5355,79 @@
       window.closeThankYou = close;
     })();
   </script>
+  <style>
+    .yebs-ai-launcher { position: fixed; right: 18px; bottom: 18px; z-index: 12000; border: 0; border-radius: 999px; width: 58px; height: 58px; display:grid; place-items:center; font-size:26px; background:#163f31; color:white; box-shadow:0 10px 30px rgba(0,0,0,.28); cursor:pointer; }
+    .yebs-ai-panel { position: fixed; right: 18px; bottom: 86px; z-index: 12001; width:min(360px, calc(100vw - 36px)); max-height:min(520px, calc(100vh - 110px)); display:none; flex-direction:column; overflow:hidden; border-radius:18px; background:#fff; box-shadow:0 18px 55px rgba(0,0,0,.32); border:1px solid rgba(22,63,49,.16); }
+    .yebs-ai-panel.open { display:flex; }
+    .yebs-ai-head { background:#163f31; color:white; padding:14px 16px; font-weight:800; }
+    .yebs-ai-head small { display:block; opacity:.78; font-weight:500; margin-top:2px; }
+    .yebs-ai-close { float:right; border:0; background:transparent; color:white; font-size:20px; cursor:pointer; }
+    .yebs-ai-messages { min-height:180px; max-height:330px; overflow:auto; padding:14px; }
+    .yebs-ai-message { max-width:88%; margin-bottom:8px; padding:9px 11px; border-radius:12px 12px 12px 3px; background:#eef4ef; color:#1e2621; font-size:.86rem; line-height:1.35; }
+    .yebs-ai-message.user { margin-left:auto; border-radius:12px 12px 3px 12px; background:#f9e9dc; }
+    .yebs-ai-suggestions { display:flex; gap:6px; flex-wrap:wrap; padding:0 14px 10px; }
+    .yebs-ai-suggestions button { border:1px solid #d4dfd7; border-radius:999px; background:white; color:#163f31; padding:7px 9px; font-size:.76rem; cursor:pointer; }
+    .yebs-ai-input { display:flex; gap:8px; padding:10px 14px 14px; border-top:1px solid #e7ece8; }
+    .yebs-ai-input input { flex:1; min-width:0; border:1px solid #ccd7d0; border-radius:999px; padding:10px 12px; }
+    .yebs-ai-input button { border:0; border-radius:50%; width:40px; height:40px; background:#ef7f45; color:white; cursor:pointer; }
+  </style>
+  <section class="yebs-ai-panel" id="yebsAiPanel" aria-label="YEBS AI meal assistant">
+    <div class="yebs-ai-head">✨ YEBS AI Assistant<button class="yebs-ai-close" id="yebsAiClose" aria-label="Close assistant">×</button><small>Meal recommendations and order help</small></div>
+    <div class="yebs-ai-messages" id="yebsAiMessages"></div>
+    <div class="yebs-ai-suggestions" id="yebsAiSuggestions">
+      <button data-question="Recommend something popular">Popular meals</button>
+      <button data-question="What is spicy and filling?">Spicy & filling</button>
+      <button data-question="Help me choose my meal">Help me choose</button>
+    </div>
+    <form class="yebs-ai-input" id="yebsAiForm"><input id="yebsAiInput" placeholder="Ask for a meal recommendation…" autocomplete="off"><button aria-label="Send">➤</button></form>
+  </section>
+  <button class="yebs-ai-launcher" id="yebsAiLauncher" aria-label="Open YEBS AI assistant">✨</button>
+  <script>
+    (() => {
+      const launcher = document.getElementById('yebsAiLauncher');
+      const panel = document.getElementById('yebsAiPanel');
+      const close = document.getElementById('yebsAiClose');
+      const form = document.getElementById('yebsAiForm');
+      const input = document.getElementById('yebsAiInput');
+      const messages = document.getElementById('yebsAiMessages');
+      let recommendations = [];
+
+      function addMessage(text, user = false) {
+        const item = document.createElement('div');
+        item.className = 'yebs-ai-message' + (user ? ' user' : '');
+        item.textContent = text;
+        messages.appendChild(item);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      async function loadRecommendations() {
+        try {
+          const response = await fetch('/api/recommendations?limit=4');
+          const data = await response.json();
+          recommendations = Array.isArray(data.recommendations) ? data.recommendations : [];
+        } catch (_) {}
+      }
+
+      async function answer(question) {
+        addMessage(question, true);
+        await loadRecommendations();
+        const names = recommendations.map(item => item.name || item.title).filter(Boolean);
+        const response = names.length
+          ? 'Based on your tastes and popular orders, try: ' + names.join(', ') + '. Tap a meal card to add it to your order.'
+          : 'I recommend starting with our signature Ghanaian spaghetti and chicken. Use the menu filters to find spicy, vegetarian, or coming-soon options.';
+        addMessage(response);
+      }
+
+      launcher.addEventListener('click', () => {
+        const opening = !panel.classList.contains('open');
+        panel.classList.toggle('open', opening);
+        if (opening && !messages.childElementCount) addMessage('Hi! Tell me what you feel like eating and I’ll recommend a YEBS meal.');
+      });
+      close.addEventListener('click', () => panel.classList.remove('open'));
+      form.addEventListener('submit', (event) => { event.preventDefault(); const value = input.value.trim(); if (value) { input.value = ''; answer(value); } });
+      document.querySelectorAll('[data-question]').forEach(button => button.addEventListener('click', () => answer(button.dataset.question)));
+      loadRecommendations();
+    })();
+  </script>
 </body>
 </html>

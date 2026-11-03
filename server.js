@@ -53,6 +53,20 @@ app.use(cors());
 // so the default 100kb JSON limit is far too small.
 app.use(express.json({ limit: '12mb' }));
 
+// Week 1/2 feature API modules.
+app.use('/api/customers', require('./src/routes/customers'));
+app.use('/api/drivers', require('./src/routes/drivers'));
+app.use('/api/analytics', require('./src/routes/analytics'));
+app.use('/api/reviews', require('./src/routes/reviews'));
+app.use('/api/chat', require('./src/routes/chat'));
+app.use('/api/menu', require('./src/routes/menu'));
+app.use('/api/inventory', require('./src/routes/inventory'));
+app.use('/api/loyalty', require('./src/routes/loyalty'));
+app.use('/api/referrals', require('./src/routes/referrals'));
+app.use('/api/receipts', require('./src/routes/receipts'));
+app.use('/api/notifications', require('./src/routes/notifications'));
+app.use('/api/pricing', require('./src/routes/dynamicPricing'));
+
 app.use('/database.json', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.status(200).json({ success: true, storage: 'managed-by-api' });
