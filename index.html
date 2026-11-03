@@ -3051,7 +3051,7 @@
           copy: newOrder.congratulationsMessage || undefined,
           note: payMode === "now" && newOrder.paymentMode !== "cash"
             ? 'Finish the mobile money step and your order is fully confirmed.'
-            : notifyNote
+            : 'The kitchen WhatsApp alert is being sent in the background.'
         });
       }
 
@@ -3060,7 +3060,10 @@
       if (payMode === "now" && newOrder.paymentMode !== "cash") {
         openPayNowModal(newOrder, payNetwork);
       } else {
-        formFeedback.textContent = `Order ${newOrder.id} ${editingThisOrder ? 'updated' : 'placed'}. Pay GH\u20b5${Number(newOrder.total).toFixed(2)} cash to the rider at handover.`;
+        const cashLine = document.createElement('div');
+        cashLine.style.cssText = 'margin-top:6px; font-size:.8rem; color:#166534;';
+        cashLine.textContent = `Pay GH₵${Number(newOrder.total).toFixed(2)} cash to the rider at handover.`;
+        formFeedback.appendChild(cashLine);
       }
     });
 
