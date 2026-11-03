@@ -13,6 +13,8 @@ try {
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -28,6 +30,25 @@ if (resolvedAdminCredentialResetVersion) {
 
 const app = express();
 app.set('trust proxy', 1);
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
+app.use('/api/auth', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many login attempts. Please try again later.' }
+}));
+app.use('/api/ai/chat', rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, reply: 'Please wait a moment before sending another message.' }
+}));
 app.use((req, res, next) => {
   const host = String(req.get('host') || '').split(':')[0].toLowerCase();
   const forwardedProto = String(req.get('x-forwarded-proto') || '').split(',')[0].trim();
@@ -5932,7 +5953,33 @@ app.get('/api/health', (req, res) => {
       accountName: getMomoSettings(db).accountName,
       apiConfigured: momoApiConfig().configured,
       networks: listMomoNetworks().map(n => ({ id: n.id, ussd: n.ussd, apiReady: n.apiReady }))
+    },
+    ai: {
+      configured: Boolean(process.env.AI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY),
+      providerFallback: true
     }
+  });
+});
+
+app.get('/api/ready', (req, res) => {
+  const db = loadDatabase();
+  const checks = {
+    database: store.canPersist() || store.remoteMode === 'local',
+    whatsapp: whatsappReadiness().configured,
+    momo: momoApiConfig().configured,
+    ai: Boolean(process.env.AI_API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY)
+  };
+  const ready = checks.database;
+  res.status(ready ? 200 : 503).json({
+    success: ready,
+    ready,
+    checks,
+    optionalServices: {
+      whatsapp: checks.whatsapp ? 'ready' : 'configuration-required',
+      momo: checks.momo ? 'ready' : 'configuration-required',
+      ai: checks.ai ? 'ready' : 'fallback-active'
+    },
+    time: new Date().toISOString()
   });
 });
 
