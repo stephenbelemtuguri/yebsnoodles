@@ -198,7 +198,13 @@ General capability:
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
   if (geminiKey) {
     try {
-      const geminiModel = process.env.GEMINI_MODEL || process.env.AI_MODEL || 'gemini-2.0-flash';
+      const configuredGeminiModel = String(process.env.GEMINI_MODEL || process.env.AI_MODEL || '').trim();
+      const geminiModels = [...new Set([
+        configuredGeminiModel,
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+        'gemini-flash-latest'
+      ].filter(Boolean))];
       const contents = suppliedHistory.slice(-10).filter(entry =>
         entry && typeof entry.content === 'string' && ['user', 'assistant', 'model'].includes(entry.role)
       ).map(entry => ({
@@ -206,7 +212,6 @@ General capability:
         parts: [{ text: entry.content.slice(0, 1200) }]
       }));
       contents.push({ role: 'user', parts: [{ text: message }] });
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
       const tools = [{
         functionDeclarations: [
           { name: 'inspect_dashboard', description: 'Inspect live YEBS operations counts and risks. Use for summaries, validation, maintenance checks, and staff requests.', parameters: { type: 'object', properties: {} } },
@@ -218,7 +223,11 @@ General capability:
         ]
       }];
       let lastReply = '';
-      for (let turn = 0; turn < 4; turn++) {
+      let geminiError = 'Gemini returned no usable response.';
+      for (const geminiModel of geminiModels) {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
+        let modelCompleted = false;
+        for (let turn = 0; turn < 4 && !modelCompleted; turn++) {
         const response = await fetch(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
@@ -231,14 +240,27 @@ General capability:
           }),
           signal: AbortSignal.timeout(20000)
         });
-        const data = await response.json();
+        const rawData = await response.text();
+        let data;
+        try {
+          data = JSON.parse(rawData);
+        } catch {
+          throw new Error(`Gemini ${geminiModel} returned invalid JSON.`);
+        }
         const candidate = data.candidates && data.candidates[0];
         const parts = candidate && candidate.content && candidate.content.parts || [];
-        if (!response.ok) throw new Error(data.error && data.error.message || `Gemini returned HTTP ${response.status}`);
+        if (!response.ok) {
+          geminiError = data.error && data.error.message || `Gemini returned HTTP ${response.status}`;
+          if (response.status === 404 || /not found|is not supported/i.test(geminiError)) continue;
+          break;
+        }
         const calls = parts.filter(part => part.functionCall);
         const textPart = parts.map(part => part.text || '').join('').trim();
         if (textPart) lastReply = textPart;
-        if (!calls.length) break;
+        if (!calls.length) {
+          if (lastReply) return res.json({ success: true, reply: lastReply, provider: 'gemini', model: geminiModel });
+          break;
+        }
         const functionResponses = [];
         for (const call of calls) {
           const args = call.functionCall.args || {};
@@ -286,6 +308,12 @@ General capability:
           functionResponses.push({ functionResponse: { name: call.functionCall.name, response: output } });
         }
         contents.push({ role: 'model', parts }, { role: 'user', parts: functionResponses });
+        }
+        if (!lastReply) {
+          geminiError = 'Gemini returned no text response.';
+        } else {
+          modelCompleted = true;
+        }
       }
       if (lastReply) return res.json({ success: true, reply: lastReply, provider: 'gemini' });
       console.error('[ai] Gemini returned no text response');
