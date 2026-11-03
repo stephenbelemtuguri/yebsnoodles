@@ -253,7 +253,8 @@ General capability:
         if (!response.ok) {
           geminiError = data.error && data.error.message || `Gemini returned HTTP ${response.status}`;
           geminiFailureReason = geminiError;
-          if (response.status === 404 || /not found|is not supported/i.test(geminiError)) continue;
+          if ([404, 429, 503].includes(response.status) ||
+              /not found|is not supported|high demand|unavailable|overloaded/i.test(geminiError)) continue;
           break;
         }
         const calls = parts.filter(part => part.functionCall);
