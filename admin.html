@@ -1051,6 +1051,10 @@
             </select>
             <button id="exportCsvBtn" class="btn btn-outline">📥 Export CSV</button>
           </div>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:8px;">
+            <small id="recordsCount" style="color:var(--muted); font-size:0.76rem;">Loading order history…</small>
+            <button id="loadOlderRecordsBtn" class="btn btn-outline btn-sm" style="display:none;">⬇️ Load older orders</button>
+          </div>
         </div>
 
         <div class="table-responsive">
@@ -1700,7 +1704,8 @@
               <span id="statusMsg_whatsapp" style="color:var(--muted); margin-left:auto;">Checking…</span>
             </div>
           </div>
-          <button type="button" id="refreshStatusBtn" class="btn" style="margin-top:14px; width:100%; padding:10px; font-size:0.88rem; background:var(--forest); color:white; border-radius:8px; border:0; cursor:pointer;">🔄 Refresh Status</button>
+          <button type="button" id="sendLatestOrderWhatsAppBtn" class="btn" style="margin-top:14px; width:100%; padding:10px; font-size:0.88rem; background:#16a34a; color:white; border-radius:8px; border:0; cursor:pointer;">💬 Send Latest Order to WhatsApp</button>
+          <button type="button" id="refreshStatusBtn" class="btn" style="margin-top:8px; width:100%; padding:10px; font-size:0.88rem; background:var(--forest); color:white; border-radius:8px; border:0; cursor:pointer;">🔄 Refresh Status</button>
         </div>
 
       </div>
@@ -1817,6 +1822,8 @@
       getPickupPoint,
       applyServerSession,
       startLiveOrderSync,
+      apiFetchOrders,
+      apiOrderStats,
       getMenuItems,
       saveMenuItems,
       apiFetchMenu,
@@ -1847,6 +1854,27 @@
     const recordSearch = document.getElementById('recordSearch');
     const recordFilterStatus = document.getElementById('recordFilterStatus');
     const exportCsvBtn = document.getElementById('exportCsvBtn');
+    const loadOlderRecordsBtn = document.getElementById('loadOlderRecordsBtn');
+    const recordsCount = document.getElementById('recordsCount');
+    // Order history is fetched page by page from the server, so a shop with
+    // 10,000 archived orders never downloads all of them to open this tab.
+    let recordRows = [];
+    let recordCursor = '';
+    let recordHasMore = false;
+    let recordLoading = false;
+    let recordRequestSeq = 0;
+    let orderStats = null;
+    let lastStatsAt = 0;
+
+    async function refreshOrderStats(force = false) {
+      if (!force && Date.now() - lastStatsAt < 20000) return;
+      lastStatsAt = Date.now();
+      const stats = await apiOrderStats();
+      if (stats) {
+        orderStats = stats;
+        renderDashboard();
+      }
+    }
     const adminFoodGrid = document.getElementById('adminFoodGrid');
 
     const ongoingSearch = document.getElementById('ongoingSearch');
@@ -1900,6 +1928,9 @@
 
         if (tabId === 'ongoingTab') {
           setTimeout(() => { initMap(); if (map) map.invalidateSize(); }, 150);
+        }
+        if (tabId === 'recordsTab' && typeof refreshRecords === 'function') {
+          refreshRecords({ reset: true });
         }
       });
     });
@@ -1986,14 +2017,24 @@
       }
       knownOrdersCount = orders.length;
 
-      kpiTotalOrders.textContent = orders.length;
       const ongoing = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled');
       const delivered = orders.filter(o => o.status === 'delivered');
-      const totalRev = orders.reduce((sum, o) => sum + (o.total || 0), 0);
 
-      kpiOngoingOrders.textContent = ongoing.length;
-      kpiDeliveredOrders.textContent = delivered.length;
-      kpiRevenue.textContent = `GH₵${totalRev}`;
+      // Prefer whole-history totals from the server: the browser only caches
+      // active orders plus the last day, so counting the cache would understate
+      // lifetime orders and revenue.
+      if (orderStats) {
+        kpiTotalOrders.textContent = orderStats.totalOrders;
+        kpiOngoingOrders.textContent = orderStats.ongoingOrders;
+        kpiDeliveredOrders.textContent = orderStats.deliveredOrders;
+        kpiRevenue.textContent = `GH₵${orderStats.netRevenue}`;
+      } else {
+        const totalRev = orders.reduce((sum, o) => sum + (o.total || 0), 0);
+        kpiTotalOrders.textContent = orders.length;
+        kpiOngoingOrders.textContent = ongoing.length;
+        kpiDeliveredOrders.textContent = delivered.length;
+        kpiRevenue.textContent = `GH₵${totalRev}`;
+      }
 
       if (ongoing.length === 0) {
         ongoingTableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--muted); padding:30px;">No ongoing orders at the moment. Real orders will populate here automatically.</td></tr>`;
@@ -2003,7 +2044,7 @@
 
       refreshActionPanel();
       renderRiderRoster();
-      renderRecordsTable();
+      if (recordRows.length) renderRecordsTable();
       populateInformDropdown();
       updateMapMarkers(orders);
       renderFoodMenuTab();
@@ -2107,21 +2148,57 @@
       }).join('');
     }
 
+    // The records tab reads pages from the server (newest first) instead of
+    // filtering the browser cache, so search and status filters still work
+    // across the full archive without downloading it.
+    async function refreshRecords({ reset = true } = {}) {
+      if (recordLoading) return;
+      recordLoading = true;
+      const seq = ++recordRequestSeq;
+      if (reset) {
+        recordRows = [];
+        recordCursor = '';
+        recordHasMore = false;
+      }
+      if (recordsCount) recordsCount.textContent = 'Loading order history…';
+      const statusValue = recordFilterStatus && recordFilterStatus.value !== 'ALL'
+        ? recordFilterStatus.value
+        : '';
+      const query = recordSearch ? recordSearch.value.trim() : '';
+      let page = null;
+      try {
+        page = await apiFetchOrders({
+          scope: 'all',
+          status: statusValue,
+          q: query,
+          limit: 100,
+          cursor: recordCursor,
+          summary: false
+        });
+      } catch (e) {
+        page = null;
+      }
+      if (seq !== recordRequestSeq) { recordLoading = false; return; }
+      recordLoading = false;
+      if (!page) {
+        if (recordsCount) recordsCount.textContent = 'Could not load order history. Check your connection and try again.';
+        return;
+      }
+      const known = new Set(recordRows.map(o => String(o.id)));
+      recordRows = recordRows.concat(page.filter(o => o && !known.has(String(o.id))));
+      recordCursor = page.nextCursor || '';
+      recordHasMore = Boolean(page.hasMore && recordCursor);
+      renderRecordsTable();
+    }
+
     function renderRecordsTable() {
-      const orders = getOrders();
-      const query = (recordSearch.value || '').trim().toLowerCase();
-      const statusFilter = recordFilterStatus.value;
-
-      const filtered = orders.filter(o => {
-        const matchesQuery = !query ||
-          o.id.toLowerCase().includes(query) ||
-          o.customer.toLowerCase().includes(query) ||
-          o.phone.toLowerCase().includes(query) ||
-          (o.location && o.location.toLowerCase().includes(query));
-
-        const matchesStatus = statusFilter === 'ALL' || o.status === statusFilter;
-        return matchesQuery && matchesStatus;
-      });
+      const filtered = recordRows;
+      if (recordsCount) {
+        recordsCount.textContent = filtered.length
+          ? `Showing ${filtered.length} order${filtered.length === 1 ? '' : 's'}${recordHasMore ? ' (more available)' : ' — end of history'}`
+          : 'No orders match this search yet.';
+      }
+      if (loadOlderRecordsBtn) loadOlderRecordsBtn.style.display = recordHasMore ? 'inline-block' : 'none';
 
       if (filtered.length === 0) {
         allRecordsTableBody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--muted); padding:30px;">No matching real order records found.</td></tr>`;
@@ -2424,9 +2501,13 @@
       if (actionReceiptReview) {
         const receipt = order.momoReceipt;
         if (receipt) {
-          const receiptImage = typeof receipt.image === 'string'
-            && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(receipt.image)
-            ? receipt.image
+          // New uploads live in object storage and arrive as an https URL;
+          // older rows still hold a base64 data URL. Accept both.
+          const receiptSource = receipt.imageUrl || receipt.image;
+          const receiptImage = typeof receiptSource === 'string'
+            && (/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(receiptSource)
+              || /^https:\/\//i.test(receiptSource))
+            ? receiptSource
             : '';
           actionReceiptReview.classList.add('active');
           actionReceiptReview.innerHTML = `
@@ -2827,11 +2908,39 @@
       alert("Notification message copied to clipboard!");
     });
 
-    recordSearch.addEventListener('input', renderRecordsTable);
-    recordFilterStatus.addEventListener('change', renderRecordsTable);
+    let recordSearchTimer = null;
+    recordSearch.addEventListener('input', () => {
+      clearTimeout(recordSearchTimer);
+      recordSearchTimer = setTimeout(() => refreshRecords({ reset: true }), 350);
+    });
+    recordFilterStatus.addEventListener('change', () => refreshRecords({ reset: true }));
+    if (loadOlderRecordsBtn) {
+      loadOlderRecordsBtn.addEventListener('click', () => {
+        if (recordHasMore) refreshRecords({ reset: false });
+      });
+    }
 
-    exportCsvBtn.addEventListener('click', () => {
-      const orders = getOrders();
+    exportCsvBtn.addEventListener('click', async () => {
+      // Export the whole archive, not just the page cached in the browser.
+      const originalLabel = exportCsvBtn.textContent;
+      exportCsvBtn.disabled = true;
+      exportCsvBtn.textContent = 'Preparing…';
+      let orders = [];
+      let cursor = '';
+      try {
+        for (let guard = 0; guard < 60; guard++) {
+          const page = await apiFetchOrders({ scope: 'all', limit: 1000, cursor, summary: false });
+          if (!page) break;
+          orders = orders.concat(page);
+          cursor = page.nextCursor || '';
+          if (!page.hasMore || !cursor) break;
+        }
+      } catch (e) {
+        orders = [];
+      }
+      if (!orders.length) orders = getOrders();
+      exportCsvBtn.disabled = false;
+      exportCsvBtn.textContent = originalLabel;
       const headers = ["Order ID", "Date", "Customer", "Phone", "Fulfilment", "Address", "Total (GHS)", "Status", "Driver"];
       const rows = orders.map(o => [
         o.id,
@@ -2883,7 +2992,9 @@
       if (!readAdminSession()) return;
       renderDashboard();
       refreshDrivers();
+      refreshOrderStats();
     }, 5000);
+    refreshOrderStats(true);
 
     setInterval(() => {
       if (!readAdminSession()) return;
@@ -3605,24 +3716,41 @@
     let cachedLogs = [];
     const ADMIN_SESSION_MS = 12 * 60 * 60 * 1000;
 
+    function removeStoredItem(storage, key) {
+      try { storage.removeItem(key); } catch (e) { /* Storage may be blocked by browser policy. */ }
+    }
+
     function clearAdminSession() {
-      ['yebs_admin_token', 'yebs_admin_user', 'yebs_admin_login_at'].forEach(k => sessionStorage.removeItem(k));
-      ['yebs_admin_token_persist', 'yebs_admin_user_persist', 'yebs_admin_login_at_persist'].forEach(k => localStorage.removeItem(k));
+      ['yebs_admin_token', 'yebs_admin_user', 'yebs_admin_login_at', 'yebs_admin_expires_in'].forEach(k => removeStoredItem(sessionStorage, k));
+      ['yebs_admin_token_persist', 'yebs_admin_user_persist', 'yebs_admin_login_at_persist'].forEach(k => removeStoredItem(localStorage, k));
+    }
+
+    function getStoredItem(storage, key) {
+      try { return storage.getItem(key); } catch (e) { return null; }
+    }
+
+    function setStoredItem(storage, key, value) {
+      try { storage.setItem(key, value); return true; } catch (e) { return false; }
     }
 
     function readAdminSession() {
-      let token = sessionStorage.getItem('yebs_admin_token');
-      let userRaw = sessionStorage.getItem('yebs_admin_user');
-      let loginAt = sessionStorage.getItem('yebs_admin_login_at');
+      let token = getStoredItem(sessionStorage, 'yebs_admin_token');
+      let userRaw = getStoredItem(sessionStorage, 'yebs_admin_user');
+      let loginAt = getStoredItem(sessionStorage, 'yebs_admin_login_at');
 
-      // Restore a remembered session after a browser restart.
-      if ((!token || token === 'undefined') && localStorage.getItem('yebs_admin_token_persist')) {
-        token = localStorage.getItem('yebs_admin_token_persist');
-        userRaw = localStorage.getItem('yebs_admin_user_persist');
-        loginAt = localStorage.getItem('yebs_admin_login_at_persist');
-        sessionStorage.setItem('yebs_admin_token', token);
-        if (userRaw) sessionStorage.setItem('yebs_admin_user', userRaw);
-        if (loginAt) sessionStorage.setItem('yebs_admin_login_at', loginAt);
+      // Restore a remembered session only when every cached value is well formed.
+      if ((!token || token === 'undefined' || token === 'null') && getStoredItem(localStorage, 'yebs_admin_token_persist')) {
+        token = getStoredItem(localStorage, 'yebs_admin_token_persist');
+        userRaw = getStoredItem(localStorage, 'yebs_admin_user_persist');
+        loginAt = getStoredItem(localStorage, 'yebs_admin_login_at_persist');
+        if (token && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) {
+          setStoredItem(sessionStorage, 'yebs_admin_token', token);
+          if (userRaw && userRaw !== 'undefined' && userRaw !== 'null') setStoredItem(sessionStorage, 'yebs_admin_user', userRaw);
+          if (loginAt) setStoredItem(sessionStorage, 'yebs_admin_login_at', loginAt);
+        } else {
+          clearAdminSession();
+          return null;
+        }
       }
 
       if (!token || token === 'undefined') return null;
@@ -4392,6 +4520,39 @@
       const modal = document.getElementById('kitchenDocketModal');
       if (modal) modal.style.display = 'none';
     };
+  </script>
+
+  <script>
+    (function connectOwnerWhatsApp() {
+      const button = document.getElementById('sendLatestOrderWhatsAppBtn');
+      if (!button) return;
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        button.textContent = 'Preparing order message...';
+        try {
+          let token = '';
+          try { token = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || ''; } catch (e) {}
+          const response = await fetch('/api/admin/notifications?kind=order&limit=1', {
+            headers: token ? { Authorization: 'Bearer ' + token } : {},
+            cache: 'no-store'
+          });
+          const data = await response.json().catch(() => ({}));
+          const notification = Array.isArray(data.notifications) ? data.notifications[0] : null;
+          const message = notification && notification.message
+            ? notification.message
+            : 'NEW YEBS NOODLES ORDER\nPlease send the latest order details from the admin dashboard.';
+          const url = notification && notification.fallbackUrl
+            ? notification.fallbackUrl
+            : 'https://wa.me/233559103452?text=' + encodeURIComponent(message);
+          window.open(url, '_blank', 'noopener,noreferrer');
+        } catch (e) {
+          window.open('https://wa.me/233559103452?text=' + encodeURIComponent('Please send the latest YEBS order from the admin dashboard.'), '_blank', 'noopener,noreferrer');
+        } finally {
+          button.disabled = false;
+          button.textContent = '💬 Send Latest Order to WhatsApp';
+        }
+      });
+    })();
   </script>
 
   <!-- Warn the admin when the server has no durable storage: without it every

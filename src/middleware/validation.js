@@ -72,7 +72,7 @@ const createOrderSchema = Joi.object({
 
 // MoMo Payment
 const momoPaymentSchema = Joi.object({
-  orderId: Joi.string().pattern(/^YB-\d{4}$/).required(),
+  orderId: Joi.string().pattern(/^YB-(?:\d{4}|[A-Z0-9]{4,12})$/i).required(),
   transactionRef: Joi.string().min(5).max(60).optional(),
   amount: Joi.number().min(0).required(),
   receiptImage: Joi.string().dataUri().optional(),

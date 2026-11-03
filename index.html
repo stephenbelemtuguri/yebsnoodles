@@ -198,6 +198,22 @@
     .hero-stamp { position: absolute; right: 0px; bottom: 30px; width: 120px; height: 120px; display: grid; align-content: center; justify-items: center; border: 5px solid var(--cream); border-radius: 50%; background: rgb(23 61 48 / 88%); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); color: white; text-align: center; transform: rotate(8deg); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
     .hero-stamp strong { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; color: var(--gold); }
     .hero-stamp span { color: #e4d6b7; font-size: .62rem; letter-spacing: .13em; text-transform: uppercase; }
+    .meal-story { position: relative; height: 520px; overflow: hidden; border-radius: 8px; background: #073d2b; isolation: isolate; }
+    .meal-story::before { position: absolute; inset: 0; z-index: 0; content: ''; background: radial-gradient(circle at 60% 45%, rgb(255 206 92 / 20%), transparent 32%), linear-gradient(145deg, #073d2b, #06271d); }
+    .meal-stage { position: absolute; inset: 0; }
+    .meal-plated { position: absolute; z-index: 2; left: 50%; top: 52%; width: min(92%, 520px); aspect-ratio: 1.18; transform: translate(-50%, -50%) scale(.64); opacity: 0; object-fit: cover; border-radius: 50%; filter: saturate(.92) contrast(1.04); box-shadow: 0 28px 70px rgb(0 0 0 / 38%); will-change: transform, opacity; }
+    .meal-ingredient { position: absolute; z-index: 3; left: 50%; top: 50%; width: 82px; height: 82px; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / 55%); border-radius: 50%; background: rgb(255 250 235 / 94%); color: #173d30; font-size: .68rem; font-weight: 900; text-align: center; box-shadow: 0 14px 32px rgb(0 0 0 / 28%); will-change: transform, opacity; }
+    .meal-ingredient:nth-of-type(1) { --x: -170px; --y: -150px; }
+    .meal-ingredient:nth-of-type(2) { --x: 170px; --y: -125px; }
+    .meal-ingredient:nth-of-type(3) { --x: -205px; --y: 95px; }
+    .meal-ingredient:nth-of-type(4) { --x: 205px; --y: 115px; }
+    .meal-ingredient:nth-of-type(5) { --x: 0px; --y: -205px; }
+    .meal-copy { position: absolute; z-index: 5; left: 22px; right: 22px; bottom: 18px; color: #fffaf0; text-align: center; text-shadow: 0 2px 18px rgb(0 0 0 / 55%); }
+    .meal-copy strong { display: block; font-family: var(--serif); font-size: clamp(1.25rem, 3vw, 1.8rem); }
+    .meal-copy span { font-size: .78rem; }
+    .meal-steam { position: absolute; z-index: 4; left: 50%; top: 25%; width: 8px; height: 90px; border-radius: 50%; opacity: 0; background: linear-gradient(to top, rgb(255 255 255 / 70%), transparent); filter: blur(6px); transform: rotate(10deg); }
+    @media (max-width: 760px) { .meal-story { height: 430px; } .meal-ingredient { width: 68px; height: 68px; font-size: .62rem; } .meal-ingredient:nth-of-type(1) { --x: -118px; --y: -125px; } .meal-ingredient:nth-of-type(2) { --x: 118px; --y: -105px; } .meal-ingredient:nth-of-type(3) { --x: -135px; --y: 80px; } .meal-ingredient:nth-of-type(4) { --x: 135px; --y: 95px; } }
+    @media (prefers-reduced-motion: reduce) { .meal-ingredient, .meal-plated, .meal-steam { transition: none !important; } }
 
     .intro-strip { border-block: 1px solid var(--line); background: #fffdf8; }
     .intro-items { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #555c53; font-size: .84rem; flex-wrap: wrap; }
@@ -1104,11 +1120,19 @@
             </button>
           </div>
         </div>
-        <div class="hero-visual">
-          <img class="hero-image" src="img_food_1.jpg" alt="A freshly prepared bowl of YEBS noodles with egg and vegetables" fetchpriority="high">
-          <div class="hero-stamp" aria-label="Freshly prepared">
-            <strong>Fresh</strong>
-            <span>made with care</span>
+        <div class="hero-visual meal-story" id="mealStory" aria-label="The fresh ingredients and cooking process behind YEBS spaghetti">
+          <div class="meal-stage">
+            <div class="meal-ingredient" style="--x:-170px;--y:-150px">Raw spaghetti</div>
+            <div class="meal-ingredient" style="--x:170px;--y:-125px">Fresh vegetables</div>
+            <div class="meal-ingredient" style="--x:-205px;--y:95px">Chicken &amp; sausage</div>
+            <div class="meal-ingredient" style="--x:205px;--y:115px">House sauce</div>
+            <div class="meal-ingredient" style="--x:0px;--y:-205px">Golden egg</div>
+            <div class="meal-steam" aria-hidden="true"></div>
+            <img class="meal-plated" src="food_photo.png" alt="Completed YEBS spaghetti meal with chicken, sausage, vegetables and egg" fetchpriority="high">
+          </div>
+          <div class="meal-copy" aria-live="polite">
+            <strong id="mealStageTitle">Fresh ingredients</strong>
+            <span id="mealStageText">Selected and prepared for every order</span>
           </div>
         </div>
       </div>
@@ -1171,6 +1195,15 @@
           <button type="button" class="cust-menu-filter-pill" data-filter="specials" style="padding:8px 16px; border-radius:999px; font-size:0.82rem; font-weight:700; border:1.5px solid var(--line); background:#ffffff; color:var(--forest); cursor:pointer; white-space:nowrap; transition:all 0.15s ease;">
             🎁 With Free Beta Malt
           </button>
+        </div>
+
+        <!-- Personalised shelf: computed from this phone's history + shop popularity -->
+        <div id="recommendShelf" style="display:none; margin:10px 0 6px;">
+          <div style="display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:8px;">
+            <strong style="color:var(--forest); font-size:0.95rem;">✨ Recommended for you</strong>
+            <small id="recommendReason" style="color:var(--muted); font-size:0.72rem; text-align:right;"></small>
+          </div>
+          <div id="recommendRow" style="display:flex; gap:10px; overflow-x:auto; padding-bottom:8px; -webkit-overflow-scrolling:touch;"></div>
         </div>
 
         <div class="menu-grid" id="menuGrid">
@@ -1851,6 +1884,7 @@
       apiFetchPaymentNetworks,
       apiFetchOrder,
       apiOrderNotification,
+      apiRecommendations,
       mergeServerOrders,
       getOrderAccessToken,
       API_BASE,
@@ -1869,6 +1903,57 @@
     } from './shared.js';
 
     initStore();
+
+    const mealStory = document.getElementById('mealStory');
+    if (mealStory && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const mealPlate = mealStory.querySelector('.meal-plated');
+      const mealIngredients = [...mealStory.querySelectorAll('.meal-ingredient')];
+      const mealSteam = mealStory.querySelector('.meal-steam');
+      const mealTitle = document.getElementById('mealStageTitle');
+      const mealText = document.getElementById('mealStageText');
+      const stages = [
+        ['Fresh ingredients', 'Selected and prepared for every order'],
+        ['Tossed with care', 'Vegetables meet the sizzling sauce'],
+        ['Cooked over open heat', 'Spaghetti, chicken and sausage come together'],
+        ['Ready to serve', 'A complete fresh YEBS meal']
+      ];
+      let mealFrame = 0;
+
+      function paintMealStory() {
+        const rect = mealStory.getBoundingClientRect();
+        const viewport = window.innerHeight || 800;
+        const travel = Math.max(1, rect.height + viewport * 0.7);
+        const progress = Math.max(0, Math.min(1, (viewport * 0.82 - rect.top) / travel));
+        mealIngredients.forEach((item, index) => {
+          const delay = index * 0.035;
+          const local = Math.max(0, Math.min(1, (progress - delay) / 0.56));
+          const x = parseFloat(getComputedStyle(item).getPropertyValue('--x')) || 0;
+          const y = parseFloat(getComputedStyle(item).getPropertyValue('--y')) || 0;
+          item.style.opacity = String(local < 0.97 ? 1 - local * 0.12 : 0.88);
+          item.style.transform = `translate(calc(-50% + ${x * (1 - local)}px), calc(-50% + ${y * (1 - local)}px)) rotate(${(1 - local) * (index % 2 ? 18 : -18)}deg) scale(${0.86 + local * 0.14})`;
+        });
+        const plated = Math.max(0, Math.min(1, (progress - 0.48) / 0.42));
+        mealPlate.style.opacity = String(plated);
+        mealPlate.style.transform = `translate(-50%, -50%) scale(${0.64 + plated * 0.36}) rotate(${(1 - plated) * 3}deg)`;
+        mealSteam.style.opacity = String(Math.max(0, Math.min(1, (progress - 0.72) / 0.18)));
+        mealSteam.style.transform = `translateX(-50%) translateY(${30 - progress * 70}px) rotate(10deg)`;
+        const stage = Math.min(stages.length - 1, Math.floor(progress * stages.length));
+        mealTitle.textContent = stages[stage][0];
+        mealText.textContent = stages[stage][1];
+      }
+
+      function scheduleMealPaint() {
+        if (mealFrame) return;
+        mealFrame = requestAnimationFrame(() => {
+          mealFrame = 0;
+          paintMealStory();
+        });
+      }
+
+      window.addEventListener('scroll', scheduleMealPaint, { passive: true });
+      window.addEventListener('resize', scheduleMealPaint);
+      paintMealStory();
+    }
 
     const cart = {};
     let customerGpsPin = null;
@@ -2236,10 +2321,60 @@
       }).join('');
     }
 
+    // Server-side recommendations: this phone's favourites first, then what is
+    // popular with everyone else. Refreshes as the cart changes.
+    let recommendSeq = 0;
+    async function renderRecommendations() {
+      const shelf = document.getElementById("recommendShelf");
+      const row = document.getElementById("recommendRow");
+      const reason = document.getElementById("recommendReason");
+      if (!shelf || !row) return;
+      const seq = ++recommendSeq;
+      const phoneInput = document.getElementById("phone");
+      // Cart keys look like "spag15:Spaghetti"; recommendations are per dish.
+      const exclude = [...new Set(Object.keys(cart || {}).map(key => String(key).split(":")[0]))];
+      let data;
+      try {
+        data = await apiRecommendations(phoneInput ? phoneInput.value : "", exclude);
+      } catch (e) {
+        data = null;
+      }
+      if (seq !== recommendSeq || !data) return;
+      const items = (data.recommendations || []).filter(item => item && item.id);
+      if (!items.length) {
+        shelf.style.display = "none";
+        return;
+      }
+      if (reason) reason.textContent = data.reason || "Popular with YEBS customers";
+      row.innerHTML = items.map(item => `
+        <button type="button" class="recommend-card" data-id="${item.id}"
+          style="flex:0 0 auto; width:132px; border:1px solid var(--line); background:#fff; border-radius:12px; padding:8px; text-align:left; cursor:pointer; box-shadow:0 2px 8px rgba(20,83,45,.06);">
+          <img src="${menuImageSrc(item.image)}" alt="${item.name}" loading="lazy" decoding="async"
+            style="width:100%; height:70px; object-fit:cover; border-radius:8px; display:block; margin-bottom:6px;"
+            onerror="this.onerror=null;this.src='img_food_1.jpg';">
+          <span style="display:block; font-size:0.78rem; font-weight:800; color:var(--forest); line-height:1.2; min-height:2.4em;">${item.name}</span>
+          <span style="display:block; margin-top:4px; font-size:0.8rem; font-weight:800; color:var(--orange);">GH₵${item.price}</span>
+          <span style="display:block; margin-top:2px; font-size:0.68rem; font-weight:700; color:var(--muted);">+ Add to order</span>
+        </button>
+      `).join("");
+      shelf.style.display = "block";
+      row.querySelectorAll(".recommend-card").forEach(btn => {
+        btn.addEventListener("click", () => addToCart(btn.dataset.id));
+      });
+    }
+    window.renderRecommendations = renderRecommendations;
+
     try {
       renderMenu();
+      renderRecommendations();
     } catch (e) {
       console.warn("Initial menu render error:", e);
+    }
+
+    const phoneFieldForRecommendations = document.getElementById("phone");
+    if (phoneFieldForRecommendations) {
+      phoneFieldForRecommendations.addEventListener("change", () => renderRecommendations());
+      phoneFieldForRecommendations.addEventListener("blur", () => renderRecommendations());
     }
 
     window.setMenuFilter = function(filter) {
@@ -2615,6 +2750,7 @@
 
       if (entries.length === 0) {
         cartItems.innerHTML = '<p class="empty-cart">Your cart is currently empty. Add delicious noodles from the menu above.</p>';
+        if (typeof renderRecommendations === "function") renderRecommendations();
         return;
       }
 
@@ -2633,6 +2769,7 @@
           <span class="cart-price">${money(item.price * qty)}</span>
         </div>
       `).join('');
+      if (typeof renderRecommendations === "function") renderRecommendations();
     }
 
 
@@ -4581,9 +4718,14 @@
           markPayNowPaid(res.message || 'Payment confirmed by MTN.');
           return;
         }
-        if (res && res.requestStatus === 'failed') {
+        if (res && (res.requestStatus === 'failed' || res.requestStatus === 'expired')) {
           stopPayPolling();
-          setPayNowStatus('MTN declined the prompt. Try again or dial ' + payNetworkById(selectedPayNetwork).ussd + ' to pay.', 'error');
+          setPayNowStatus(
+            res.requestStatus === 'expired'
+              ? 'That payment prompt expired before it was approved. Tap "Send payment prompt" again, or dial ' + payNetworkById(selectedPayNetwork).ussd + ' to pay.'
+              : 'MTN declined the prompt. Try again or dial ' + payNetworkById(selectedPayNetwork).ussd + ' to pay.',
+            'error'
+          );
           return;
         }
         if (tries >= 36) {
@@ -4628,6 +4770,8 @@
         }
         if (res && res.needsReview) {
           setPayNowStatus('✅ ' + res.message, 'ok');
+          const laterBtn = document.getElementById('payNowLaterBtn');
+          if (laterBtn) laterBtn.textContent = 'Continue to tracking';
         } else {
           setPayNowStatus((res && res.message) || 'Could not verify this payment. Check the transaction ID and try again.', 'error');
         }

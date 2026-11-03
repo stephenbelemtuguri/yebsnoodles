@@ -48,6 +48,8 @@ services:
       # Automatic WhatsApp kitchen alerts (optional).
       - key: WHATSAPP_TO
         value: "233559103452"
+      - key: WHATSAPP_CALLMEBOT_PHONE
+        value: "233559103452"
       - key: WHATSAPP_API_VERSION
         value: v20.0
       - key: WHATSAPP_TOKEN
@@ -59,8 +61,6 @@ services:
       # "I allow callmebot to send me messages" to +34 644 51 95 23 and puts the
       # resulting key here.
       - key: WHATSAPP_CALLMEBOT_APIKEY
-        sync: false
-      - key: WHATSAPP_CALLMEBOT_PHONE
         sync: false
       # Password recovery email providers.
       - key: SENDGRID_API_KEY

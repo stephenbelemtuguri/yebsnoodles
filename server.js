@@ -18,6 +18,7 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const store = require('./src/data/store');
+const media = require('./src/data/media');
 const { resolveAdminCredentialResetVersion } = require('./scripts/render-deploy-version');
 
 const resolvedAdminCredentialResetVersion = resolveAdminCredentialResetVersion(process.env);
@@ -26,6 +27,20 @@ if (resolvedAdminCredentialResetVersion) {
 }
 
 const app = express();
+app.set('trust proxy', 1);
+app.use((req, res, next) => {
+  const host = String(req.get('host') || '').split(':')[0].toLowerCase();
+  const forwardedProto = String(req.get('x-forwarded-proto') || '').split(',')[0].trim();
+  const productionHost = host === 'yebsnoodles.onrender.com' || process.env.RENDER === 'true';
+  if (productionHost && req.method === 'GET' && !['yebsnoodles.onrender.com'].includes(host)) {
+    return res.redirect(308, `https://yebsnoodles.onrender.com${req.originalUrl}`);
+  }
+  if (productionHost && forwardedProto === 'http' && req.method === 'GET' && host === 'yebsnoodles.onrender.com') {
+    return res.redirect(308, `https://yebsnoodles.onrender.com${req.originalUrl}`);
+  }
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 const PORT = process.env.PORT || 3000;
 const DB_FILE = process.env.DB_PATH
   ? path.resolve(process.env.DB_PATH)
@@ -449,16 +464,34 @@ async function sendOwnerWhatsApp(text) {
   const bot = callmebotConfig();
   if (bot.apiKey && bot.phone) {
     try {
-      const url = 'https://api.callmebot.com/whatsapp.php?phone=%2B' + encodeURIComponent(bot.phone)
-        + '&text=' + encodeURIComponent(String(text).slice(0, 1000))
-        + '&apikey=' + encodeURIComponent(bot.apiKey);
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10000);
-      const response = await fetch(url, { signal: controller.signal })
-        .finally(() => clearTimeout(timer));
-      const body = await response.text().catch(() => '');
-      if (!response.ok || /error|invalid/i.test(body.slice(0, 200))) {
-        throw new Error(body.slice(0, 160) || ('CallMeBot ' + response.status));
+      const message = String(text || '').trim();
+      const chunks = [];
+      for (let start = 0; start < message.length; start += 900) {
+        chunks.push(message.slice(start, start + 900));
+      }
+      for (const chunk of (chunks.length ? chunks : ['YEBS Noodles notification'])) {
+        let lastError = null;
+        for (let attempt = 1; attempt <= 4; attempt += 1) {
+          try {
+            const url = 'https://api.callmebot.com/whatsapp.php?phone=%2B' + encodeURIComponent(bot.phone)
+              + '&text=' + encodeURIComponent(chunk)
+              + '&apikey=' + encodeURIComponent(bot.apiKey);
+            const response = await fetch(url, {
+              headers: { 'User-Agent': 'YEBS-Noodles-Server/1.0', Accept: 'text/plain' },
+              signal: AbortSignal.timeout(15000)
+            });
+            const body = await response.text().catch(() => '');
+            if (!response.ok || /error|invalid|not activated/i.test(body.slice(0, 200))) {
+              throw new Error(body.slice(0, 160) || ('CallMeBot ' + response.status));
+            }
+            lastError = null;
+            break;
+          } catch (err) {
+            lastError = err;
+            if (attempt < 4) await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+          }
+        }
+        if (lastError) throw lastError;
       }
       return { ok: true, provider: 'callmebot', providerId: null };
     } catch (err) {
@@ -1220,7 +1253,10 @@ function publicDriver(d) {
     lname: d.lname,
     phone: d.phone,
     vehicle: d.vehicle,
-    photo: d.photo || null,
+    // Never ship a base64 image in a list payload: point at the cached photo
+    // endpoint instead. Works for legacy inline photos and Storage URLs alike.
+    photo: d.photoUrl || (d.photo ? `/api/drivers/${encodeURIComponent(d.id)}/photo` : null),
+    photoUrl: d.photoUrl || (d.photo ? `/api/drivers/${encodeURIComponent(d.id)}/photo` : null),
     isActive: d.isActive !== false,
     isOnline: d.isActive !== false,
     approvalStatus: d.approvalStatus || (d.approvedAt ? 'approved' : 'pending'),
@@ -1256,11 +1292,33 @@ function toAmount(value) {
 }
 
 // ==========================================================
-// ORDER IDS — YB-XXXX where XXXX is the unique pickup PIN
+// ORDER IDS — YB-XXXXXX (6-character base-32 suffix)
 // ==========================================================
+// The old format was YB-0000…YB-9999: a lifetime ceiling of 10,000 orders.
+// The suffix is now 6 characters from an unambiguous alphabet (~1.07 billion
+// combinations), while legacy four-digit IDs keep working forever.
+
+const ORDER_ID_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+function randomOrderSuffix(length = 6) {
+  let suffix = '';
+  for (let i = 0; i < length; i += 1) {
+    suffix += ORDER_ID_ALPHABET[crypto.randomInt(0, ORDER_ID_ALPHABET.length)];
+  }
+  return suffix;
+}
+
+// A PIN only needs to be unique among orders that can still be handed over.
+// Delivered/cancelled orders keep their historical PIN for the record.
+function isActiveOrder(order) {
+  const status = String(order && order.status || '').toLowerCase();
+  return status !== 'delivered' && status !== 'cancelled';
+}
 
 function newPickupPin(db, orderId = '') {
-  const usedPins = new Set((db.orders || []).map(o => String(o.pickupPin || '')));
+  const usedPins = new Set(
+    (db.orders || []).filter(isActiveOrder).map(o => String(o.pickupPin || ''))
+  );
   const publicIdSuffix = String(orderId).slice(-4);
   for (let i = 0; i < 20000; i++) {
     const pin = String(crypto.randomInt(1000, 10000));
@@ -1275,29 +1333,25 @@ function newPickupPin(db, orderId = '') {
 
 function newOrderId(db) {
   const used = new Set((db.orders || []).map(o => String(o.id || '').toUpperCase()));
-  for (let i = 0; i < 20000; i++) {
-    const n = crypto.randomInt(1000, 10000);
-    const id = `YB-${n}`;
+  for (let i = 0; i < 100; i++) {
+    const id = `YB-${randomOrderSuffix(6)}`;
     if (!used.has(id)) {
       const pin = newPickupPin(db, id);
       if (pin) return { id, pin };
     }
   }
-  // Extremely unlikely: deterministic scan for a free public order ID.
-  for (let n = 1000; n <= 9999; n++) {
-    const id = `YB-${n}`;
-    if (!used.has(id)) {
-      const pin = newPickupPin(db, id);
-      if (pin) return { id, pin };
-    }
-  }
-  throw new Error('No unused order ID and pickup PIN are available.');
+  throw new Error('Could not allocate a unique order reference. Please try again.');
 }
 
 function normalizeOrderId(raw) {
-  const value = cleanString(raw, 20).toUpperCase().replace(/\s+/g, '');
+  const value = cleanString(raw, 24).toUpperCase().replace(/\s+/g, '');
+  if (!value) return '';
+  // Legacy four-digit reference (YB-1234 / 1234).
   if (/^\d{4}$/.test(value)) return `YB-${value}`;
-  if (/^YB-?\d{4}$/.test(value)) return `YB-${value.replace(/[^0-9]/g, '')}`;
+  const prefixed = value.match(/^YB-?([A-Z0-9]{4,12})$/);
+  if (prefixed) return `YB-${prefixed[1]}`;
+  // A bare modern suffix, e.g. "A7K2M9".
+  if (/^[A-Z0-9]{5,12}$/.test(value) && /[A-Z]/.test(value)) return `YB-${value}`;
   return value;
 }
 
@@ -1323,12 +1377,88 @@ function paymentFieldsFor(order) {
     momoRequestStatus: order.momoRequestStatus || null,
     momoRequestAt: order.momoRequestAt || null,
     momoReceipt: order.momoReceipt ? {
-      image: order.momoReceipt.image || null,
+      // `image` stays for older clients; `imageUrl` points at object storage.
+      image: order.momoReceipt.imageUrl || order.momoReceipt.image || null,
+      imageUrl: order.momoReceipt.imageUrl || null,
       transactionRef: order.momoReceipt.transactionRef || '',
       uploadedAt: order.momoReceipt.uploadedAt || null,
       verified: order.momoReceipt.verified === true
     } : null
   };
+}
+
+// Orders reference the rider instead of embedding their photo. The URL points
+// at a cacheable endpoint so a 13 KB base64 avatar is never duplicated into
+// every order (which is what made the old state row 53 MB at 10k orders).
+function driverPhotoUrl(driverRef) {
+  if (!driverRef) return null;
+  if (driverRef.photoUrl) return driverRef.photoUrl;
+  if (driverRef.photo) return /^data:/i.test(driverRef.photo) ? null : driverRef.photo;
+  const id = driverRef.id;
+  if (!id) return null;
+  try {
+    const db = loadDatabase();
+    const driver = (db.drivers || []).find(d => String(d.id) === String(id));
+    if (driver && (driver.photoUrl || driver.photo)) {
+      return driver.photoUrl || `/api/drivers/${encodeURIComponent(id)}/photo`;
+    }
+  } catch (e) { /* projection must never throw */ }
+  return null;
+}
+
+// One-time cleanup for orders created before images moved out of the row:
+// the rider's face photo belongs to the driver record, not to every order.
+function stripOrderMedia(db) {
+  let changed = false;
+  for (const order of (db.orders || [])) {
+    if (order && order.driver && order.driver.photo) {
+      const driver = (db.drivers || []).find(d => d && String(d.id) === String(order.driver.id));
+      if (driver && !driver.photo) driver.photo = order.driver.photo;
+      if (driver && !driver.photoUrl && typeof driver.photo === 'string' && !/^data:/i.test(driver.photo)) {
+        driver.photoUrl = driver.photo;
+      }
+      delete order.driver.photo;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+// Best-effort background migration of legacy inline images (rider photos and
+// large receipt screenshots) into Supabase Storage. New uploads already go
+// straight to Storage; this only shrinks data written by older builds.
+async function migrateMediaToStorage(db) {
+  if (!media.isConfigured()) return false;
+  let changed = false;
+  for (const driver of (db.drivers || [])) {
+    if (typeof driver.photo === 'string' && /^data:/i.test(driver.photo)) {
+      const url = await media.uploadDataUrl(driver.photo, { kind: 'drivers', id: driver.id });
+      if (url) {
+        driver.photo = url;
+        driver.photoUrl = url;
+        changed = true;
+      }
+    }
+  }
+  for (const order of (db.orders || [])) {
+    const receipt = order && order.momoReceipt;
+    if (receipt && typeof receipt.image === 'string' && /^data:/i.test(receipt.image) && receipt.image.length > 200_000) {
+      const url = await media.uploadDataUrl(receipt.image, { kind: 'receipts', id: order.id });
+      if (url) {
+        receipt.image = url;
+        receipt.imageUrl = url;
+        changed = true;
+      }
+    }
+  }
+  if (changed) {
+    const result = await store.set(db);
+    if (!result || !result.ok) {
+      console.warn('[media] legacy image migration could not be saved:', (result && result.error) || 'storage unavailable');
+      return false;
+    }
+  }
+  return changed;
 }
 
 // Public order projection: never leaks other customers' phone numbers,
@@ -1379,7 +1509,7 @@ function projectOrder(order, viewer = 'public') {
       name: order.driver.name || null,
       phone: order.driver.phone || null,
       vehicle: order.driver.vehicle || null,
-      photo: order.driver.photo || null,
+      photo: driverPhotoUrl(order.driver),
       currentLocation: order.driver.currentLocation || null,
       lastUpdated: order.driver.lastUpdated || null,
       speedKmh: order.driver.speedKmh || 0,
@@ -1400,9 +1530,11 @@ function projectOrder(order, viewer = 'public') {
   } else {
     // The customer's own order keeps its receipt so the tracking screen can
     // show what was submitted, but the image is never exposed in list views.
-    if (order.momoReceipt && order.momoReceipt.image) {
+    const receiptSource = order.momoReceipt && (order.momoReceipt.imageUrl || order.momoReceipt.image);
+    if (receiptSource) {
       base.momoReceipt = {
-        image: order.momoReceipt.image,
+        image: receiptSource,
+        imageUrl: order.momoReceipt.imageUrl || null,
         transactionRef: order.momoReceipt.transactionRef || '',
         uploadedAt: order.momoReceipt.uploadedAt || null,
         verified: order.momoReceipt.verified === true
@@ -1545,8 +1677,12 @@ app.post('/api/auth/driver/signup', async (req, res) => {
   }
 
   const username = generateDriverUsername(fname, lname, db.drivers);
+  const driverId = "drv-" + Date.now();
+  // Keep the image out of the database when object storage is available; only
+  // the URL is stored and served to customers.
+  const photoUrl = await media.uploadDataUrl(photo, { kind: 'drivers', id: driverId });
   const newDriver = {
-    id: "drv-" + Date.now(),
+    id: driverId,
     username,
     password: hashPassword(password),
     fname,
@@ -1555,7 +1691,8 @@ app.post('/api/auth/driver/signup', async (req, res) => {
     phone,
     email: email || '',
     vehicle,
-    photo,
+    photo: photoUrl || photo,
+    photoUrl: photoUrl || null,
     isActive: false,
     approvalStatus: 'pending',
     approvedAt: null,
@@ -2049,7 +2186,7 @@ app.get('/api/auth/session', (req, res) => {
 // 2. DRIVER LOCATION & PUBLIC PROFILE API
 // ==========================================================
 
-app.post('/api/drivers/:id/location', (req, res) => {
+app.post('/api/drivers/:id/location', async (req, res) => {
   const { id } = req.params;
   const auth = authenticate(req);
   if (!auth) return res.status(401).json({ success: false, message: "Driver sign-in required." });
@@ -2070,7 +2207,12 @@ app.post('/api/drivers/:id/location', (req, res) => {
   if (name) driver.name = cleanString(name, 80);
   if (phone) driver.phone = cleanString(phone, 30);
   if (vehicle) driver.vehicle = cleanString(vehicle, 120);
-  if (photo) driver.photo = String(photo).slice(0, 9 * 1024 * 1024);
+  if (photo) {
+    const inline = String(photo).slice(0, 9 * 1024 * 1024);
+    const uploaded = await media.uploadDataUrl(inline, { kind: 'drivers', id: driver.id });
+    driver.photo = uploaded || inline;
+    driver.photoUrl = uploaded || null;
+  }
   if (isActive !== undefined) driver.isActive = !!isActive;
   driver.lastLocationUpdate = new Date().toISOString();
 
@@ -2095,7 +2237,11 @@ app.post('/api/drivers/:id/location', (req, res) => {
         o.status = 'enroute';
         o.enrouteAt = new Date().toISOString();
       }
-      if (driver.photo) o.driver.photo = driver.photo;
+      // The face photo is deliberately NOT copied onto the order: a 13 KB
+      // base64 image per order was the single biggest driver of the old
+      // 53 MB state row. The order references the rider and the UI loads the
+      // photo from /api/drivers/:id/photo (cached by the browser).
+      if (o.driver.photo) delete o.driver.photo;
       if (driver.phone) o.driver.phone = driver.phone;
       if (driver.vehicle) o.driver.vehicle = driver.vehicle;
       if (typeof pushOrderUpdate === 'function') {
@@ -2106,7 +2252,7 @@ app.post('/api/drivers/:id/location', (req, res) => {
             lng: driver.lng,
             speedKmh: driver.speedKmh,
             statusText: driver.statusText,
-            photo: driver.photo,
+            photo: driver.photoUrl || (driver.id ? `/api/drivers/${encodeURIComponent(driver.id)}/photo` : null),
             name: driver.name,
             phone: driver.phone,
             vehicle: driver.vehicle
@@ -2129,10 +2275,14 @@ app.get('/api/admin/drivers', requireRole('admin'), async (req, res) => {
   }
   const db = loadDatabase();
   res.set('Cache-Control', 'no-store');
-  res.json(db.drivers.map(driver => ({
+  const drivers = db.drivers.map(driver => ({
     ...publicDriver(driver),
     email: driver.email || ''
-  })));
+  }));
+  if (String(req.query.format || '').toLowerCase() === 'envelope') {
+    return res.json({ success: true, drivers });
+  }
+  res.json(drivers);
 });
 
 // Public: Approved active drivers only (safe public fields only).
@@ -2150,6 +2300,25 @@ app.get('/api/drivers', (req, res) => {
 app.get('/api/drivers/active', (req, res) => {
   const db = loadDatabase();
   res.json(db.drivers.filter(d => d.isActive).map(publicDriver));
+});
+
+// Public: a rider's face photo, served separately so it is never duplicated
+// into every order. Cached by the browser for a day.
+app.get('/api/drivers/:id/photo', (req, res) => {
+  const db = loadDatabase();
+  const driver = (db.drivers || []).find(d => String(d.id) === String(req.params.id));
+  const photo = driver && (driver.photoUrl || driver.photo);
+  if (!photo) return res.status(404).end();
+  if (!/^data:/i.test(photo)) {
+    // Already in object storage.
+    return res.redirect(302, photo);
+  }
+  const match = String(photo).match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+  if (!match) return res.status(404).end();
+  const buffer = Buffer.from(match[2], 'base64');
+  res.set('Content-Type', match[1]);
+  res.set('Cache-Control', 'public, max-age=86400, immutable');
+  res.send(buffer);
 });
 
 // ==========================================================
@@ -2477,7 +2646,10 @@ function applyMomoPayment(db, order, opts) {
   }
 
   const txn = validTxnRef(transactionRef);
-  const receiptHash = hashReceipt(receiptImage);
+  // When the screenshot has already been uploaded to object storage the hash is
+  // supplied separately, so duplicate-receipt detection still compares the
+  // image bytes rather than two different URLs.
+  const receiptHash = opts.receiptHash || hashReceipt(receiptImage);
 
   // Keep the submitted evidence available to an administrator even when it
   // conflicts with another order and must be rejected for automatic payment.
@@ -2973,7 +3145,7 @@ function parseMomoSms(raw) {
   const amountMatch = text.match(/(?:GH\s*[₵C]?|GHS|GHC|GH₵)\s*([\d,]+(?:\.\d{1,2})?)/i)
     || text.match(/(?:amount|received|paid)[^\d]{0,24}([\d,]+(?:\.\d{1,2})?)/i);
   const txnMatch = text.match(/(?:transaction\s*(?:id|no|number|ref(?:erence)?)|txn\s*(?:id|no)?|reference|ref)\s*[:\-]?\s*([A-Za-z0-9._-]{5,50})/i);
-  const orderMatch = text.match(/(YB[\s-]?\d{4})/i);
+  const orderMatch = text.match(/\b(YB[\s-]?[A-Z0-9]{4,12})\b/i);
   return {
     amount: amountMatch ? Number(String(amountMatch[1]).replace(/,/g, '')) : null,
     transactionRef: txnMatch ? validTxnRef(txnMatch[1]) : '',
@@ -3155,7 +3327,7 @@ app.post('/api/payments/momo/sms/ingest', async (req, res) => {
 });
 
 // Legacy receipt upload kept for compatibility; proof remains unverified until reviewed.
-app.post('/api/orders/:id/receipt', (req, res) => {
+app.post('/api/orders/:id/receipt', async (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
@@ -3171,14 +3343,20 @@ app.post('/api/orders/:id/receipt', (req, res) => {
   if (!receiptImage) {
     return res.status(400).json({ success: false, message: "Upload a valid JPEG, PNG, or WebP payment receipt screenshot." });
   }
+  // Hash the original bytes for duplicate detection, then move the screenshot
+  // out of the order row and store only its URL when Storage is available.
+  const receiptHash = hashReceipt(receiptImage);
+  const receiptUrl = await media.uploadDataUrl(receiptImage, { kind: 'receipts', id: order.id });
   const result = applyMomoPayment(db, order, {
     transactionRef,
     amount: toAmount(body.amount) === null ? Number(order.total) : toAmount(body.amount),
     sender: body.senderPhone,
-    receiptImage,
+    receiptImage: receiptUrl || receiptImage,
+    receiptHash,
     method: 'auto-receipt',
     actor: order.customer || 'CUSTOMER'
   });
+  if (order.momoReceipt && receiptUrl) order.momoReceipt.imageUrl = receiptUrl;
 
   saveDatabase(db);
   res.status(result.ok ? 200 : (result.status || 400)).json({
@@ -3214,13 +3392,141 @@ app.post('/api/orders/:id/receipt/verify', requireRole('admin'), (req, res) => {
 // 4. ORDERS CRUD & DATABASE PERSISTENCE
 // ==========================================================
 
+// Lightweight order shape for dashboards/lists. Keeps the heavy per-order
+// detail (audit trail, receipt, map pin) out of list polling.
+function projectOrderSummary(order, viewer = 'public') {
+  const staff = viewer === 'admin' || viewer === 'driver';
+  return {
+    id: order.id,
+    createdAt: order.createdAt,
+    customer: order.customer,
+    phone: staff ? order.phone : undefined,
+    status: order.status,
+    total: order.total,
+    payment: order.payment,
+    paymentMode: order.paymentMode || paymentModeFor(order.payment),
+    paymentStatus: order.paymentStatus || (order.paymentVerified ? 'paid' : 'unpaid'),
+    fulfilment: order.fulfilment,
+    location: order.location,
+    mapPin: order.mapPin || null,
+    driverId: order.driverId || (order.driver && order.driver.id) || null,
+    driverName: order.driverName || (order.driver && order.driver.name) || null,
+    pickupPin: staff ? (order.pickupPin || null) : undefined,
+    notificationStatus: order.notificationStatus || null,
+    items: (order.items || []).map(item => ({
+      menuId: item.menuId || null,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price
+    })),
+    itemCount: (order.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 1), 0)
+  };
+}
+
+// Paginated, filtered order list. The default returns everything still in play
+// plus the last day of history, so a shop with 10,000 archived orders does not
+// download 10,000 rows on every dashboard poll. Pass ?scope=all for history.
 app.get('/api/orders', (req, res) => {
   const auth = authenticate(req);
   if (!auth || !['admin', 'driver'].includes(auth.payload.role)) {
     return res.status(401).json({ success: false, message: "Sign in to view the order list." });
   }
   const db = loadDatabase();
-  res.json(db.orders.map(o => projectOrder(o, auth.payload.role)));
+  const viewer = auth.payload.role;
+  const scope = cleanString(req.query.scope || '', 20).toLowerCase();
+  const status = cleanString(req.query.status || '', 30).toLowerCase();
+  const search = cleanString(req.query.q || '', 80).toLowerCase();
+  const limit = Math.min(1000, Math.max(1, Math.floor(Number(req.query.limit) || 300)));
+  const cursor = cleanString(req.query.cursor || '', 40);
+  const summary = String(req.query.summary || '') === '1' || String(req.query.summary || '') === 'true';
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+
+  let rows = db.orders.filter(order => {
+    if (scope === 'all') return true;
+    if (scope === 'active') return isActiveOrder(order);
+    if (scope === 'today') return new Date(order.createdAt || 0).getTime() >= dayAgo;
+    return isActiveOrder(order) || new Date(order.createdAt || 0).getTime() >= dayAgo;
+  });
+  if (status && status !== 'all') {
+    rows = rows.filter(order => String(order.status || '').toLowerCase() === status);
+  }
+  if (search) {
+    rows = rows.filter(order => [
+      order.id, order.customer, order.phone, order.location,
+      order.driverName, order.driver && order.driver.name
+    ].filter(Boolean).join(' ').toLowerCase().includes(search));
+  }
+  if (cursor) {
+    const at = Date.parse(cursor);
+    if (Number.isFinite(at)) rows = rows.filter(order => new Date(order.createdAt || 0).getTime() < at);
+  }
+  rows.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+  const page = rows.slice(0, limit);
+  res.set('X-Total-Count', String(rows.length));
+  res.set('X-Page-Limit', String(limit));
+  res.set('X-Has-More', rows.length > page.length ? '1' : '0');
+  if (rows.length > page.length && page.length) {
+    res.set('X-Next-Cursor', new Date(page[page.length - 1].createdAt || Date.now()).toISOString());
+  }
+  res.json(page.map(order => summary ? projectOrderSummary(order, viewer) : projectOrder(order, viewer)));
+});
+
+// Aggregate counters for the dashboard KPIs. These are computed over the whole
+// history on the server, so the browser no longer has to download every order
+// just to show "total orders" and "revenue".
+app.get('/api/orders/stats', (req, res) => {
+  const auth = authenticate(req);
+  if (!auth || !['admin', 'driver'].includes(auth.payload.role)) {
+    return res.status(401).json({ success: false, message: "Sign in to view order statistics." });
+  }
+  const db = loadDatabase();
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const todayMs = startOfToday.getTime();
+
+  const stats = {
+    totalOrders: 0,
+    ongoingOrders: 0,
+    deliveredOrders: 0,
+    cancelledOrders: 0,
+    totalRevenue: 0,
+    netRevenue: 0,
+    paidRevenue: 0,
+    todayOrders: 0,
+    todayRevenue: 0,
+    byStatus: {},
+    lastOrderAt: null,
+    generatedAt: new Date().toISOString()
+  };
+
+  for (const order of (db.orders || [])) {
+    const status = String(order.status || 'pending').toLowerCase();
+    const total = Number(order.total) || 0;
+    stats.totalOrders += 1;
+    stats.totalRevenue += total;
+    stats.byStatus[status] = (stats.byStatus[status] || 0) + 1;
+    if (status === 'delivered') stats.deliveredOrders += 1;
+    else if (status === 'cancelled') stats.cancelledOrders += 1;
+    else stats.ongoingOrders += 1;
+    if (status !== 'cancelled') stats.netRevenue += total;
+    if (order.paymentVerified === true || String(order.paymentStatus || '') === 'paid') stats.paidRevenue += total;
+    const createdAt = new Date(order.createdAt || 0).getTime();
+    if (createdAt >= todayMs) {
+      stats.todayOrders += 1;
+      if (status !== 'cancelled') stats.todayRevenue += total;
+    }
+    if (Number.isFinite(createdAt) && (!stats.lastOrderAt || createdAt > Date.parse(stats.lastOrderAt))) {
+      stats.lastOrderAt = new Date(createdAt).toISOString();
+    }
+  }
+
+  stats.totalRevenue = Math.round(stats.totalRevenue * 100) / 100;
+  stats.netRevenue = Math.round(stats.netRevenue * 100) / 100;
+  stats.paidRevenue = Math.round(stats.paidRevenue * 100) / 100;
+  stats.todayRevenue = Math.round(stats.todayRevenue * 100) / 100;
+
+  res.json({ success: true, ...stats });
 });
 
 // Driver handover lookup: accepts YB-1234, 1234 or a phone number.
@@ -3257,7 +3563,13 @@ app.get('/api/orders/:id', (req, res) => {
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
   if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
-  res.json(projectOrder(order, viewerFromReq(req)));
+  const viewer = viewerFromReq(req);
+  const view = projectOrder(order, viewer);
+  // The customer who holds this order's access token is the one person who
+  // must be able to read the handover PIN — otherwise they cannot tell the
+  // rider the code when the food arrives.
+  if (viewer !== 'admin' && view.pickupPin === undefined) view.pickupPin = order.pickupPin || null;
+  res.json(view);
 });
 
 // ========================================
@@ -3366,7 +3678,7 @@ app.post('/api/orders', async (req, res) => {
 
   let id = requested;
   let pin;
-  if (id && /^YB-\d{4}$/.test(id)) {
+  if (id && /^YB-[A-Z0-9]{4,12}$/.test(id)) {
     pin = newPickupPin(db, id);
     if (!pin) return res.status(503).json({ success: false, message: "Could not reserve a unique pickup PIN. Please try again." });
   } else {
@@ -3825,7 +4137,7 @@ app.post('/api/orders/:id/claim', requireRole('driver'), async (req, res) => {
     name: driverName,
     phone: driverObj.phone || null,
     vehicle: driverObj.vehicle || null,
-    photo: driverObj.photo || null,
+    // No inline photo here — customers load it from /api/drivers/:id/photo.
     currentLocation: Number.isFinite(Number(driverObj.lat)) && Number.isFinite(Number(driverObj.lng))
       ? { lat: Number(driverObj.lat), lng: Number(driverObj.lng) }
       : null
@@ -4119,6 +4431,72 @@ app.get('/api/menu', async (req, res) => {
     await saveDatabase(db);
   }
   res.json(db.menuItems);
+});
+
+// Personalised recommendations built from real order history:
+//   1. dishes this phone has ordered before (weighted highest)
+//   2. dishes that are popular across recent orders
+//   3. whatever is available, so the shelf is never empty
+app.get('/api/recommendations', (req, res) => {
+  const db = loadDatabase();
+  const exclude = new Set(String(req.query.exclude || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean));
+  const phone = String(req.query.phone || '').replace(/\D/g, '').slice(-9);
+  const available = (db.menuItems || []).filter(item => {
+    const status = String(item.status || '').toLowerCase();
+    return item.available !== false && status !== 'sold_out' && status !== 'coming_soon';
+  });
+
+  const scores = new Map();
+  const bump = (id, amount) => {
+    if (!id) return;
+    scores.set(String(id), (scores.get(String(id)) || 0) + amount);
+  };
+
+  // Repeat-customer history (last 180 days).
+  const historyCutoff = Date.now() - 180 * 24 * 60 * 60 * 1000;
+  let historyOrders = 0;
+  if (phone) {
+    for (const order of db.orders) {
+      const orderPhone = String(order.phone || '').replace(/\D/g, '').slice(-9);
+      if (orderPhone !== phone) continue;
+      if (new Date(order.createdAt || 0).getTime() < historyCutoff) continue;
+      historyOrders += 1;
+      for (const item of (order.items || [])) {
+        const itemId = item.menuId || available.find(menu => menu.name === item.name)?.id;
+        bump(itemId, 3 * (Number(item.quantity) || 1));
+      }
+    }
+  }
+
+  // Shop-wide popularity (last 90 days).
+  const popularCutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  for (const order of db.orders) {
+    if (new Date(order.createdAt || 0).getTime() < popularCutoff) continue;
+    if (order.status === 'cancelled') continue;
+    for (const item of (order.items || [])) {
+      const itemId = item.menuId || available.find(menu => menu.name === item.name)?.id;
+      bump(itemId, Number(item.quantity) || 1);
+    }
+  }
+
+  const ranked = available
+    .filter(item => !exclude.has(String(item.id)))
+    .map(item => ({ item, score: scores.get(String(item.id)) || 0 }))
+    .sort((a, b) => b.score - a.score || String(a.item.name).localeCompare(String(b.item.name)));
+
+  const limit = Math.min(6, Math.max(1, Math.floor(Number(req.query.limit) || 3)));
+  const recommendations = ranked.slice(0, limit).map(entry => entry.item);
+  res.json({
+    success: true,
+    basis: historyOrders > 0 ? 'history' : 'popularity',
+    recommendations,
+    reason: historyOrders > 0
+      ? `Based on your last ${historyOrders} order${historyOrders === 1 ? '' : 's'}`
+      : 'Popular with YEBS customers'
+  });
 });
 
 app.post('/api/menu', requireRole('admin'), async (req, res) => {
@@ -5505,7 +5883,10 @@ function start() {
       const migratingLegacyResetVersion = /^render-deploy-build-/.test(previousResetVersion)
         && ADMIN_USERNAME_CONFIGURED
         && ADMIN_PASSWORD_CONFIGURED;
-      if (ensureSystemAccounts(data)) {
+      // Orders from older builds embed the rider photo; strip it so list and
+      // order payloads stay small.
+      const mediaStripped = stripOrderMedia(data);
+      if (ensureSystemAccounts(data) || mediaStripped) {
         const result = await store.set(data);
         if (!result || !result.ok) {
           throw new Error(`Failed to persist startup account changes: ${(result && result.error) || 'storage backend unavailable'}`);
@@ -5534,6 +5915,13 @@ function start() {
         }
       }
       await migratePasswords();
+      // Move any legacy inline images out of the database after the server is
+      // already serving; this never blocks boot.
+      if (media.isConfigured()) {
+        setTimeout(() => {
+          migrateMediaToStorage(data).catch(err => console.warn('[media] background migration failed:', err.message));
+        }, 5000).unref?.();
+      }
       return data;
     })().catch(err => {
       startPromise = null;

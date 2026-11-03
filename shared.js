@@ -988,8 +988,30 @@ export function getOrderById(id) {
   return orders.find(o => String(o.id).toUpperCase() === searchId || String(o.pickupPin) === String(id).trim()) || null;
 }
 
+// localStorage is a ~5 MB budget, so the browser cache keeps every order still
+// in play plus the most recent history instead of the whole archive.
+const MAX_CACHED_ORDERS = 600;
+
+export function trimOrderCache(orders) {
+  if (!Array.isArray(orders) || orders.length <= MAX_CACHED_ORDERS) return orders;
+  const active = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled');
+  const history = orders.filter(o => o.status === 'delivered' || o.status === 'cancelled');
+  return [...active, ...history].slice(0, Math.max(MAX_CACHED_ORDERS, active.length));
+}
+
 export function saveOrders(orders) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+  const trimmed = trimOrderCache(orders);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+  } catch (err) {
+    // Quota exceeded: keep only what is still in play so the dashboard works.
+    const active = (orders || []).filter(o => o.status !== 'delivered' && o.status !== 'cancelled');
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(active.slice(0, MAX_CACHED_ORDERS)));
+    } catch (innerErr) {
+      console.warn('Could not cache orders locally:', innerErr.message);
+    }
+  }
   broadcastEvent("ORDERS_UPDATED", { count: orders.length });
 }
 
@@ -1277,9 +1299,12 @@ export function clearArrivalEvent() {
 // --------------------------------------------------------------------------
 // Real-Time Backend API & Prisma DB Integration
 // --------------------------------------------------------------------------
-export const API_BASE = (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin.startsWith('http'))
+const browserOrigin = (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin.startsWith('http'))
   ? window.location.origin
   : 'http://localhost:3000';
+export const API_BASE = browserOrigin === 'http://yebsnoodles.onrender.com'
+  ? 'https://yebsnoodles.onrender.com'
+  : browserOrigin;
 
 export function authToken(role) {
   if (role === 'admin') return sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
@@ -1960,7 +1985,39 @@ export async function apiUpdateOrderStatus(orderId, payload) {
   return null;
 }
 
-export async function apiFetchOrders() {
+/**
+ * Server-computed order totals for the dashboard. Kept separate from the
+ * paginated list so KPIs stay correct even when only a page of orders is
+ * cached in the browser.
+ */
+export async function apiOrderStats() {
+  try {
+    const token = sessionStorage.getItem('yebs_admin_token')
+      || localStorage.getItem('yebs_admin_token_persist')
+      || sessionStorage.getItem('yebs_driver_token')
+      || localStorage.getItem('yebs_driver_token_persist');
+    if (!token) return null;
+    const res = await fetch(`${API_BASE}/api/orders/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store'
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data && data.success ? data : null;
+    }
+  } catch (e) {}
+  return null;
+}
+
+/**
+ * Paginated order list.
+ *   scope: 'default' (active + last 24h) | 'active' | 'today' | 'all'
+ *   status, q, limit, cursor, summary
+ * Returns an array; `nextCursor` and `hasMore` are attached from the response
+ * headers so a caller can page through history.
+ */
+export async function apiFetchOrders(options = {}) {
+  const { scope = '', status = '', q = '', limit = 300, cursor = '', summary = false } = options || {};
   try {
     // Full order lists contain private customer data, so they require a signed
     // admin or rider session. Customers poll their own order by ID instead.
@@ -1969,13 +2026,24 @@ export async function apiFetchOrders() {
       || sessionStorage.getItem('yebs_driver_token')
       || localStorage.getItem('yebs_driver_token_persist');
     if (!token) return null;
-    const res = await fetch(`${API_BASE}/api/orders`, {
+    const params = new URLSearchParams();
+    if (scope) params.set('scope', scope);
+    if (status) params.set('status', status);
+    if (q) params.set('q', q);
+    if (limit) params.set('limit', String(limit));
+    if (cursor) params.set('cursor', cursor);
+    if (summary) params.set('summary', '1');
+    const res = await fetch(`${API_BASE}/api/orders${params.toString() ? '?' + params.toString() : ''}`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store'
     });
     if (res.ok) {
       const data = await res.json();
-      return Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) return [];
+      data.nextCursor = res.headers.get('X-Next-Cursor') || '';
+      data.hasMore = res.headers.get('X-Has-More') === '1';
+      data.totalCount = Number(res.headers.get('X-Total-Count')) || data.length;
+      return data;
     }
   } catch (e) {}
   return null;
@@ -2012,6 +2080,24 @@ export function mergeServerOrders(serverOrders) {
 
   if (JSON.stringify(local) !== JSON.stringify(merged)) saveOrders(merged);
   return merged;
+}
+
+// Recommendations are computed on the server from real order history so every
+// device sees the same answer (and the browser never has to hold the archive).
+export async function apiRecommendations(phone = '', exclude = []) {
+  try {
+    const params = new URLSearchParams();
+    if (phone) params.set('phone', phone);
+    if (Array.isArray(exclude) && exclude.length) params.set('exclude', exclude.join(','));
+    const res = await fetch(`${API_BASE}/api/recommendations${params.toString() ? '?' + params.toString() : ''}`, {
+      cache: 'no-store'
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.recommendations)) return data;
+    }
+  } catch (e) {}
+  return { success: false, recommendations: [], basis: 'popularity', reason: '' };
 }
 
 export async function syncOrdersFromServer() {
@@ -2052,7 +2138,7 @@ export async function apiFetchAllDrivers() {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const res = await fetch(`${API_BASE}/api/admin/drivers`, {
+      const res = await fetch(`${API_BASE}/api/admin/drivers?format=envelope`, {
         headers: authHeaders(),
         cache: 'no-store',
         signal: AbortSignal.timeout(25000)
@@ -2063,9 +2149,10 @@ export async function apiFetchAllDrivers() {
         error.status = res.status;
         throw error;
       }
-      if (!Array.isArray(data)) throw new Error('The server returned an invalid driver roster.');
-      data.forEach(rememberRegisteredDriver);
-      return data;
+      const drivers = Array.isArray(data) ? data : data.drivers;
+      if (!Array.isArray(drivers)) throw new Error('The server returned an invalid driver roster.');
+      drivers.forEach(rememberRegisteredDriver);
+      return drivers;
     } catch (error) {
       lastError = error;
       if (error.status === 401 || error.status === 403) break;

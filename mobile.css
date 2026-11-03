@@ -81,6 +81,45 @@
 [data-theme="dark"] textarea::placeholder {
   color: var(--dm-muted) !important;
 }
+[data-theme="dark"] p,
+[data-theme="dark"] small,
+[data-theme="dark"] label,
+[data-theme="dark"] dt,
+[data-theme="dark"] dd,
+[data-theme="dark"] td,
+[data-theme="dark"] th,
+[data-theme="dark"] .muted,
+[data-theme="dark"] .meta,
+[data-theme="dark"] .subtext,
+[data-theme="dark"] .fine-print,
+[data-theme="dark"] .fee-row,
+[data-theme="dark"] .payment-hint,
+[data-theme="dark"] .roster-meta,
+[data-theme="dark"] .action-meta {
+  color: var(--dm-text) !important;
+}
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4,
+[data-theme="dark"] strong,
+[data-theme="dark"] b {
+  color: var(--dm-text) !important;
+}
+[data-theme="dark"] .metric-card,
+[data-theme="dark"] .stat-card,
+[data-theme="dark"] .admin-card,
+[data-theme="dark"] .panel-card,
+[data-theme="dark"] table,
+[data-theme="dark"] tbody,
+[data-theme="dark"] tfoot {
+  background: var(--dm-card) !important;
+  border-color: var(--dm-border) !important;
+  color: var(--dm-text) !important;
+}
+[data-theme="dark"] tr:nth-child(even) {
+  background: rgba(255,255,255,.025) !important;
+}
 [data-theme="dark"] .pay-modal-card {
   background: var(--dm-surface) !important;
   color: var(--dm-text) !important;
