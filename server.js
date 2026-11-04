@@ -130,7 +130,10 @@ app.post('/api/ai/chat', async (req, res) => {
     const delivered = orders.filter(order => String(order.status || '').toLowerCase() === 'delivered');
     const active = orders.filter(order => !['delivered', 'cancelled'].includes(String(order.status || '').toLowerCase()));
     const cancelled = orders.filter(order => String(order.status || '').toLowerCase() === 'cancelled');
-    const paid = orders.filter(order => order.paymentVerified === true || String(order.paymentStatus || '').toLowerCase() === 'paid');
+    const paid = orders.filter(order => String(order.status || '').toLowerCase() !== 'cancelled' &&
+      (order.paymentVerified === true ||
+        String(order.paymentStatus || '').toLowerCase() === 'paid' ||
+        String(order.verificationMethod || '').toLowerCase() === 'cash-driver'));
     const pendingPayments = orders.filter(order =>
       ['pending', 'review'].includes(String(order.paymentStatus || '').toLowerCase()) ||
       String(order.momoRequestStatus || '').toLowerCase() === 'pending'
