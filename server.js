@@ -19,7 +19,6 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { OAuth2Client } = require('google-auth-library');
 const webPush = require('web-push');
 const store = require('./src/data/store');
 const media = require('./src/data/media');
@@ -95,17 +94,6 @@ const DB_FILE = process.env.DB_PATH
   ? path.resolve(process.env.DB_PATH)
   : path.join(__dirname, 'database.json');
 const SECRET_FILE = path.join(__dirname, '.auth-secret');
-
-const googleOAuthClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || '');
-
-async function verifyGoogleCredential(idToken) {
-  const clientId = process.env.GOOGLE_CLIENT_ID || '';
-  if (!clientId) throw new Error('Google sign-in is not configured.');
-  const ticket = await googleOAuthClient.verifyIdToken({ idToken, audience: clientId });
-  const payload = ticket.getPayload();
-  if (!payload || payload.email_verified !== true) throw new Error('Google email verification is required.');
-  return payload;
-}
 
 app.use(cors());
 // Photos (driver live face photo + MoMo receipts) are sent as base64 data URLs,
@@ -2400,39 +2388,6 @@ app.post('/api/auth/admin/unlock', (req, res) => {
 });
 
 // DRIVER SIGN UP
-app.get('/api/auth/google/client-id', (req, res) => {
-  res.json({ success: true, configured: Boolean(process.env.GOOGLE_CLIENT_ID), clientId: process.env.GOOGLE_CLIENT_ID || '' });
-});
-
-app.post('/api/auth/driver/google', async (req, res) => {
-  try {
-    const credential = cleanString(req.body && req.body.credential, 12000);
-    const profile = await verifyGoogleCredential(credential);
-    const db = loadDatabase();
-    const driver = db.drivers.find(d => String(d.email || '').toLower().trim() === String(profile.email || '').toLower().trim());
-    if (!driver) {
-      return res.json({
-        success: true,
-        verified: true,
-        signup: true,
-        profile: { email: profile.email, givenName: profile.given_name || '', familyName: profile.family_name || '', name: profile.name || '', picture: profile.picture || '' }
-      });
-    }
-    if (driver.approvalStatus === 'pending' || (!driver.approvalStatus && !driver.approvedAt && !driver.isActive)) {
-      return res.status(403).json({ success: false, pending: true, driverId: driver.id, message: 'Your account is pending admin approval.' });
-    }
-    if (driver.approvalStatus === 'rejected') {
-      return res.status(403).json({ success: false, rejected: true, message: driver.rejectionReason || 'Your registration was not approved.' });
-    }
-    const token = createToken(driver.id, 'driver', { username: driver.username, name: driver.name || `${driver.fname} ${driver.lname}`, sessionEpoch: driver.sessionEpoch || 0 });
-    logAction('DRIVER_GOOGLE_LOGIN_SUCCESS', driver.username, 'DRIVER_PORTAL', { name: driver.name });
-    return res.json({ success: true, token, driver: { id: driver.id, username: driver.username, name: driver.name, token }, expiresInMs: SESSION_TTL_MS });
-  } catch (err) {
-    console.error('[auth] Google verification failed:', err.message);
-    return res.status(401).json({ success: false, message: err.message || 'Google verification failed.' });
-  }
-});
-
 app.post('/api/auth/driver/signup', async (req, res) => {
   const fname = cleanString(req.body && req.body.fname, 60);
   const lname = cleanString(req.body && req.body.lname, 60);
@@ -2441,26 +2396,14 @@ app.post('/api/auth/driver/signup', async (req, res) => {
   const password = String((req.body && req.body.password) || '');
   const vehicle = cleanString(req.body && req.body.vehicle, 120);
   const photo = req.body && req.body.photo ? String(req.body.photo).slice(0, 9 * 1024 * 1024) : null;
-  const googleCredential = cleanString(req.body && req.body.googleCredential, 12000);
-  let googleProfile = null;
-  if (googleCredential) {
-    try {
-      googleProfile = await verifyGoogleCredential(googleCredential);
-      if (String(googleProfile.email || '').toLowerCase() !== email.toLowerCase()) {
-        return res.status(403).json({ success: false, message: 'The verified Google email does not match the signup email.' });
-      }
-    } catch (err) {
-      return res.status(401).json({ success: false, message: err.message || 'Google verification failed.' });
-    }
-  }
 
-  if (!fname || !lname || !phone || !email || (!googleProfile && !password)) {
+  if (!fname || !lname || !phone || !email || !password) {
     return res.status(400).json({ success: false, message: "First name, last name, phone, email, and password are required." });
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ success: false, message: "Enter a valid email address for account recovery." });
   }
-  if (!googleProfile && password.length < 6) {
+  if (password.length < 6) {
     return res.status(400).json({ success: false, message: "Choose a password with at least 6 characters." });
   }
   if (!vehicle) {
@@ -2483,8 +2426,7 @@ app.post('/api/auth/driver/signup', async (req, res) => {
   const newDriver = {
     id: driverId,
     username,
-    password: googleProfile ? null : hashPassword(password),
-    googleSub: googleProfile ? googleProfile.sub : null,
+    password: hashPassword(password),
     fname,
     lname,
     name: `${fname} ${lname}`.trim(),

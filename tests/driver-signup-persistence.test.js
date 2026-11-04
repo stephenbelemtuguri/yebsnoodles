@@ -95,6 +95,32 @@ describe('driver signup persistence', () => {
     };
   }
 
+  test('requires a password for every driver signup', async () => {
+    const { app } = await createApp();
+    const payload = signupPayload();
+    delete payload.password;
+    payload.googleCredential = 'legacy-google-token';
+
+    const response = await request(app)
+      .post('/api/auth/driver/signup')
+      .send(payload);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain('password are required');
+  });
+
+  test('does not expose driver Google authentication endpoints', async () => {
+    const { app } = await createApp();
+
+    const [clientId, login] = await Promise.all([
+      request(app).get('/api/auth/google/client-id'),
+      request(app).post('/api/auth/driver/google').send({ credential: 'legacy-google-token' })
+    ]);
+
+    expect(clientId.status).toBe(404);
+    expect(login.status).toBe(404);
+  });
+
   test('does not report signup success when the database write fails', async () => {
     const { app, data, set, acquireMutationLock } = await createApp();
     set.mockResolvedValue({ ok: false, mode: 'supabase', error: 'write denied' });
