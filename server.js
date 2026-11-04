@@ -5783,7 +5783,11 @@ function analyticsInRange(orders, start, end) {
 
 function analyticsSummary(orders) {
   const real = orders.filter(o => o.status !== 'cancelled');
-  const paid = real.filter(o => o.paymentStatus === 'paid');
+  const paid = real.filter(o =>
+    o.paymentStatus === 'paid' ||
+    o.paymentVerified === true ||
+    o.verificationMethod === 'cash-driver'
+  );
   const collected = paid.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
   const orderValue = real.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
   // Total revenue is the value of every non-cancelled order, so it always
