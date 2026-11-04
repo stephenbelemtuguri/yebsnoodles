@@ -325,9 +325,11 @@ General capability:
               }
             };
           } else if (call.functionCall.name === 'list_orders') {
-            output = asArray(live.orders).filter(o => !args.status || String(o.status).toLowerCase() === String(args.status).toLowerCase()).slice(0, Math.min(Number(args.limit) || 12, 25)).map(o => ({ id: o.id, status: o.status, paymentStatus: o.paymentStatus, fulfilment: o.fulfilment, total: o.total, createdAt: o.createdAt }));
+            const matchingOrders = asArray(live.orders).filter(o => !args.status || String(o.status).toLowerCase() === String(args.status).toLowerCase()).slice(0, Math.min(Number(args.limit) || 12, 25)).map(o => ({ id: o.id, status: o.status, paymentStatus: o.paymentStatus, fulfilment: o.fulfilment, total: o.total, createdAt: o.createdAt }));
+            output = { count: matchingOrders.length, orders: matchingOrders };
           } else if (call.functionCall.name === 'inspect_payments') {
-            output = live.orders.filter(o => o.paymentStatus === 'review' || o.paymentStatus === 'pending' || o.momoRequestStatus === 'pending').slice(0, 25).map(o => ({ id: o.id, total: o.total, paymentStatus: o.paymentStatus, momoRequestStatus: o.momoRequestStatus, paymentMode: o.paymentMode }));
+            const paymentQueue = live.orders.filter(o => o.paymentStatus === 'review' || o.paymentStatus === 'pending' || o.momoRequestStatus === 'pending').slice(0, 25).map(o => ({ id: o.id, total: o.total, paymentStatus: o.paymentStatus, momoRequestStatus: o.momoRequestStatus, paymentMode: o.paymentMode }));
+            output = { count: paymentQueue.length, payments: paymentQueue };
           } else if (call.functionCall.name === 'notify_team' && role !== 'customer' && args.confirmed === true) {
             live.notifications = Array.isArray(live.notifications) ? live.notifications : [];
             live.notifications.unshift({ id: 'ai-' + Date.now(), title: String(args.title).slice(0, 120), message: String(args.message).slice(0, 500), audience: args.audience, createdAt: new Date().toISOString(), source: 'ai-assistant' });
