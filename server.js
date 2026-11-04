@@ -205,6 +205,7 @@ General capability:
       const configuredGeminiModel = String(process.env.GEMINI_MODEL || process.env.AI_MODEL || '').trim();
       const preferredGeminiModels = [...new Set([
         configuredGeminiModel,
+        'gemini-flash-lite-latest',
         'gemini-2.5-flash-lite',
         'gemini-2.5-flash',
         'gemini-2.0-flash',
@@ -222,7 +223,7 @@ General capability:
               model.supportedGenerationMethods.includes('generateContent'))
             .map(model => String(model.name || '').replace(/^models\//, ''))
             .filter(model => /flash/i.test(model));
-          preferredGeminiModels.splice(1, 0, ...availableFlashModels);
+          preferredGeminiModels.push(...availableFlashModels);
         }
       } catch (_) {}
       const geminiModels = [...new Set(preferredGeminiModels)];
