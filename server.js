@@ -102,7 +102,12 @@ async function verifyGoogleCredential(idToken) {
 app.use(cors());
 // Photos (driver live face photo + MoMo receipts) are sent as base64 data URLs,
 // so the default 100kb JSON limit is far too small.
-app.use(express.json({ limit: '12mb' }));
+app.use(express.json({
+  limit: '12mb',
+  verify: (req, _res, buffer) => {
+    req.rawBody = Buffer.from(buffer);
+  }
+}));
 
 app.post('/api/ai/chat', async (req, res) => {
   const message = String(req.body && req.body.message || '').trim().slice(0, 1200);
@@ -1213,6 +1218,68 @@ async function sendWhatsAppText(to, text) {
   }
   return { ok: false, reason: 'whatsapp-not-configured' };
 }
+
+app.get('/api/whatsapp/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  const configuredToken = String(process.env.WHATSAPP_VERIFY_TOKEN || '');
+  if (configuredToken && mode === 'subscribe' && token === configuredToken) {
+    return res.status(200).send(challenge);
+  }
+  return res.sendStatus(403);
+});
+
+app.post('/api/whatsapp/webhook', async (req, res) => {
+  const appSecret = process.env.WHATSAPP_APP_SECRET || '';
+  if (appSecret) {
+    const signature = String(req.get('x-hub-signature-256') || '');
+    const expected = 'sha256=' + crypto.createHmac('sha256', appSecret).update(req.rawBody || Buffer.from(JSON.stringify(req.body))).digest('hex');
+    if (!signature || signature !== expected) return res.sendStatus(403);
+  }
+  res.sendStatus(200);
+
+  const entries = Array.isArray(req.body && req.body.entry) ? req.body.entry : [];
+  for (const entry of entries) {
+    for (const change of entry.changes || []) {
+      const value = change.value || {};
+      for (const message of value.messages || []) {
+        if (message.type !== 'text') continue;
+        const from = String(message.from || '').replace(/\D/g, '');
+        const text = String(message.text && message.text.body || '').trim().slice(0, 1200);
+        if (!from || !text) continue;
+        try {
+          const db = loadDatabase();
+          const menu = (db.menuItems || []).filter(item => item.available !== false)
+            .slice(0, 12).map(item => `${item.name} - GH${Number(item.price || 0).toFixed(2)}`).join('; ');
+          const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+          let reply = 'Welcome to YEBS Noodles. Ask me about meals, payment, delivery, or your order.';
+          if (apiKey) {
+            const prompt = `You are YEBS Noodles' WhatsApp assistant. Answer helpfully and professionally.
+Current menu: ${menu || 'menu unavailable'}. Business phone: 0559103452.
+Kitchen message: ${text}`;
+            const model = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+              method: 'POST',
+              headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] } ] }),
+              signal: AbortSignal.timeout(15000)
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (response.ok) {
+              reply = String(payload.candidates && payload.candidates[0] && payload.candidates[0].content
+                && payload.candidates[0].content.parts && payload.candidates[0].content.parts[0]
+                ? payload.candidates[0].content.parts[0].text : '').trim() || reply;
+            }
+          }
+          await sendWhatsAppText(from, reply);
+        } catch (error) {
+          console.warn('[whatsapp-bot] response failed:', error.message);
+        }
+      }
+    }
+  }
+});
 
 // ==========================================================
 // SECURITY PRIMITIVES — bcrypt passwords + HMAC session tokens
@@ -2480,7 +2547,15 @@ async function sendRecoverySms(toPhone, text) {
   const accountSid = process.env.TWILIO_ACCOUNT_SID || '';
   const authToken = process.env.TWILIO_AUTH_TOKEN || '';
   const from = process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER || '';
-  if (!accountSid || !authToken || !from) return { ok: false, reason: 'sms-not-configured' };
+  if (!accountSid || !authToken || !from) {
+    try {
+      const sms = require('./src/services/sms');
+      const result = await sms.send(toPhone, text);
+      return result.success ? { ok: true, provider: result.provider, providerId: result.messageId } : { ok: false, reason: result.error };
+    } catch (error) {
+      return { ok: false, reason: 'sms-not-configured' };
+    }
+  }
 
   const digits = String(toPhone || '').replace(/\D/g, '');
   const to = digits.startsWith('233') ? `+${digits}` : (digits.startsWith('0') ? `+233${digits.slice(1)}` : `+${digits}`);
