@@ -75,11 +75,12 @@
       });
       const data = await response.json();
       thinking.remove();
-      const answer = response.ok && data.success !== false && data.reply
-        ? data.reply
-        : 'The AI service is busy. Your question was received; please try again in a moment.';
+      const answer = data.reply || [data.message, data.reason].filter(Boolean).join(' ') ||
+        'The AI service is unavailable. Please try again in a moment.';
       add(answer, false);
-      history.push({ role: 'user', content: question }, { role: 'assistant', content: answer });
+      if (response.ok && data.success !== false) {
+        history.push({ role: 'user', content: question }, { role: 'assistant', content: answer });
+      }
     } catch (_) {
       thinking.remove();
       add('The assistant could not connect. Please try again.', false);

@@ -193,6 +193,9 @@
       min-width: 180px;
     }
     .track-input:focus { border-color: var(--forest); }
+    .track-search-status { flex-basis: 100%; min-height: 1.1em; margin: -4px 0 0 auto; color: var(--muted); font-size: .76rem; }
+    .track-search-status.error { color: #b91c1c; }
+    .track-search-status.success { color: #166534; }
 
     /* Hero Section */
     .page-video-frame { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: #071f17; }
@@ -598,6 +601,7 @@
         padding: 10px 10px calc(14px + env(safe-area-inset-bottom));
       }
       .track-modal { max-height: calc(100dvh - 20px); border-radius: 14px; }
+      .track-search-status { margin-left: 0; }
       .edu-modal-box { max-height: calc(100dvh - 24px); overflow-y: auto; padding: 22px 18px; }
       .total-row { font-size: 1rem; }
     }
@@ -1125,10 +1129,11 @@
         <span style="font-size:0.8rem; color:var(--muted);">View real-time GPS of your delivery rider just like Bolt or Yango</span>
       </div>
       <div class="track-search-box">
-        <input type="text" id="headerTrackInput" class="track-input" placeholder="Enter Order ID (e.g. YB-1082)">
+        <input type="text" id="headerTrackInput" class="track-input" placeholder="Order ID (YB-ABC234) or 4-digit pickup PIN" aria-label="Order ID or pickup PIN" autocomplete="off">
         <button type="button" id="headerTrackSubmit" class="button button-orange" style="min-height:36px; padding:0 14px; font-size:0.8rem;">
           Track ↗
         </button>
+        <div id="trackSearchStatus" class="track-search-status" role="status" aria-live="polite"></div>
       </div>
     </div>
   </div>
@@ -1649,6 +1654,7 @@
               <div style="font-size:0.78rem; color:#16a34a; font-weight:700; margin-top:2px;">
                 ● <span id="trackDriverLiveText">Live GPS</span> · Speed: <span id="trackDriverSpeed">0 km/h</span>
               </div>
+              <div id="trackDriverLocationFreshness" style="font-size:0.72rem; color:var(--muted); margin-top:3px;" aria-live="polite">Waiting for rider location…</div>
               <a id="trackDriverPhoneText" href="#" style="font-size:0.78rem; color:var(--forest); font-weight:700; text-decoration:none; display:inline-block; margin-top:2px;"></a>
             </div>
           </div>
@@ -2047,6 +2053,7 @@
     const closeTrackModalBtn = document.getElementById("closeTrackModalBtn");
     const headerTrackInput = document.getElementById("headerTrackInput");
     const headerTrackSubmit = document.getElementById("headerTrackSubmit");
+    const trackSearchStatus = document.getElementById("trackSearchStatus");
     const heroTrackDemoBtn = document.getElementById("heroTrackDemoBtn");
 
     const trackOrderIdDisplay = document.getElementById("trackOrderIdDisplay");
@@ -2062,6 +2069,7 @@
     const trackDriverAvatar = document.getElementById("trackDriverAvatar");
     const trackDriverPhoneText = document.getElementById("trackDriverPhoneText");
     const trackDriverLiveText = document.getElementById("trackDriverLiveText");
+    const trackDriverLocationFreshness = document.getElementById("trackDriverLocationFreshness");
     const trackPackageSummary = document.getElementById("trackPackageSummary");
     const trackCallDriverLink = document.getElementById("trackCallDriverLink");
     const trackWaDriverLink = document.getElementById("trackWaDriverLink");
@@ -3327,35 +3335,57 @@
         orderId = localStorage.getItem('yebs_active_order_id') || (getOrders().length > 0 ? getOrders()[0].id : null);
       }
       if (!orderId) {
-        const inputId = window.prompt("Enter your Order ID (e.g. YB-1234) or 4-digit PIN to track live:");
+        const inputId = window.prompt("Enter your Order ID (e.g. YB-ABC234) or 4-digit pickup PIN to track live:");
         if (!inputId || !inputId.trim()) return;
         orderId = inputId.trim();
       }
 
-      // Accept the 4-digit PIN on its own as well as the full Order ID.
-      orderId = String(orderId).trim().toUpperCase().replace(/\s+/g, "");
+      orderId = String(orderId).trim().replace(/[–—]/g, '-').replace(/^order\s*#?\s*/i, '').replace(/^#/, '').toUpperCase().replace(/\s+/g, '');
       if (/^\d{4}$/.test(orderId)) orderId = `YB-${orderId}`;
 
-      // Order may have been created on another device - pull just this order
-      // from the server (customer sessions never download the whole database).
-      if (!getOrderById(orderId)) {
-        await apiFetchOrder(orderId).catch(() => {});
+      const cachedOrder = getOrderById(orderId);
+      let order = null;
+      if (trackSearchStatus) {
+        trackSearchStatus.textContent = 'Finding your order…';
+        trackSearchStatus.className = 'track-search-status';
       }
-      if (!getOrderById(orderId)) {
-        try {
-          const response = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/track`);
-          const data = await response.json().catch(() => ({}));
-          if (response.ok && data.order && data.order.id) {
-            mergeServerOrders([data.order]);
+      if (headerTrackSubmit) {
+        headerTrackSubmit.disabled = true;
+        headerTrackSubmit.textContent = 'Finding…';
+      }
+      try {
+        const response = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/track`, { cache: 'no-store' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.order || !data.order.id) {
+          if (trackSearchStatus) {
+            trackSearchStatus.textContent = data.message || 'Order not found. Check the Order ID or pickup PIN and try again.';
+            trackSearchStatus.className = 'track-search-status error';
           }
-        } catch (_) {}
-      }
-      if (!getOrderById(orderId)) {
-        alert(`Order ${orderId} was not found. Please verify your order number or place an order first.`);
-        return;
+          return;
+        }
+        order = data.order;
+        mergeServerOrders([order]);
+      } catch (_) {
+        order = cachedOrder;
+        if (!order) {
+          if (trackSearchStatus) {
+            trackSearchStatus.textContent = 'Could not reach the tracking service. Check your connection and try again.';
+            trackSearchStatus.className = 'track-search-status error';
+          }
+          return;
+        }
+        if (trackSearchStatus) {
+          trackSearchStatus.textContent = 'Showing the saved order details; live updates need a connection.';
+          trackSearchStatus.className = 'track-search-status';
+        }
+      } finally {
+        if (headerTrackSubmit) {
+          headerTrackSubmit.disabled = false;
+          headerTrackSubmit.textContent = 'Track ↗';
+        }
       }
 
-      currentlyTrackedOrderId = orderId;
+      currentlyTrackedOrderId = order.id;
       trackingOverlay.classList.add("active");
       document.body.style.overflow = "hidden";
       renderTrackingModal();
@@ -3372,12 +3402,15 @@
       }, 200);
 
       // ── Live SSE subscription: get real-time order status pushes ──
-      startOrderSSE(orderId);
-      startCustomerLocationStream(orderId);
+      startOrderSSE(order.id);
+      startCustomerLocationStream(order.id);
+      if (_trackingFreshnessInterval) clearInterval(_trackingFreshnessInterval);
+      _trackingFreshnessInterval = setInterval(updateDriverLocationFreshness, 15000);
     }
 
     let _orderSSE = null;
     let _orderPollInterval = null;
+    let _trackingFreshnessInterval = null;
     let _customerLocationWatchId = null;
     let _customerLocationLastSentAt = 0;
 
@@ -3506,11 +3539,44 @@
       if (detail) detail.textContent = s.detail;
     }
 
+    function updateDriverLocationFreshness() {
+      const order = getOrderById(currentlyTrackedOrderId);
+      if (!trackDriverLocationFreshness || !trackDriverLiveText) return;
+      const updatedAt = order && order.driver && Date.parse(order.driver.lastUpdated || '');
+      if (!Number.isFinite(updatedAt)) {
+        trackDriverLiveText.textContent = order && order.driver ? 'GPS pending' : 'Rider not assigned';
+        trackDriverLiveText.style.color = 'var(--muted)';
+        trackDriverLocationFreshness.textContent = order && order.driver
+          ? "Waiting for the rider's first GPS update."
+          : 'Live location appears after a rider accepts the delivery.';
+        return;
+      }
+
+      const secondsAgo = Math.max(0, Math.floor((Date.now() - updatedAt) / 1000));
+      const minutesAgo = Math.floor(secondsAgo / 60);
+      const age = secondsAgo < 10
+        ? 'just now'
+        : secondsAgo < 60
+          ? `${secondsAgo} seconds ago`
+          : `${minutesAgo} minute${minutesAgo === 1 ? '' : 's'} ago`;
+      const isFresh = secondsAgo <= 60;
+      trackDriverLiveText.textContent = isFresh ? 'Live GPS' : 'GPS delayed';
+      trackDriverLiveText.style.color = isFresh ? '#16a34a' : '#b45309';
+      trackDriverLocationFreshness.textContent = isFresh
+        ? `Rider location updated ${age}.`
+        : `Location may be out of date — last update ${age}.`;
+      trackDriverLocationFreshness.style.color = isFresh ? 'var(--muted)' : '#92400e';
+    }
+
     function closeTrackingModal() {
       trackingOverlay.classList.remove("active");
       document.body.style.overflow = "";
       stopOrderSSE();
       stopCustomerLocationStream();
+      if (_trackingFreshnessInterval) {
+        clearInterval(_trackingFreshnessInterval);
+        _trackingFreshnessInterval = null;
+      }
     }
 
     function renderTrackingModal() {
@@ -3738,11 +3804,7 @@
       }
 
       trackDriverSpeed.textContent = driverLat === null ? "Waiting for GPS" : `${driverSpeed} km/h`;
-      if (trackDriverLiveText) {
-        trackDriverLiveText.textContent = order.driver && order.driver.lastUpdated
-          ? `Live GPS · updated ${new Date(order.driver.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-          : (order.driver ? "Awaiting GPS signal" : "Rider not assigned yet");
-      }
+      updateDriverLocationFreshness();
 
       // Live Driver ETA to target pickup point
       const hasDriverLocation = driverLat !== null;
@@ -4045,10 +4107,20 @@
     headerTrackSubmit.addEventListener('click', () => {
       const val = headerTrackInput.value.trim();
       if (!val) {
-        alert("Please enter an order ID to track (e.g. YB-1082).");
+        if (trackSearchStatus) {
+          trackSearchStatus.textContent = 'Enter your Order ID or 4-digit pickup PIN.';
+          trackSearchStatus.className = 'track-search-status error';
+        }
+        headerTrackInput.focus();
         return;
       }
-      openTrackingModal(val);
+      openTrackingModal(val).then(() => {
+        if (trackingOverlay.classList.contains('active') && trackSearchStatus) {
+          trackSearchStatus.textContent = `Tracking order ${currentlyTrackedOrderId}.`;
+          trackSearchStatus.className = 'track-search-status success';
+          headerTrackInput.value = currentlyTrackedOrderId;
+        }
+      });
     });
     headerTrackInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {

@@ -215,30 +215,12 @@ General capability:
   if (geminiKey) {
     try {
       const configuredGeminiModel = String(process.env.GEMINI_MODEL || process.env.AI_MODEL || '').trim();
-      const preferredGeminiModels = [...new Set([
+      const geminiModels = [...new Set([
         configuredGeminiModel,
-        'gemini-flash-lite-latest',
-        'gemini-2.5-flash-lite',
-        'gemini-2.5-flash',
-        'gemini-2.0-flash',
-        'gemini-flash-latest'
+        'gemini-3.6-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.1-flash-lite'
       ].filter(Boolean))];
-      try {
-        const modelListResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100', {
-          headers: { 'x-goog-api-key': geminiKey },
-          signal: AbortSignal.timeout(8000)
-        });
-        if (modelListResponse.ok) {
-          const modelList = await modelListResponse.json();
-          const availableFlashModels = (modelList.models || [])
-            .filter(model => Array.isArray(model.supportedGenerationMethods) &&
-              model.supportedGenerationMethods.includes('generateContent'))
-            .map(model => String(model.name || '').replace(/^models\//, ''))
-            .filter(model => /flash/i.test(model));
-          preferredGeminiModels.push(...availableFlashModels);
-        }
-      } catch (_) {}
-      const geminiModels = [...new Set(preferredGeminiModels)].slice(0, 2);
       const contents = suppliedHistory.slice(-10).filter(entry =>
         entry && typeof entry.content === 'string' && ['user', 'assistant', 'model'].includes(entry.role)
       ).map(entry => ({
@@ -281,7 +263,7 @@ General capability:
           });
         } catch (error) {
           geminiFailureReason = error.name === 'TimeoutError' ? 'Gemini model request timed out.' : error.message;
-          continue;
+          break;
         }
         const rawData = await response.text();
         let data;
@@ -2089,8 +2071,8 @@ function normalizeOrderId(raw) {
   if (/^\d{4}$/.test(value)) return `YB-${value}`;
   const prefixed = value.match(/^YB-?([A-Z0-9]{4,12})$/);
   if (prefixed) return `YB-${prefixed[1]}`;
-  // A bare modern suffix, e.g. "A7K2M9".
-  if (/^[A-Z0-9]{5,12}$/.test(value) && /[A-Z]/.test(value)) return `YB-${value}`;
+  // A bare modern suffix may contain only digits; four-digit values remain PINs.
+  if (/^[A-Z0-9]{5,12}$/.test(value)) return `YB-${value}`;
   return value;
 }
 

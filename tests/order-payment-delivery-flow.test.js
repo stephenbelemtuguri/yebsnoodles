@@ -200,6 +200,20 @@ describe('customer order to verified delivery flow', () => {
     expect(order.body.subtotal).toBe(50);
   });
 
+  test('tracks orders by full ID, bare numeric suffix, and pickup PIN', async () => {
+    const order = await createDelivery();
+    const storedOrder = require('../src/data/store').get().orders.find(item => item.id === order.id);
+    storedOrder.id = 'YB-123456';
+
+    for (const reference of ['YB-123456', '123456', order.pickupPin]) {
+      const tracking = await request(app).get(`/api/orders/${encodeURIComponent(reference)}/track`);
+
+      expect(tracking.status).toBe(200);
+      expect(tracking.body.order.id).toBe('YB-123456');
+      expect(tracking.body.order).not.toHaveProperty('phone');
+    }
+  });
+
   test('edits the existing unpaid order with authenticated access', async () => {
     const order = await createDelivery();
     const unauthorized = await request(app)

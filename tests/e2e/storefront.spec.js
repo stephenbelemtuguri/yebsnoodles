@@ -31,6 +31,13 @@ test('places a menu-backed order through the storefront', async ({ page }) => {
   });
   expect(order.trackingToken).toBeTruthy();
   await expect(page.locator('#formFeedback')).toContainText(`Order ${order.id} placed`);
+  await page.locator('#thanksDoneBtn').click();
+  await page.locator('#orderIdModalCloseBtn').click();
+  await page.locator('#headerTrackInput').fill(order.id);
+  await page.locator('#headerTrackSubmit').click();
+  await expect(page.locator('#trackingOverlay')).toHaveClass(/active/);
+  await expect(page.locator('#trackOrderIdDisplay')).toHaveText(order.id);
+  await expect(page.locator('#trackSearchStatus')).toContainText(`Tracking order ${order.id}`);
   expect(pageErrors).toEqual([]);
 });
 
