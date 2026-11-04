@@ -1944,6 +1944,9 @@ function paymentFieldsFor(order) {
     momoRequestId: order.momoRequestId || null,
     momoRequestStatus: order.momoRequestStatus || null,
     momoRequestAt: order.momoRequestAt || null,
+    cashReceived: Number(order.cashReceived) || null,
+    changeGiven: Math.max(0, Number(order.changeGiven) || 0),
+    cashReceipt: order.cashReceipt || null,
     momoReceipt: order.momoReceipt ? {
       // `image` stays for older clients; `imageUrl` points at object storage.
       image: order.momoReceipt.imageUrl || order.momoReceipt.image || null,
@@ -3651,7 +3654,7 @@ app.post('/api/payments/momo/callback', async (req, res) => {
 });
 
 // Rider collects cash on delivery — auto-validated against the order total.
-app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), (req, res) => {
+app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), async (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
@@ -3661,6 +3664,9 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), (req, res) 
   }
   if (req.auth.payload.role === 'driver' && order.paymentMode !== 'cash' && !/cash|pay on delivery/i.test(order.payment || '')) {
     return res.status(409).json({ success: false, message: "This order is set for Mobile Money, not cash collection." });
+  }
+  if (req.auth.payload.role === 'driver' && order.status !== 'arrived') {
+    return res.status(409).json({ success: false, message: "Cash can be collected only after you have marked arrival at the delivery location." });
   }
 
   if (order.paymentStatus === 'paid') {
@@ -3682,18 +3688,19 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), (req, res) 
     ? (req.auth.driver.name || req.auth.driver.username)
     : (req.auth.admin.name || req.auth.admin.username);
 
-  order.momoAmount = received;
   order.momoTransactionRef = `CASH-${Date.now().toString(36).toUpperCase()}`;
   order.paymentMode = 'cash';
   order.payment = 'Pay on Delivery (Cash)';
   order.verificationMethod = 'cash-driver';
   order.cashCollectedBy = actorName;
   order.cashCollectedAt = new Date().toISOString();
+  const changeGiven = Math.max(0, Math.round((received - total) * 100) / 100);
 
-  if (Math.abs(received - total) > 0.009) {
+  if (received < total - 0.009) {
     order.paymentStatus = 'review';
     addPaymentAudit(order, received < total ? 'CASH_SHORT' : 'CASH_OVERPAYMENT', actorName, { expected: total, received });
-    saveDatabase(db);
+    const persistenceError = await requireDurableSave(db);
+    if (persistenceError) return res.status(503).json({ success: false, persisted: false, message: persistenceError });
     logAction(received < total ? 'CASH_PAYMENT_SHORT' : 'CASH_PAYMENT_OVERPAYMENT', actorName, order.id, { expected: total, received }, req);
     return res.status(202).json({
       success: false,
@@ -3706,18 +3713,35 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), (req, res) 
   order.paymentStatus = 'paid';
   order.paymentVerified = true;
   order.paidAt = new Date().toISOString();
-  addPaymentAudit(order, 'CASH_COLLECTED', actorName, { received, expected: total });
+  order.cashReceived = received;
+  order.changeGiven = changeGiven;
+  order.cashReceipt = {
+    receiptNumber: `YEBS-CASH-${Date.now().toString(36).toUpperCase()}`,
+    orderId: order.id,
+    expectedAmount: total,
+    receivedAmount: received,
+    changeGiven,
+    collectedBy: actorName,
+    collectedAt: order.cashCollectedAt,
+    customer: order.customer
+  };
+  addPaymentAudit(order, 'CASH_COLLECTED', actorName, { received, expected: total, changeGiven });
   automaticallyAssignPaidOrder(db, order);
 
-  saveDatabase(db);
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) return res.status(503).json({ success: false, persisted: false, message: persistenceError });
   if (typeof pushOrderUpdate === 'function') {
     pushOrderUpdate(order.id, { type: 'payment', order: projectOrder(order, 'customer') });
   }
-  logAction('CASH_PAYMENT_COLLECTED', actorName, order.id, { received, expected: total }, req);
+  logAction('CASH_PAYMENT_COLLECTED', actorName, order.id, { received, expected: total, changeGiven, receiptNumber: order.cashReceipt.receiptNumber }, req);
 
   res.json({
     success: true,
-    message: `Cash payment of GH₵${received.toFixed(2)} verified and recorded. ${order.id} is fully paid.`,
+    message: changeGiven > 0
+      ? `Cash payment recorded. Change due: GH₵${changeGiven.toFixed(2)}. Receipt ${order.cashReceipt.receiptNumber} saved.`
+      : `Cash payment of GH₵${received.toFixed(2)} verified and recorded. ${order.id} is fully paid.`,
+    changeGiven,
+    receipt: order.cashReceipt,
     order: projectOrder(order, req.auth.payload.role)
   });
 });

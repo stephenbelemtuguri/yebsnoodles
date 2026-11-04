@@ -2476,9 +2476,16 @@
           </div>
           <div style="margin-top:2px;">${mode} · ${order.payment || ''}</div>
           <div style="margin-top:2px; font-family:ui-monospace,monospace;">Ref: ${escapeHtml(order.paymentRef || order.id)}${order.momoTransactionRef ? ` · Txn: ${escapeHtml(order.momoTransactionRef)}` : ''}</div>
-          ${order.momoAmount ? `<div style="margin-top:2px;">Amount received: GH₵${Number(order.momoAmount).toFixed(2)}</div>` : ''}
+          ${(order.paymentMode === 'cash' ? order.cashReceived : order.momoAmount) ? `<div style="margin-top:2px;">Amount received: GH₵${Number(order.paymentMode === 'cash' ? order.cashReceived : order.momoAmount).toFixed(2)}</div>` : ''}
           ${order.verificationMethod ? `<div style="margin-top:2px;">Verified by: ${order.verificationMethod}${when ? ` · ${when}` : ''}</div>` : ''}
-          ${review ? `<div style="margin-top:4px; color:#b45309;">Proof is pending review. Confirm the transaction in the MoMo account before approving payment.</div>` : ''}
+          ${order.verificationMethod === 'cash-driver' && order.cashReceipt ? `
+            <div style="margin-top:7px;padding:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+              <strong>Cash receipt ${escapeHtml(order.cashReceipt.receiptNumber || '')}</strong>
+              <div>Received: GH₵${Number(order.cashReceipt.receivedAmount || 0).toFixed(2)} · Change: GH₵${Number(order.cashReceipt.changeGiven || 0).toFixed(2)}</div>
+              <div>Collected by: ${escapeHtml(order.cashReceipt.collectedBy || 'Driver')}</div>
+            </div>
+          ` : ''}
+          ${review ? `<div style="margin-top:4px;color:#b45309;">Proof is pending review. Confirm the transaction in the MoMo account before approving payment.</div>` : ''}
         `;
       }
       if (actionVerifyMomoBtn) {
@@ -3974,6 +3981,7 @@
 
     if (logSearchInput) logSearchInput.addEventListener('input', renderAuditLogs);
     if (refreshLogsBtn) refreshLogsBtn.addEventListener('click', loadAuditLogs);
+    setInterval(loadAuditLogs, 15000);
 
     async function refreshDrivers() {
       if (!checkAdminAuth()) return;

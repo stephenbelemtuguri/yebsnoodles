@@ -743,17 +743,23 @@
       </div>
     </div>
 
-    <!-- Order ID Lookup & Handover Validation -->
+    <!-- Driver cashier, order lookup, and handover validation -->
     <div class="card" style="margin-bottom:18px;" id="driverLookupCard">
       <div class="card-title">
         <div>
-          <span>🔎 Order ID Handover Check</span>
+          <span>💵 Driver Cashier &amp; Handover</span>
           <span class="badge" style="background:#ecfdf5; color:#166534; border:1px solid #bbf7d0; font-size:0.7rem;">Validated on the server</span>
         </div>
       </div>
       <p style="font-size:0.82rem; color:var(--muted); margin:0 0 12px; line-height:1.45;">
-        Fetch an order using its <strong>Order ID</strong> or the customer's separate <strong>4-digit pickup PIN</strong>.
+        Select an arrived, assigned cash order to load its amount due, or look up an order by <strong>Order ID</strong> / the customer's separate <strong>4-digit pickup PIN</strong>. Cash received, change, and receipt are recorded for admin.
       </p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+        <select id="driverCashOrderSelect" aria-label="Select arrived cash order"
+          style="flex:1; min-width:220px; padding:11px 13px; border:1px solid var(--line); border-radius:8px; font-size:0.9rem;">
+          <option value="">Select an arrived cash order…</option>
+        </select>
+      </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
         <input id="driverLookupInput" type="text" inputmode="text" autocomplete="off" placeholder="Order ID or pickup PIN"
           style="flex:1; min-width:200px; padding:11px 13px; border:1px solid var(--line); border-radius:8px; font-size:0.95rem; font-family:ui-monospace, monospace; letter-spacing:0.05em;">
@@ -1127,6 +1133,7 @@
     const driverLookupBtn = document.getElementById('driverLookupBtn');
     const driverLookupStatus = document.getElementById('driverLookupStatus');
     const driverLookupResult = document.getElementById('driverLookupResult');
+    const driverCashOrderSelect = document.getElementById('driverCashOrderSelect');
     let lookedUpOrderId = null;
 
     // Setup Pickup Point Dropdown & Live Geocoding
@@ -1565,6 +1572,22 @@
         const dName = o.driverName || (o.driver && o.driver.name);
         return (driver.id && dId === driver.id) || (driver.name && dName && dName.toLowerCase() === driver.name.toLowerCase());
       });
+      if (driverCashOrderSelect) {
+        const selectedCashOrder = driverCashOrderSelect.value;
+        const cashOrders = myOrders.filter(o =>
+          o.status === 'arrived'
+          && o.paymentStatus !== 'paid'
+          && (o.paymentMode === 'cash' || /cash|pay on delivery/i.test(o.payment || ''))
+        );
+        driverCashOrderSelect.replaceChildren(new Option('Select an arrived cash order…', ''));
+        cashOrders.forEach(order => {
+          const option = new Option(`#${order.id} · ${order.customer} · GH₵${Number(order.total || 0).toFixed(2)}`, order.id);
+          driverCashOrderSelect.add(option);
+        });
+        if (cashOrders.some(order => order.id === selectedCashOrder)) {
+          driverCashOrderSelect.value = selectedCashOrder;
+        }
+      }
 
       const availableOrders = activeOrders.filter(o => {
         const hasDriver = o.driverId || (o.driver && o.driver.name);
@@ -2013,6 +2036,11 @@
             <div style="margin-top:10px; padding:12px; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px;">
               <div style="font-size:0.82rem; font-weight:800; color:#92400e; margin-bottom:6px;">💵 Cash on delivery — record the amount received</div>
               <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <div style="width:100%; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:2px;">
+                  <div style="padding:8px;background:white;border-radius:8px;"><small>Amount due</small><strong style="display:block;">GH₵${Number(order.total || 0).toFixed(2)}</strong></div>
+                  <div style="padding:8px;background:white;border-radius:8px;"><small>Change to give</small><strong id="driverCashChange" style="display:block;color:#166534;">GH₵0.00</strong></div>
+                  <div style="padding:8px;background:white;border-radius:8px;"><small>Subtotal + delivery</small><strong style="display:block;">GH₵${Number(order.subtotal || 0).toFixed(2)} + GH₵${Number(order.deliveryFee || 0).toFixed(2)}</strong></div>
+                </div>
                 <input type="number" step="0.01" min="0" id="driverCashAmount" value="${Number(order.total || 0).toFixed(2)}"
                   style="width:130px; padding:10px; border:1px solid #fdba74; border-radius:8px; font-size:0.9rem;">
                 <button type="button" id="driverCashBtn" class="btn btn-orange btn-sm" style="min-height:40px;">💵 Cash received — mark paid</button>
@@ -2055,6 +2083,17 @@
 
       const cashBtn = document.getElementById('driverCashBtn');
       if (cashBtn) {
+        const amountInput = document.getElementById('driverCashAmount');
+        const changeDisplay = document.getElementById('driverCashChange');
+        if (amountInput && changeDisplay) {
+          const updateChange = () => {
+            const received = Number(amountInput.value) || 0;
+            const change = Math.max(0, received - Number(order.total || 0));
+            changeDisplay.textContent = `GH₵${change.toFixed(2)}`;
+          };
+          amountInput.addEventListener('input', updateChange);
+          updateChange();
+        }
         cashBtn.onclick = async () => {
           const amountInput = document.getElementById('driverCashAmount');
           const status = document.getElementById('driverCashStatus');
@@ -2065,6 +2104,7 @@
           }
           cashBtn.disabled = true;
           cashBtn.textContent = 'Recording…';
+          const receiptWindow = window.open('', '_blank', 'width=420,height=650');
           const res = await apiPayCash(order.id, amount);
           cashBtn.disabled = false;
           cashBtn.textContent = '💵 Cash received — mark paid';
@@ -2075,6 +2115,17 @@
           };
           if (res && res.success) {
             playChime('general');
+            const receipt = res.receipt || null;
+            if (receipt) {
+              lookupNotice.text = `${lookupNotice.text}${receipt.changeGiven > 0 ? ` Give GH₵${Number(receipt.changeGiven).toFixed(2)} change.` : ''} Receipt ${receipt.receiptNumber}.`;
+              if (receiptWindow) {
+                const safe = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+                receiptWindow.document.write(`<!doctype html><title>YEBS Cash Receipt</title><body style="font-family:Arial,sans-serif;padding:24px;color:#111;"><div style="max-width:360px;margin:auto;border:1px solid #ddd;padding:20px;"><h2 style="text-align:center;color:#1f7a3a;margin:0;">YEBS NOODLES</h2><p style="text-align:center;">Cash Payment Receipt</p><hr><p><strong>Receipt:</strong> ${safe(receipt.receiptNumber)}</p><p><strong>Order:</strong> ${safe(receipt.orderId)}</p><p><strong>Customer:</strong> ${safe(receipt.customer)}</p><hr><p>Food + delivery: GH₵${Number(receipt.expectedAmount).toFixed(2)}</p><p>Cash received: GH₵${Number(receipt.receivedAmount).toFixed(2)}</p><p><strong>Change given: GH₵${Number(receipt.changeGiven).toFixed(2)}</strong></p><p><small>Collected by ${safe(receipt.collectedBy)}<br>${safe(new Date(receipt.collectedAt).toLocaleString())}</small></p><hr><p style="text-align:center;">Thank you for ordering with YEBS.</p><button onclick="print()" style="width:100%;padding:10px;">Print receipt</button></div></body>`);
+                receiptWindow.document.close();
+              }
+            }
+          } else if (receiptWindow) {
+            receiptWindow.close();
             renderSessionPackages();
           }
           lookupRenderSig = '';
@@ -2099,6 +2150,7 @@
             driverLookupStatus.textContent = `Found ${res.order.id} for ${res.order.customer}.`;
             driverLookupStatus.style.color = '#166534';
           }
+
           renderLookupResult(res.order);
         } else {
           lookedUpOrderId = null;
@@ -2111,6 +2163,15 @@
       } finally {
         if (driverLookupBtn) { driverLookupBtn.disabled = false; driverLookupBtn.textContent = '🔎 Fetch order'; }
       }
+    }
+
+    if (driverCashOrderSelect) {
+      driverCashOrderSelect.addEventListener('change', () => {
+        const orderId = driverCashOrderSelect.value;
+        if (!orderId) return;
+        driverLookupInput.value = orderId;
+        lookupOrderByCode(orderId);
+      });
     }
 
     if (driverLookupBtn) {

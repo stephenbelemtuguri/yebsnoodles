@@ -152,6 +152,22 @@ describe('customer order to verified delivery flow', () => {
       });
   }
 
+  async function createCashDelivery() {
+    const response = await request(app)
+      .post('/api/orders')
+      .send({
+        customer: 'Cash Customer',
+        phone: '0240000001',
+        fulfilment: 'Delivery',
+        payment: 'Pay on Delivery (Cash)',
+        location: 'Cash delivery address',
+        mapPin: { lat: 5.6037, lng: -0.187, name: 'Cash delivery address' },
+        items: [{ menuId: 'test-meal', name: 'Test meal', price: 25, quantity: 1 }]
+      });
+    expect(response.status).toBe(201);
+    return response.body;
+  }
+
   test('uses the server menu price and rejects fabricated menu items', async () => {
     const fabricated = await request(app)
       .post('/api/orders')
@@ -400,6 +416,51 @@ describe('customer order to verified delivery flow', () => {
       .get(`/api/orders/${order.id}/track`)
       .set('X-Order-Access-Token', order.trackingToken);
     expect(finalTracking.body.order.status).toBe('delivered');
+  });
+
+  test('records cash received, change, and a synced cashier receipt for overpayment', async () => {
+    const order = await createCashDelivery();
+    const claim = await request(app)
+      .post(`/api/orders/${order.id}/claim`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({});
+    expect(claim.status).toBe(200);
+    const assignedLocation = claim.body.order.driver.currentLocation || initialLocation;
+    const gps = await request(app)
+      .post(`/api/drivers/${driverId}/location`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ lat: Number(assignedLocation.lat) + 0.01, lng: Number(assignedLocation.lng), speedKmh: 18 });
+    expect(gps.status).toBe(200);
+    const arrived = await request(app)
+      .patch(`/api/orders/${order.id}/status`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ status: 'arrived' });
+    expect(arrived.status).toBe(200);
+
+    const received = Number(order.total) + 20;
+    const cash = await request(app)
+      .post(`/api/orders/${order.id}/pay/cash`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ amount: received });
+    expect(cash.status).toBe(200);
+    expect(cash.body.success).toBe(true);
+    expect(cash.body.changeGiven).toBe(20);
+    expect(cash.body.receipt).toMatchObject({
+      orderId: order.id,
+      expectedAmount: order.total,
+      receivedAmount: received,
+      changeGiven: 20
+    });
+
+    const adminOrders = await request(app)
+      .get('/api/orders')
+      .set('Authorization', 'Bearer ' + adminToken);
+    const adminOrder = adminOrders.body.find(item => item.id === order.id);
+    expect(adminOrder.paymentStatus).toBe('paid');
+    expect(adminOrder.changeGiven).toBe(20);
+    expect(adminOrder.cashReceived).toBe(received);
+    expect(adminOrder.momoAmount).toBeNull();
+    expect(adminOrder.cashReceipt.receiptNumber).toBe(cash.body.receipt.receiptNumber);
   });
 
   test('requests cancellation and approves a refund after the fixed fee', async () => {

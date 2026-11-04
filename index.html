@@ -2839,7 +2839,7 @@
 
       if (orderIdModalPayHint) {
         orderIdModalPayHint.innerHTML = order.paymentMode === "cash"
-          ? `💵 Pay <strong>GH₵${order.total}</strong> cash to the rider when your food arrives.`
+          ? `💵 Pay <strong>GH₵${Number(order.total || 0).toFixed(2)}</strong> cash on arrival, including <strong>GH₵${Number(order.deliveryFee || 0).toFixed(2)}</strong> delivery. Please prepare the exact amount if possible.`
           : `📱 To pay, send <strong>GH₵${order.total}</strong> to <strong>${MOMO_CONFIG.displayNumber}</strong>. Use <strong>${order.id}</strong> as the reference. Then submit proof on the tracking screen for provider or admin verification.`;
       }
 
@@ -3618,7 +3618,8 @@
       if (trackPaymentDetail) {
         if (paid) {
           const when = order.paidAt ? new Date(order.paidAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
-          trackPaymentDetail.textContent = `${order.momoTransactionRef ? `Ref: ${order.momoTransactionRef} · ` : ''}${order.momoAmount ? `GH₵${Number(order.momoAmount).toFixed(2)} · ` : ''}${when}`;
+          const receivedAmount = order.paymentMode === "cash" ? order.cashReceived : order.momoAmount;
+          trackPaymentDetail.textContent = `${order.momoTransactionRef ? `Ref: ${order.momoTransactionRef} · ` : ''}${receivedAmount ? `GH₵${Number(receivedAmount).toFixed(2)} · ` : ''}${when}`;
         } else if (review) {
           trackPaymentDetail.textContent = order.paymentStatus === 'review'
             ? 'We received your proof but the amount did not match. The kitchen will confirm shortly — your order is still being prepared.'
