@@ -1036,7 +1036,8 @@
       apiSendDriverReport,
       getPickupPoint,
       applyServerSession,
-      startLiveOrderSync
+      startLiveOrderSync,
+      getCustomerAvatar
     } from './shared.js';
     import { openRecovery } from './recovery.js';
 
@@ -1334,7 +1335,7 @@
       if (!map || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return;
       const customerIcon = L.divIcon({
         className: 'yebs-customer-marker',
-        html: `<div style="background:#fff;color:#173d30;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;border:3px solid #e57a45;box-shadow:0 4px 14px rgba(23,61,48,.35);font-size:22px;">🧑</div>`,
+        html: `<div style="background:#fff;color:#173d30;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;border:3px solid #e57a45;box-shadow:0 4px 14px rgba(23,61,48,.35);font-size:22px;">${getCustomerAvatar(customerName)}</div>`,
         iconSize: [42, 42],
         iconAnchor: [21, 21]
       });

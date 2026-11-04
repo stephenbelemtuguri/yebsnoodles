@@ -1924,7 +1924,8 @@
       setSessionPickupPoint,
       getMenuItems,
       apiFetchMenu,
-      calculateDeliveryQuote
+      calculateDeliveryQuote,
+      getCustomerAvatar
     } from './shared.js';
 
     initStore();
@@ -2015,6 +2016,7 @@
     let trackMap = null;
     let trackDriverMarker = null;
     let trackCustMarker = null;
+    let trackKitchenMarker = null;
     let trackRouteLine = null;
     let trackLastAutoFitSignature = '';
     let currentlyTrackedOrderId = localStorage.getItem('yebs_active_order_id') || "";
@@ -3292,13 +3294,22 @@
 
       const custIcon = L.divIcon({
         className: 'bolt-dest-marker',
-        html: `<div style="background:#fff; color:#173d30; width:44px; height:44px; border-radius:50%; display:grid; place-items:center; border:3px solid #e57a45; box-shadow:0 5px 16px rgba(23,61,48,.35); font-size:23px;">🧑</div>`,
+        html: `<div style="background:#fff; color:#173d30; width:44px; height:44px; border-radius:50%; display:grid; place-items:center; border:3px solid #e57a45; box-shadow:0 5px 16px rgba(23,61,48,.35); font-size:23px;">${getCustomerAvatar(currentlyTrackedOrderId ? (getOrderById(currentlyTrackedOrderId)?.customer) : '')}</div>`,
         iconSize: [44, 44],
         iconAnchor: [22, 22]
       });
 
       trackDriverMarker = L.marker([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], { icon: driverIcon }).addTo(trackMap);
       trackCustMarker = L.marker([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], { icon: custIcon }).addTo(trackMap);
+      const kitchenIcon = L.divIcon({
+        className: 'yebs-kitchen-marker',
+        html: `<div style="background:#173d30;color:#fff;width:42px;height:42px;border-radius:12px 12px 12px 2px;display:grid;place-items:center;border:3px solid #e9bd68;box-shadow:0 5px 16px rgba(23,61,48,.35);font-size:22px;">🍜</div>`,
+        iconSize: [42, 42],
+        iconAnchor: [21, 42]
+      });
+      trackKitchenMarker = L.marker([RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng], { icon: kitchenIcon })
+        .bindPopup('<b>YEBS Noodles Kitchen</b><br>Main pickup point')
+        .addTo(trackMap);
       trackRouteLine = null;
     }
 
@@ -3807,6 +3818,12 @@
       if (trackMap && trackDriverMarker && trackCustMarker) {
         if (hasDestination) {
           trackCustMarker.setLatLng([targetLat, targetLng]);
+          trackCustMarker.setIcon(L.divIcon({
+            className: 'bolt-dest-marker',
+            html: `<div style="background:#fff;color:#173d30;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;border:3px solid #e57a45;box-shadow:0 5px 16px rgba(23,61,48,.35);font-size:23px;">${getCustomerAvatar(order.customer)}</div>`,
+            iconSize: [44, 44],
+            iconAnchor: [22, 22]
+          }));
           trackCustMarker.setOpacity(1);
           trackCustMarker.bindPopup(
             isCollectionOrder
@@ -5486,10 +5503,19 @@
         typing.textContent = 'Thinking...';
         messages.appendChild(typing);
         try {
+          const trackedOrder = getOrderById(currentlyTrackedOrderId);
+          const trackingContext = trackedOrder ? {
+            orderId: trackedOrder.id,
+            status: trackedOrder.status,
+            fulfilment: trackedOrder.fulfilment,
+            paymentStatus: trackedOrder.paymentStatus,
+            total: trackedOrder.total,
+            items: (trackedOrder.items || []).slice(0, 8).map(item => `${item.quantity || 1}x ${item.name}`).join(', ')
+          } : null;
           const response = await fetch('/api/ai/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: question, history: aiHistory.slice(-10) })
+            body: JSON.stringify({ message: question, role: 'customer', history: aiHistory.slice(-10), trackingContext })
           });
           const data = await response.json();
           typing.remove();

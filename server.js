@@ -108,6 +108,9 @@ app.post('/api/ai/chat', async (req, res) => {
   const message = String(req.body && req.body.message || '').trim().slice(0, 1200);
   if (!message) return res.status(400).json({ success: false, reply: 'Please ask a question.' });
   const suppliedHistory = Array.isArray(req.body.history) ? req.body.history : [];
+  const suppliedTrackingContext = req.body.trackingContext && typeof req.body.trackingContext === 'object'
+    ? req.body.trackingContext
+    : null;
   let role = ['customer', 'driver', 'admin'].includes(String(req.body.role || '').toLowerCase())
     ? String(req.body.role).toLowerCase()
     : 'customer';
@@ -175,6 +178,14 @@ app.post('/api/ai/chat', async (req, res) => {
       ? 'Driver guidance: explain claiming and unclaiming orders, pickup, navigation, delivery status updates, PIN confirmation, cash/receipt verification, earnings, payouts, availability, and the driver map. Never claim a delivery, payment, or payout is complete unless the live status confirms it.'
       : 'Customer guidance: explain the menu, cart, checkout, delivery/pickup, address pin, payment prompts, tracking, receipts, order history, saved addresses, reviews, loyalty, referrals, wallet, cancellation, refunds, and customer support.';
   const knowledge = `You are YEBS's conversational website assistant. Be concise, natural, and useful.
+${suppliedTrackingContext ? `Live delivery tracking context supplied by the customer app (use only as helpful context, never expose addresses or private PINs): ${JSON.stringify({
+    orderId: String(suppliedTrackingContext.orderId || '').slice(0, 30),
+    status: String(suppliedTrackingContext.status || '').slice(0, 30),
+    fulfilment: String(suppliedTrackingContext.fulfilment || '').slice(0, 30),
+    paymentStatus: String(suppliedTrackingContext.paymentStatus || '').slice(0, 30),
+    total: Number(suppliedTrackingContext.total) || 0,
+    items: String(suppliedTrackingContext.items || '').slice(0, 300)
+  })}. Explain the current tracking stage in practical steps and recommend the next safe action. If details are uncertain, say what to confirm in the tracking screen rather than guessing ETA.` : ''}
 
 Business facts:
 - YEBS Noodles serves fresh, cooked-to-order noodles and pasta in Ghana.

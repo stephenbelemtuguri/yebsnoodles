@@ -2509,7 +2509,7 @@ export function placeCustomerPinOnMap(map, lat, lng, customerName, existingMarke
       background:#173d30;color:white;width:30px;height:30px;
       border-radius:50%;display:grid;place-items:center;
       border:2px solid white;box-shadow:0 3px 10px rgba(0,0,0,0.3);
-      font-size:14px;">👤</div>`,
+      font-size:14px;">${getCustomerAvatar(customerName)}</div>`,
     iconSize: [30, 30],
     iconAnchor: [15, 15],
     popupAnchor: [0, -18]
@@ -2518,6 +2518,34 @@ export function placeCustomerPinOnMap(map, lat, lng, customerName, existingMarke
     .bindPopup(`<b>📦 ${customerName || 'Customer'}</b><br>Delivery location`)
     .addTo(map);
   return marker;
+}
+
+export function inferCustomerGender(name) {
+  const first = String(name || '').trim().toLowerCase().split(/[\s.-]+/)[0] || '';
+  const female = new Set([
+    'ama', 'abena', 'afia', 'akosua', 'akua', 'baaba', 'efua', 'adwoa', 'esi', 'eunice',
+    'alice', 'anna', 'ann', 'barbara', 'beatrice', 'carol', 'catherine', 'dorothy', 'elizabeth',
+    'emma', 'esther', 'fatima', 'gloria', 'grace', 'helen', 'jennifer', 'jessica', 'joyce',
+    'linda', 'maria', 'mary', 'nancy', 'patricia', 'rachel', 'rebecca', 'rita', 'rose',
+    'sarah', 'susan', 'victoria', 'wendy', 'sandra', 'sharon', 'priscilla', 'georgina'
+  ]);
+  const male = new Set([
+    'kwame', 'kwaku', 'kofi', 'kobina', 'yaw', 'kwesi', 'kwabena', 'fiifi', 'kojo', 'kwadwo',
+    'albert', 'alex', 'andrew', 'anthony', 'benjamin', 'charles', 'chris', 'christian', 'daniel',
+    'david', 'emmanuel', 'francis', 'george', 'isaac', 'james', 'john', 'joseph', 'joshua',
+    'kelvin', 'kenneth', 'kwasi', 'michael', 'patrick', 'paul', 'peter', 'richard', 'robert',
+    'samuel', 'stephen', 'thomas', 'william'
+  ]);
+  if (female.has(first)) return 'female';
+  if (male.has(first)) return 'male';
+  return 'unknown';
+}
+
+export function getCustomerAvatar(name, size = 0) {
+  const gender = inferCustomerGender(name);
+  if (gender === 'female') return size ? '👩' : '👩';
+  if (gender === 'male') return size ? '👨' : '👨';
+  return '🧑';
 }
 
 // =============================================================
