@@ -428,9 +428,10 @@ router.get('/', async (req, res) => {
 ### SMS Provider Setup
 Add to `.env`:
 ```bash
-# Arkesel (primary - Ghana)
-ARKSEL_API_KEY=your_arkesel_key
-ARKSEL_SENDER_ID=YEBS
+# Arkesel (primary - Ghana; set SMS_PROVIDER=arkesel)
+SMS_PROVIDER=arkesel
+ARKESEL_API_KEY=your_arkesel_key
+ARKESEL_SENDER_ID=YEBS
 
 # Hubtel (fallback - Ghana)
 HUBTEL_CLIENT_ID=your_hubtel_id

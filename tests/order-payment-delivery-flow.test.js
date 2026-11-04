@@ -85,6 +85,12 @@ Object.assign(process.env, {
   ADMIN_CREDENTIAL_RESET_VERSION: '',
   WHATSAPP_TOKEN: '',
   WHATSAPP_PHONE_NUMBER_ID: '',
+  WHATSAPP_ACCESS_TOKEN: '',
+  WHATSAPP_CLOUD_TOKEN: '',
+  WHATSAPP_PHONE_ID: '',
+  META_WHATSAPP_TOKEN: '',
+  GEMINI_API_KEY: '',
+  GOOGLE_GEMINI_API_KEY: '',
   MOMO_SUBSCRIPTION_KEY: '',
   MOMO_API_USER: '',
   MOMO_API_KEY: '',
@@ -255,6 +261,78 @@ describe('customer order to verified delivery flow', () => {
       reference: order.paymentRef,
       amount: order.total
     });
+  });
+
+  test('sends admin customer messages through YEBS Message Hub and retains failed delivery results', async () => {
+    const order = await createDelivery();
+    const denied = await request(app)
+      .post('/api/admin/messages')
+      .send({ orderId: order.id, channel: 'whatsapp', message: 'Your order update.' });
+    expect(denied.status).toBe(401);
+
+    const result = await request(app)
+      .post('/api/admin/messages')
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({ orderId: order.id, channel: 'whatsapp', message: 'Your order update.' });
+    expect(result.status).toBe(502);
+    expect(result.body.success).toBe(false);
+    expect(result.body.notification).toMatchObject({ status: 'failed', channel: 'whatsapp' });
+
+    const notifications = await request(app)
+      .get('/api/admin/notifications')
+      .set('Authorization', 'Bearer ' + adminToken);
+    expect(notifications.status).toBe(200);
+    expect(notifications.body.notifications).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: result.body.notification.id,
+        orderId: order.id,
+        status: 'failed',
+        actor: 'Test Admin'
+      })
+    ]));
+  });
+
+  test('handles inbound WhatsApp messages once, records the assistant response and provider failure', async () => {
+    const body = {
+      entry: [{
+        changes: [{
+          value: {
+            messages: [{
+              id: 'wamid-yebs-test-inbound',
+              from: '233240000000',
+              type: 'text',
+              text: { body: 'Hello, can you help me?' }
+            }]
+          }
+        }]
+      }]
+    };
+    const received = await request(app).post('/api/whatsapp/webhook').send(body);
+    expect(received.status).toBe(200);
+
+    let assistantMessage;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const notifications = await request(app)
+        .get('/api/admin/notifications')
+        .set('Authorization', 'Bearer ' + adminToken);
+      assistantMessage = notifications.body.notifications.find(item => item.providerMessageId === 'wamid-yebs-test-inbound');
+      if (assistantMessage && assistantMessage.status !== 'processing') break;
+      await new Promise(resolve => { setTimeout(resolve, 10); });
+    }
+    expect(assistantMessage).toMatchObject({
+      kind: 'whatsapp-assistant',
+      status: 'failed',
+      attempts: 1,
+      reply: expect.stringContaining('YEBS support'),
+      reason: expect.stringContaining('not configured')
+    });
+
+    await request(app).post('/api/whatsapp/webhook').send(body);
+    await new Promise(resolve => { setTimeout(resolve, 20); });
+    const notifications = await request(app)
+      .get('/api/admin/notifications')
+      .set('Authorization', 'Bearer ' + adminToken);
+    expect(notifications.body.notifications.filter(item => item.providerMessageId === 'wamid-yebs-test-inbound')).toHaveLength(1);
   });
 
   test('retains duplicate screenshot evidence for admin review without marking payment paid', async () => {
@@ -461,6 +539,100 @@ describe('customer order to verified delivery flow', () => {
     expect(adminOrder.cashReceived).toBe(received);
     expect(adminOrder.momoAmount).toBeNull();
     expect(adminOrder.cashReceipt.receiptNumber).toBe(cash.body.receipt.receiptNumber);
+
+    const activeShift = await request(app)
+      .get('/api/drivers/me/cashier')
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(activeShift.status).toBe(200);
+    expect(activeShift.body.active).toMatchObject({
+      orderCount: 1,
+      totalDue: order.total,
+      cashReceived: received,
+      changeGiven: 20,
+      cashToRemit: order.total,
+      variance: null
+    });
+
+    const closedShift = await request(app)
+      .post('/api/drivers/me/cashier/close')
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ cashHandedOver: Number(order.total) - 1 });
+    expect(closedShift.status).toBe(200);
+    expect(closedShift.body.reconciliation.variance).toBe(-1);
+
+    const shortClose = await request(app)
+      .post('/api/drivers/me/cashier/close')
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ cashHandedOver: order.total });
+    expect(shortClose.status).toBe(409);
+
+    const dailyReport = await request(app)
+      .get(`/api/reports/daily?date=${new Date().toISOString().slice(0, 10)}`)
+      .set('Authorization', 'Bearer ' + adminToken);
+    expect(dailyReport.status).toBe(200);
+    expect(dailyReport.body.report.cashByDriver).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        driverId,
+        cashReceived: received,
+        changeGiven: 20,
+        cashToRemit: order.total,
+        cashHandedOver: Number(order.total) - 1,
+        variance: -1
+      })
+    ]));
+    expect(dailyReport.body.report.cashReconciliations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ driverId, cashToRemit: order.total, cashHandedOver: Number(order.total) - 1, variance: -1 })
+    ]));
+  });
+
+  test('records an underpayment once for reconciliation and blocks duplicate cash collection', async () => {
+    const order = await createCashDelivery();
+    const claim = await request(app)
+      .post(`/api/orders/${order.id}/claim`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({});
+    expect(claim.status).toBe(200);
+    const startingPoint = claim.body.order.driver.currentLocation || initialLocation;
+    const gps = await request(app)
+      .post(`/api/drivers/${driverId}/location`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ lat: Number(startingPoint.lat) + 0.01, lng: Number(startingPoint.lng), speedKmh: 18 });
+    expect(gps.status).toBe(200);
+    const arrived = await request(app)
+      .patch(`/api/orders/${order.id}/status`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ status: 'arrived' });
+    expect(arrived.status).toBe(200);
+
+    const shortAmount = Number(order.total) - 5;
+    const shortPayment = await request(app)
+      .post(`/api/orders/${order.id}/pay/cash`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ amount: shortAmount });
+    expect(shortPayment.status).toBe(202);
+    expect(shortPayment.body.needsReview).toBe(true);
+    expect(shortPayment.body.receipt).toMatchObject({
+      expectedAmount: order.total,
+      receivedAmount: shortAmount,
+      changeGiven: 0
+    });
+
+    const duplicate = await request(app)
+      .post(`/api/orders/${order.id}/pay/cash`)
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ amount: order.total });
+    expect(duplicate.status).toBe(409);
+
+    const shift = await request(app)
+      .get('/api/drivers/me/cashier')
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(shift.body.active.cashReceived).toBe(shortAmount);
+    const closed = await request(app)
+      .post('/api/drivers/me/cashier/close')
+      .set('Authorization', 'Bearer ' + driverToken)
+      .send({ cashHandedOver: shortAmount });
+    expect(closed.status).toBe(200);
+    expect(closed.body.reconciliation.variance).toBe(0);
   });
 
   test('requests cancellation and approves a refund after the fixed fee', async () => {

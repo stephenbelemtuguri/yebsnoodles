@@ -1,6 +1,10 @@
 class SMSService {
   constructor() {
-    this.providerOrder = ['arkesel', 'hubtel', 'twilio'];
+    const providers = ['arkesel', 'hubtel', 'twilio'];
+    const preferredProvider = process.env.SMS_PROVIDER;
+    this.providerOrder = providers.includes(preferredProvider)
+      ? [preferredProvider, ...providers.filter(provider => provider !== preferredProvider)]
+      : providers;
   }
 
   formatGhanaNumber(phone) {
@@ -29,12 +33,12 @@ class SMSService {
   }
 
   async sendViaArkesel(to, message) {
-    const apiKey = process.env.ARKSEL_API_KEY;
-    const senderId = process.env.ARKSEL_SENDER_ID || 'YEBS';
+    const apiKey = process.env.ARKESEL_API_KEY || process.env.ARKSEL_API_KEY;
+    const senderId = process.env.ARKESEL_SENDER_ID || process.env.ARKSEL_SENDER_ID || 'YEBS';
     if (!apiKey) return { success: false, error: 'Arkesel API key not configured' };
     const response = await fetch('https://sms.arkesel.com/api/v2/sms/send', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ sender: senderId, message, recipients: [to.replace(/^\+/, '')] })
     });
     const payload = await response.json().catch(() => ({}));

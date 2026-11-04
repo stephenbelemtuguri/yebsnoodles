@@ -23,6 +23,7 @@ const { OAuth2Client } = require('google-auth-library');
 const store = require('./src/data/store');
 const media = require('./src/data/media');
 const { resolveAdminCredentialResetVersion } = require('./scripts/render-deploy-version');
+const messagingService = require('./src/services/messaging');
 
 const resolvedAdminCredentialResetVersion = resolveAdminCredentialResetVersion(process.env);
 if (resolvedAdminCredentialResetVersion) {
@@ -1147,6 +1148,96 @@ app.get('/api/admin/notifications', requireRole('admin'), (req, res) => {
   res.json({ success: true, notifications: (db.notifications || []).slice(0, 100) });
 });
 
+app.use('/api/admin/messages', rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many messages. Wait a minute before sending again.' }
+}));
+
+app.post('/api/admin/messages', requireRole('admin'), async (req, res) => {
+  const body = req.body || {};
+  const channel = String(body.channel || '').trim().toLowerCase();
+  const orderId = normalizeOrderId(body.orderId || '');
+  const rawMessage = typeof body.message === 'string' ? body.message.trim() : '';
+  if (rawMessage.length > 3800) {
+    return res.status(400).json({ success: false, message: 'Keep messages under 3,800 characters.' });
+  }
+  const message = cleanString(rawMessage, 3800);
+  if (!['whatsapp', 'sms'].includes(channel)) {
+    return res.status(400).json({ success: false, message: 'Choose WhatsApp or SMS.' });
+  }
+  if (!orderId || !message) {
+    return res.status(400).json({ success: false, message: 'Choose an order and enter a message.' });
+  }
+  const db = loadDatabase();
+  const order = (db.orders || []).find(item => String(item.id).toUpperCase() === orderId);
+  if (!order) return res.status(404).json({ success: false, message: 'Order not found.' });
+  const phone = messagingService.normalizePhone(order.phone);
+  if (!phone) return res.status(400).json({ success: false, message: 'This order does not have a valid customer phone number.' });
+
+  const actor = req.auth.admin.name || req.auth.admin.username || 'ADMIN';
+  const notification = {
+    id: `msg-${crypto.randomUUID()}`,
+    kind: 'admin-message',
+    orderId: order.id,
+    channel,
+    to: phone,
+    actor,
+    createdAt: new Date().toISOString(),
+    status: 'sending',
+    message
+  };
+  db.notifications = db.notifications || [];
+  db.notifications.unshift(notification);
+  if (db.notifications.length > 500) db.notifications.length = 500;
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) {
+    return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+  }
+
+  let delivery;
+  try {
+    delivery = await messagingService.send(channel, phone, message);
+  } catch (error) {
+    delivery = { success: false, error: error.message || 'The messaging provider request failed.' };
+  }
+  notification.status = delivery.success ? 'sent' : 'failed';
+  notification.provider = delivery.provider || null;
+  notification.providerId = delivery.providerId || null;
+  notification.reason = delivery.error || null;
+  notification.sentAt = delivery.success ? new Date().toISOString() : null;
+  const deliverySaveError = await requireDurableSave(db);
+  if (deliverySaveError) {
+    return res.status(503).json({
+      success: false,
+      persisted: false,
+      delivered: delivery.success,
+      message: `Message delivery ${delivery.success ? 'completed' : 'failed'}, but the result could not be saved: ${deliverySaveError}`
+    });
+  }
+  logAction(delivery.success ? 'CUSTOMER_MESSAGE_SENT' : 'CUSTOMER_MESSAGE_FAILED', actor, order.id, {
+    channel,
+    to: phone,
+    provider: notification.provider,
+    providerId: notification.providerId,
+    reason: notification.reason
+  }, req);
+  if (!delivery.success) {
+    return res.status(502).json({
+      success: false,
+      message: notification.reason || 'The provider could not deliver this message.',
+      notification: { id: notification.id, status: notification.status, channel, provider: notification.provider }
+    });
+  }
+  res.json({
+    success: true,
+    message: `Message sent to ${phone} through ${notification.provider}.`,
+    notification: { id: notification.id, status: notification.status, channel, provider: notification.provider, sentAt: notification.sentAt }
+  });
+});
+
 // Customer/rider polling endpoint: "is the bot done sending this message?"
 app.get('/api/orders/:id/notification', (req, res) => {
   const db = loadDatabase();
@@ -1248,38 +1339,122 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
         const from = String(message.from || '').replace(/\D/g, '');
         const text = String(message.text && message.text.body || '').trim().slice(0, 1200);
         if (!from || !text) continue;
-        try {
-          const db = loadDatabase();
-          const menu = (db.menuItems || []).filter(item => item.available !== false)
-            .slice(0, 12).map(item => `${item.name} - GH${Number(item.price || 0).toFixed(2)}`).join('; ');
-          const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
-          let reply = 'Welcome to YEBS Noodles. Ask me about meals, payment, delivery, or your order.';
-          if (apiKey) {
-            const prompt = `You are YEBS Noodles' WhatsApp assistant. Answer helpfully and professionally.
-Current menu: ${menu || 'menu unavailable'}. Business phone: 0559103452.
-Kitchen message: ${text}`;
-            const model = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-              method: 'POST',
-              headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] } ] }),
-              signal: AbortSignal.timeout(15000)
-            });
-            const payload = await response.json().catch(() => ({}));
-            if (response.ok) {
-              reply = String(payload.candidates && payload.candidates[0] && payload.candidates[0].content
-                && payload.candidates[0].content.parts && payload.candidates[0].content.parts[0]
-                ? payload.candidates[0].content.parts[0].text : '').trim() || reply;
-            }
-          }
-          await sendWhatsAppText(from, reply);
-        } catch (error) {
-          console.warn('[whatsapp-bot] response failed:', error.message);
-        }
+        void handleWhatsAppAssistantMessage(from, text, String(message.id || '').trim());
       }
     }
   }
 });
+
+async function generateWhatsAppAssistantReply(from, message, db) {
+  const menu = (db.menuItems || []).filter(item => item.available !== false && item.status !== 'unavailable')
+    .slice(0, 40).map(item => `${item.name} — GH₵${Number(item.price || 0).toFixed(2)}`).join('; ');
+  const customerPhoneKey = String(from || '').replace(/\D/g, '').slice(-9);
+  const customerOrders = customerPhoneKey
+    ? (db.orders || []).filter(order => String(order.phone || '').replace(/\D/g, '').slice(-9) === customerPhoneKey)
+      .slice(0, 5).map(order => ({
+        orderId: order.id,
+        status: order.status,
+        paymentStatus: order.paymentStatus || 'unpaid',
+        fulfilment: order.fulfilment,
+        total: Number(order.total) || 0,
+        trackingUrl: `https://yebsnoodles.onrender.com/?track=${encodeURIComponent(order.id)}`
+      }))
+    : [];
+  const momo = getMomoSettings(db);
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) {
+    return {
+      reply: 'Thanks for contacting YEBS Noodles. Our AI assistant is temporarily unavailable. For help with an order, delivery, or payment, please message YEBS support on WhatsApp at 0559103452 and include your order number.',
+      model: null
+    };
+  }
+  const prompt = `You are YEBS Noodles' customer-care assistant replying on WhatsApp.
+Respond directly to the customer's actual question in a warm, professional, concise way. Do not use a fixed FAQ answer unless it truly answers what they asked. Ask one clear follow-up only when needed.
+
+Verified business facts:
+- YEBS Noodles prepares noodles and pasta in Ghana. Customers can order delivery or collection when offered in checkout.
+- Mobile Money is paid through the checkout prompt or the current destination ${momo.payToLabel || momo.payTo || 'shown in checkout'}; never ask for or reveal anyone's PIN. Do not claim a payment is complete without a paid status below.
+- Delivery fees are calculated by the checkout from the customer's delivery location and menu quantity. Do not invent a delivery fee or ETA.
+- Support: WhatsApp 0559103452. Do not invent policies, staff identities, opening hours, discounts, or stock status.
+- Use the supplied verified recent-order data only for this sender. Never disclose another customer's data, internal notes, or private pickup PINs.
+
+Current available menu: ${menu || 'No current menu items are available in the database.'}
+Recent orders verified against this WhatsApp number: ${JSON.stringify(customerOrders)}
+Customer message: ${message}`;
+  const model = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST',
+    headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.35, maxOutputTokens: 500 }
+    }),
+    signal: AbortSignal.timeout(15000)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((payload.error && payload.error.message) || `Gemini returned HTTP ${response.status}`);
+  }
+  const reply = String(payload.candidates && payload.candidates[0] && payload.candidates[0].content
+    && payload.candidates[0].content.parts && payload.candidates[0].content.parts[0]
+    ? payload.candidates[0].content.parts[0].text : '').trim();
+  if (!reply) throw new Error('Gemini returned an empty response.');
+  return { reply: reply.slice(0, 3800), model };
+}
+
+async function handleWhatsAppAssistantMessage(from, text, providerMessageId) {
+  const db = loadDatabase();
+  const messageId = providerMessageId || `inbound-${crypto.createHash('sha256').update(`${from}:${text}`).digest('hex')}`;
+  db.notifications = db.notifications || [];
+  const existing = db.notifications.find(entry => entry.providerMessageId === messageId);
+  if (existing && existing.status !== 'failed') return existing;
+  const entry = existing || {
+    id: `wa-assistant-${crypto.randomUUID()}`,
+    kind: 'whatsapp-assistant',
+    channel: 'whatsapp',
+    direction: 'inbound',
+    providerMessageId: messageId,
+    from,
+    createdAt: new Date().toISOString(),
+    inboundMessage: text,
+    attempts: 0
+  };
+  entry.status = 'processing';
+  entry.attempts = (Number(entry.attempts) || 0) + 1;
+  if (!existing) {
+    db.notifications.unshift(entry);
+    if (db.notifications.length > 500) db.notifications.length = 500;
+  }
+  const initialSaveError = await requireDurableSave(db);
+  if (initialSaveError) {
+    console.warn('[whatsapp-bot] inbound message could not be recorded:', initialSaveError);
+    return null;
+  }
+  try {
+    const generated = await generateWhatsAppAssistantReply(from, text, db);
+    entry.reply = generated.reply;
+    entry.model = generated.model;
+    const delivery = await messagingService.sendWhatsApp(from, generated.reply);
+    entry.status = delivery.success ? 'sent' : 'failed';
+    entry.provider = delivery.provider || null;
+    entry.providerId = delivery.providerId || null;
+    entry.reason = delivery.error || null;
+    entry.sentAt = delivery.success ? new Date().toISOString() : null;
+    logAction(delivery.success ? 'WHATSAPP_ASSISTANT_REPLIED' : 'WHATSAPP_ASSISTANT_REPLY_FAILED', 'YEBS AI', entry.id, {
+      messageId,
+      model: generated.model,
+      provider: delivery.provider || null,
+      reason: delivery.error || null
+    });
+  } catch (error) {
+    entry.status = 'failed';
+    entry.reason = String(error.message || 'The assistant could not respond.').slice(0, 300);
+    console.warn('[whatsapp-bot] response failed:', entry.reason);
+  }
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) console.error('[whatsapp-bot] message result was not persisted:', persistenceError);
+  return entry;
+}
 
 // ==========================================================
 // SECURITY PRIMITIVES — bcrypt passwords + HMAC session tokens
@@ -1647,7 +1822,7 @@ function ensureSystemAccounts(db) {
 function loadDatabase() {
   const cached = store.get();
   if (cached) {
-    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports']) {
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations']) {
       if (!Array.isArray(cached[key])) cached[key] = [];
     }
     return cached;
@@ -1696,7 +1871,7 @@ function loadDatabase() {
       try { fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2)); } catch (e) { /* read-only fs */ }
     }
     ensureSystemAccounts(initialData);
-    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports']) {
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations']) {
       if (!Array.isArray(initialData[key])) initialData[key] = [];
     }
     return initialData;
@@ -1706,7 +1881,7 @@ function loadDatabase() {
     if (ensureSystemAccounts(parsed) && store.remoteMode === 'local') {
       try { fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2)); } catch (e) { /* read-only fs */ }
     }
-    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports']) {
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations']) {
       if (!Array.isArray(parsed[key])) parsed[key] = [];
     }
     return parsed;
@@ -1714,7 +1889,8 @@ function loadDatabase() {
     console.error("Database read error, restoring default", e);
     const fallback = {
       admins: [], drivers: [], orders: [], sessions: [], auditLogs: [], menuItems: [], payouts: [], reviews: [], notifications: [],
-      settings: { momo: { ...DEFAULT_MOMO_SETTINGS }, pickup: { ...DEFAULT_PICKUP_POINT }, deliveryFee: 15 }
+      settings: { momo: { ...DEFAULT_MOMO_SETTINGS }, pickup: { ...DEFAULT_PICKUP_POINT }, deliveryFee: 15 },
+      cashReconciliations: []
     };
     ensureSystemAccounts(fallback);
     return fallback;
@@ -3654,6 +3830,101 @@ app.post('/api/payments/momo/callback', async (req, res) => {
 });
 
 // Rider collects cash on delivery — auto-validated against the order total.
+function cashShiftSnapshot(shift, orders, cashHandedOver = null) {
+  const rows = orders.map(order => ({
+    orderId: order.id,
+    customer: order.customer || '',
+    totalDue: Number(order.total) || 0,
+    cashReceived: Number(order.cashReceipt && order.cashReceipt.receivedAmount) || 0,
+    changeGiven: Number(order.cashReceipt && order.cashReceipt.changeGiven) || 0,
+    collectedAt: order.cashReceipt && order.cashReceipt.collectedAt || null
+  }));
+  const totalDue = rows.reduce((sum, row) => sum + row.totalDue, 0);
+  const cashReceived = rows.reduce((sum, row) => sum + row.cashReceived, 0);
+  const changeGiven = rows.reduce((sum, row) => sum + row.changeGiven, 0);
+  const cashToRemit = Math.round((cashReceived - changeGiven) * 100) / 100;
+  const handedOver = cashHandedOver === null ? null : Math.round(Number(cashHandedOver) * 100) / 100;
+  return {
+    shiftId: shift.id,
+    openedAt: shift.openedAt,
+    orderCount: rows.length,
+    totalDue: Math.round(totalDue * 100) / 100,
+    cashReceived: Math.round(cashReceived * 100) / 100,
+    changeGiven: Math.round(changeGiven * 100) / 100,
+    cashToRemit,
+    cashHandedOver: handedOver,
+    variance: handedOver === null ? null : Math.round((handedOver - cashToRemit) * 100) / 100,
+    orders: rows
+  };
+}
+
+function ordersForCashShift(db, shiftId) {
+  return (db.orders || []).filter(order =>
+    ['paid', 'review'].includes(order.paymentStatus)
+    && order.paymentMode === 'cash'
+    && order.cashReceipt
+    && order.cashReceipt.cashShiftId === shiftId
+  );
+}
+
+app.get('/api/drivers/me/cashier', requireRole('driver'), (req, res) => {
+  const db = loadDatabase();
+  const driver = (db.drivers || []).find(item => String(item.id) === String(req.auth.driver.id));
+  if (!driver) return res.status(404).json({ success: false, message: 'Driver account not found.' });
+  const shift = driver.cashierShift || null;
+  const active = shift ? cashShiftSnapshot(shift, ordersForCashShift(db, shift.id)) : null;
+  const recent = (db.cashReconciliations || [])
+    .filter(entry => String(entry.driverId) === String(driver.id))
+    .slice(0, 10);
+  res.json({ success: true, active, recent });
+});
+
+app.post('/api/drivers/me/cashier/close', requireRole('driver'), async (req, res) => {
+  const db = loadDatabase();
+  const driver = (db.drivers || []).find(item => String(item.id) === String(req.auth.driver.id));
+  if (!driver) return res.status(404).json({ success: false, message: 'Driver account not found.' });
+  const shift = driver.cashierShift;
+  if (!shift) return res.status(409).json({ success: false, message: 'There is no open cash shift to reconcile.' });
+
+  const orders = ordersForCashShift(db, shift.id);
+  if (!orders.length) return res.status(409).json({ success: false, message: 'This cash shift has no completed cash collections.' });
+  const cashHandedOver = toAmount((req.body || {}).cashHandedOver);
+  if (cashHandedOver === null) {
+    return res.status(400).json({ success: false, message: 'Count the cash and enter the physical amount being handed over.' });
+  }
+  const snapshot = cashShiftSnapshot(shift, orders, cashHandedOver);
+  const reconciliation = {
+    id: `cash-close-${crypto.randomUUID()}`,
+    driverId: driver.id,
+    driverName: driver.name || `${driver.fname || ''} ${driver.lname || ''}`.trim() || driver.username,
+    closedAt: new Date().toISOString(),
+    ...snapshot
+  };
+  const previousShift = driver.cashierShift;
+  const previousReconciliations = db.cashReconciliations.slice();
+  driver.cashierShift = null;
+  db.cashReconciliations = db.cashReconciliations || [];
+  db.cashReconciliations.unshift(reconciliation);
+  if (db.cashReconciliations.length > 500) db.cashReconciliations.length = 500;
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) {
+    driver.cashierShift = previousShift;
+    db.cashReconciliations = previousReconciliations;
+    return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+  }
+  logAction('DRIVER_CASH_SHIFT_CLOSED', reconciliation.driverName, reconciliation.id, {
+    driverId: driver.id,
+    orderCount: snapshot.orderCount,
+    totalDue: snapshot.totalDue,
+    cashReceived: snapshot.cashReceived,
+    changeGiven: snapshot.changeGiven,
+    cashToRemit: snapshot.cashToRemit,
+    cashHandedOver: snapshot.cashHandedOver,
+    variance: snapshot.variance
+  }, req);
+  res.json({ success: true, message: 'Cash shift reconciled and saved for admin review.', reconciliation });
+});
+
 app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), async (req, res) => {
   const db = loadDatabase();
   const order = db.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(req.params.id));
@@ -3677,6 +3948,14 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), async (req,
       order: projectOrder(order, req.auth.payload.role)
     });
   }
+  if (order.cashReceipt) {
+    return res.status(409).json({
+      success: false,
+      conflict: true,
+      message: 'Cash has already been recorded for this order. Ask an admin to review the existing receipt before taking more cash.',
+      order: projectOrder(order, req.auth.payload.role)
+    });
+  }
 
   const total = Number(order.total) || 0;
   const received = toAmount((req.body || {}).amount);
@@ -3695,24 +3974,16 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), async (req,
   order.cashCollectedBy = actorName;
   order.cashCollectedAt = new Date().toISOString();
   const changeGiven = Math.max(0, Math.round((received - total) * 100) / 100);
-
-  if (received < total - 0.009) {
-    order.paymentStatus = 'review';
-    addPaymentAudit(order, received < total ? 'CASH_SHORT' : 'CASH_OVERPAYMENT', actorName, { expected: total, received });
-    const persistenceError = await requireDurableSave(db);
-    if (persistenceError) return res.status(503).json({ success: false, persisted: false, message: persistenceError });
-    logAction(received < total ? 'CASH_PAYMENT_SHORT' : 'CASH_PAYMENT_OVERPAYMENT', actorName, order.id, { expected: total, received }, req);
-    return res.status(202).json({
-      success: false,
-      needsReview: true,
-      message: `Cash received GH₵${received.toFixed(2)} does not match the GH₵${total.toFixed(2)} total. The payment is flagged for admin review.`,
-      order: projectOrder(order, req.auth.payload.role)
-    });
+  const driverId = req.auth.payload.role === 'driver'
+    ? req.auth.driver.id
+    : (order.driverId || (order.driver && order.driver.id) || null);
+  const cashDriver = driverId && (db.drivers || []).find(item => String(item.id) === String(driverId));
+  if (cashDriver && !cashDriver.cashierShift) {
+    cashDriver.cashierShift = {
+      id: `cash-shift-${crypto.randomUUID()}`,
+      openedAt: order.cashCollectedAt
+    };
   }
-
-  order.paymentStatus = 'paid';
-  order.paymentVerified = true;
-  order.paidAt = new Date().toISOString();
   order.cashReceived = received;
   order.changeGiven = changeGiven;
   order.cashReceipt = {
@@ -3722,9 +3993,31 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), async (req,
     receivedAmount: received,
     changeGiven,
     collectedBy: actorName,
+    driverId: cashDriver ? cashDriver.id : null,
+    driverName: cashDriver ? (cashDriver.name || actorName) : actorName,
+    cashShiftId: cashDriver && cashDriver.cashierShift ? cashDriver.cashierShift.id : null,
     collectedAt: order.cashCollectedAt,
     customer: order.customer
   };
+
+  if (received < total - 0.009) {
+    order.paymentStatus = 'review';
+    addPaymentAudit(order, 'CASH_SHORT', actorName, { expected: total, received, changeGiven: 0 });
+    const persistenceError = await requireDurableSave(db);
+    if (persistenceError) return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+    logAction('CASH_PAYMENT_SHORT', actorName, order.id, { expected: total, received, receiptNumber: order.cashReceipt.receiptNumber }, req);
+    return res.status(202).json({
+      success: false,
+      needsReview: true,
+      message: `GH₵${received.toFixed(2)} cash recorded against GH₵${total.toFixed(2)} due. Do not collect again; this payment is flagged for admin review.`,
+      receipt: order.cashReceipt,
+      order: projectOrder(order, req.auth.payload.role)
+    });
+  }
+
+  order.paymentStatus = 'paid';
+  order.paymentVerified = true;
+  order.paidAt = new Date().toISOString();
   addPaymentAudit(order, 'CASH_COLLECTED', actorName, { received, expected: total, changeGiven });
   automaticallyAssignPaidOrder(db, order);
 
@@ -5748,7 +6041,56 @@ function buildDailyReport(date) {
   const pending = todayOrders.filter(o => !['delivered', 'cancelled'].includes(o.status));
   const totalIncome = todayOrders.filter(o => o.paymentStatus === 'paid').reduce((s, o) => s + (o.total || 0), 0);
   const momoIncome = todayOrders.filter(o => o.paymentStatus === 'paid' && o.paymentMode === 'momo').reduce((s, o) => s + (o.total || 0), 0);
-  const cashIncome = todayOrders.filter(o => o.paymentStatus === 'paid' && o.paymentMode === 'cash').reduce((s, o) => s + (o.total || 0), 0);
+  const cashCollections = (db.orders || []).filter(order => {
+    if (order.paymentMode !== 'cash' || !order.cashReceipt) return false;
+    const collectedAt = new Date(order.cashReceipt.collectedAt || order.cashCollectedAt || 0).getTime();
+    return collectedAt >= dayStart.getTime() && collectedAt < dayEnd.getTime();
+  });
+  const cashIncome = cashCollections.filter(order => order.paymentStatus === 'paid')
+    .reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+  const cashByDriverMap = new Map();
+  cashCollections.forEach(order => {
+    const receipt = order.cashReceipt;
+    const driverId = String(receipt.driverId || order.driverId || (order.driver && order.driver.id) || 'unassigned');
+    const row = cashByDriverMap.get(driverId) || {
+      driverId,
+      driverName: receipt.driverName || order.driverName || (order.driver && order.driver.name) || 'Admin / unassigned',
+      orderCount: 0,
+      totalDue: 0,
+      cashReceived: 0,
+      changeGiven: 0
+    };
+    row.orderCount += 1;
+    row.totalDue += Number(order.total) || 0;
+    row.cashReceived += Number(receipt.receivedAmount) || 0;
+    row.changeGiven += Number(receipt.changeGiven) || 0;
+    cashByDriverMap.set(driverId, row);
+  });
+  const cashByDriver = Array.from(cashByDriverMap.values()).map(row => {
+    const cashToRemit = Math.round((row.cashReceived - row.changeGiven) * 100) / 100;
+    return {
+      ...row,
+      totalDue: Math.round(row.totalDue * 100) / 100,
+      cashReceived: Math.round(row.cashReceived * 100) / 100,
+      changeGiven: Math.round(row.changeGiven * 100) / 100,
+      cashToRemit,
+      variance: Math.round((cashToRemit - row.totalDue) * 100) / 100
+    };
+  });
+  const closedCashShifts = (db.cashReconciliations || []).filter(entry => {
+    const closedAt = new Date(entry.closedAt || 0).getTime();
+    return closedAt >= dayStart.getTime() && closedAt < dayEnd.getTime();
+  });
+  cashByDriver.forEach(row => {
+    const closedForDriver = closedCashShifts.filter(entry => String(entry.driverId) === String(row.driverId));
+    if (!closedForDriver.length) {
+      row.cashHandedOver = null;
+      row.variance = null;
+      return;
+    }
+    row.cashHandedOver = Math.round(closedForDriver.reduce((sum, entry) => sum + (Number(entry.cashHandedOver) || 0), 0) * 100) / 100;
+    row.variance = Math.round((row.cashHandedOver - row.cashToRemit) * 100) / 100;
+  });
 
   const todayLogs = (db.auditLogs || []).filter(l => {
     const t = new Date(l.timestamp || 0).getTime();
@@ -5766,12 +6108,19 @@ function buildDailyReport(date) {
       totalIncome: Math.round(totalIncome * 100) / 100,
       momoIncome: Math.round(momoIncome * 100) / 100,
       cashIncome: Math.round(cashIncome * 100) / 100,
+      cashReceived: Math.round(cashCollections.reduce((sum, order) => sum + (Number(order.cashReceipt.receivedAmount) || 0), 0) * 100) / 100,
+      cashChange: Math.round(cashCollections.reduce((sum, order) => sum + (Number(order.cashReceipt.changeGiven) || 0), 0) * 100) / 100,
+      cashToRemit: Math.round(cashCollections.reduce((sum, order) => sum + (Number(order.cashReceipt.receivedAmount) || 0) - (Number(order.cashReceipt.changeGiven) || 0), 0) * 100) / 100,
       unpaidOrders: todayOrders.filter(o => o.paymentStatus !== 'paid').length
     },
+    cashByDriver,
+    cashReconciliations: closedCashShifts,
     orders: todayOrders.map(o => ({
       id: o.id, pin: o.pickupPin, customer: o.customer, phone: o.phone,
       items: (o.items || []).map(i => `${i.quantity}x ${i.name}`).join('; '),
       total: o.total, paymentStatus: o.paymentStatus, paymentMode: o.paymentMode,
+      cashReceived: o.cashReceived || '', changeGiven: o.changeGiven || '',
+      cashReceiptNumber: o.cashReceipt && o.cashReceipt.receiptNumber || '',
       status: o.status, createdAt: o.createdAt, deliveredAt: o.deliveredAt || '',
       driver: o.driver ? o.driver.name : ''
     })),
@@ -6232,7 +6581,11 @@ app.post('/api/reports/close-of-day', requireRole('admin'), (req, res) => {
     date: report.reportDate,
     totalOrders: report.summary.totalOrders,
     delivered: report.summary.delivered,
-    income: report.summary.totalIncome
+    income: report.summary.totalIncome,
+    cashReceived: report.summary.cashReceived,
+    cashChange: report.summary.cashChange,
+    cashToRemit: report.summary.cashToRemit,
+    closedCashShifts: report.cashReconciliations.length
   }, req);
   res.json({ success: true, report });
 });
@@ -6301,10 +6654,10 @@ app.post('/api/driver/report', requireRole('driver'), async (req, res) => {
 // CSV export of daily report
 app.get('/api/reports/daily/csv', requireRole('admin'), (req, res) => {
   const report = buildDailyReport(req.query.date);
-  const headers = ['Order ID', 'PIN', 'Customer', 'Phone', 'Items', 'Total (GH₵)', 'Payment', 'Payment Status', 'Order Status', 'Created At', 'Delivered At', 'Driver'];
+  const headers = ['Order ID', 'PIN', 'Customer', 'Phone', 'Items', 'Total (GH₵)', 'Payment', 'Payment Status', 'Cash Received (GH₵)', 'Change Given (GH₵)', 'Receipt', 'Order Status', 'Created At', 'Delivered At', 'Driver'];
   const rows = report.orders.map(o => [
     o.id, o.pin, o.customer, o.phone, `"${o.items}"`,
-    o.total, o.paymentMode, o.paymentStatus, o.status,
+    o.total, o.paymentMode, o.paymentStatus, o.cashReceived || '', o.changeGiven || '', o.cashReceiptNumber || '', o.status,
     o.createdAt, o.deliveredAt, o.driver
   ]);
   const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -6518,7 +6871,7 @@ app.post('/api/admin/payouts/:id/pay', requireRole('admin'), (req, res) => {
 });
 
 app.get('/api/admin/provider-health', requireRole('admin'), (req, res) => {
-  const arkesel = Boolean(process.env.ARKSEL_API_KEY);
+  const arkesel = Boolean(process.env.ARKESEL_API_KEY || process.env.ARKSEL_API_KEY);
   const hubtel = Boolean(process.env.HUBTEL_CLIENT_ID && process.env.HUBTEL_CLIENT_SECRET);
   const twilio = Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN &&
     (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER));

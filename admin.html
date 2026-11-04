@@ -1303,9 +1303,9 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <h2 class="card-title">Inform Customer & Send Status Notification</h2>
+            <h2 class="card-title">YEBS Message Hub — Customer Updates</h2>
             <div style="font-size:0.85rem; color:var(--muted); margin-top:4px;">
-              Send instant WhatsApp updates to customers regarding their order progress.
+              Send and audit WhatsApp Cloud or SMS messages directly from YEBS. Incoming WhatsApp questions are handled by the existing Gemini assistant; CallMeBot is not required for this hub.
             </div>
           </div>
         </div>
@@ -1351,6 +1351,15 @@
                 </a>
                 <button type="button" id="copyMessageBtn" class="btn btn-outline">📋 Copy Message</button>
               </div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+                <select id="informChannel" aria-label="Message channel" style="padding:10px; border:1px solid var(--line); border-radius:8px;">
+                  <option value="whatsapp">WhatsApp Cloud</option>
+                  <option value="sms">SMS</option>
+                </select>
+                <button type="button" id="sendInformMessageBtn" class="btn btn-orange">📨 Send with YEBS Message Hub</button>
+              </div>
+              <div style="font-size:0.75rem;color:var(--muted);margin-top:7px;">Outbound sends require configured Meta WhatsApp Cloud or SMS credentials. WhatsApp free-form messages may be restricted outside Meta's customer service window; provider errors are recorded in the audit trail.</div>
+              <div id="informSendStatus" role="status" style="display:none; margin-top:8px; font-size:0.82rem;"></div>
             </div>
           </div>
         </div>
@@ -1458,9 +1467,31 @@
               <div class="kpi-icon">💵</div>
             </div>
             <div class="kpi-card" style="padding:16px;">
+              <div><div class="kpi-label">Cash Received</div><div class="kpi-value" id="rptCashReceived" style="color:#92400e;">GH₵0</div></div>
+              <div class="kpi-icon">🧾</div>
+            </div>
+            <div class="kpi-card" style="padding:16px;">
+              <div><div class="kpi-label">Change Given</div><div class="kpi-value" id="rptCashChange" style="color:#b45309;">GH₵0</div></div>
+              <div class="kpi-icon">↩️</div>
+            </div>
+            <div class="kpi-card" style="padding:16px;">
+              <div><div class="kpi-label">Cash to Remit</div><div class="kpi-value" id="rptCashToRemit" style="color:#166534;">GH₵0</div></div>
+              <div class="kpi-icon">🏦</div>
+            </div>
+            <div class="kpi-card" style="padding:16px;">
               <div><div class="kpi-label">Unpaid Orders</div><div class="kpi-value" id="rptUnpaid" style="color:#b91c1c;">0</div></div>
               <div class="kpi-icon">⚠️</div>
             </div>
+          </div>
+        </div>
+
+        <div id="dailyCashReconciliationWrap" style="display:none; margin-bottom:20px;">
+          <h3 style="font-family:var(--serif); color:var(--forest); font-size:1.1rem; margin-bottom:10px;">Driver Cash Reconciliation</h3>
+          <div class="table-responsive">
+            <table>
+              <thead><tr><th>Driver</th><th>Collections</th><th>Total Due</th><th>Cash Received</th><th>Change Given</th><th>Expected Remit</th><th>Handed Over</th><th>Variance</th><th>Closed Shifts</th></tr></thead>
+              <tbody id="dailyCashReconciliationBody"></tbody>
+            </table>
           </div>
         </div>
 
@@ -1857,6 +1888,9 @@
     const informMessagePreview = document.getElementById('informMessagePreview');
     const informWhatsAppLink = document.getElementById('informWhatsAppLink');
     const informCustomNote = document.getElementById('informCustomNote');
+    const informChannel = document.getElementById('informChannel');
+    const sendInformMessageBtn = document.getElementById('sendInformMessageBtn');
+    const informSendStatus = document.getElementById('informSendStatus');
     const recordSearch = document.getElementById('recordSearch');
     const recordFilterStatus = document.getElementById('recordFilterStatus');
     const exportCsvBtn = document.getElementById('exportCsvBtn');
@@ -2915,6 +2949,39 @@
 
     informOrderSelect.addEventListener('change', generateInformMessage);
     informCustomNote.addEventListener('input', generateInformMessage);
+    if (sendInformMessageBtn) {
+      sendInformMessageBtn.addEventListener('click', async () => {
+        const orderId = informOrderSelect.value;
+        const message = informMessagePreview.textContent.trim();
+        if (!orderId || !message || message.startsWith('Select an order')) {
+          alert('Select an order and prepare a message first.');
+          return;
+        }
+        const token = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
+        sendInformMessageBtn.disabled = true;
+        sendInformMessageBtn.textContent = 'Sending…';
+        informSendStatus.style.display = 'block';
+        informSendStatus.style.color = 'var(--muted)';
+        informSendStatus.textContent = 'Submitting securely to the selected messaging provider…';
+        try {
+          const response = await fetch('/api/admin/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({ orderId, channel: informChannel.value, message })
+          });
+          const result = await response.json().catch(() => ({}));
+          informSendStatus.style.color = result.success ? '#166534' : '#b91c1c';
+          informSendStatus.textContent = result.message || 'The message could not be sent.';
+          loadAuditLogs();
+        } catch (error) {
+          informSendStatus.style.color = '#b91c1c';
+          informSendStatus.textContent = error.message || 'Could not reach the messaging service.';
+        } finally {
+          sendInformMessageBtn.disabled = false;
+          sendInformMessageBtn.textContent = '📨 Send with YEBS Message Hub';
+        }
+      });
+    }
 
     document.getElementById('copyMessageBtn').addEventListener('click', () => {
       navigator.clipboard.writeText(informMessagePreview.textContent);
@@ -4224,8 +4291,35 @@
       document.getElementById('rptIncome').textContent = `GH₵${r.summary.totalIncome.toFixed(2)}`;
       document.getElementById('rptMomoIncome').textContent = `GH₵${r.summary.momoIncome.toFixed(2)}`;
       document.getElementById('rptCashIncome').textContent = `GH₵${r.summary.cashIncome.toFixed(2)}`;
+      document.getElementById('rptCashReceived').textContent = `GH₵${Number(r.summary.cashReceived || 0).toFixed(2)}`;
+      document.getElementById('rptCashChange').textContent = `GH₵${Number(r.summary.cashChange || 0).toFixed(2)}`;
+      document.getElementById('rptCashToRemit').textContent = `GH₵${Number(r.summary.cashToRemit || 0).toFixed(2)}`;
       document.getElementById('rptUnpaid').textContent = r.summary.unpaidOrders;
       document.getElementById('dailyReportSummary').style.display = 'block';
+
+      const cashRows = r.cashByDriver || [];
+      const closeouts = r.cashReconciliations || [];
+      const cashBody = document.getElementById('dailyCashReconciliationBody');
+      cashBody.innerHTML = cashRows.length
+        ? cashRows.map(row => {
+          const driverCloseouts = closeouts.filter(item => item.driverId === row.driverId);
+          const varianceTone = row.variance === null || row.variance === undefined
+            ? 'var(--muted)'
+            : Number(row.variance) === 0 ? '#166534' : '#b91c1c';
+          return `<tr>
+            <td><strong>${escapeHtml(row.driverName)}</strong><br><small>${escapeHtml(row.driverId)}</small></td>
+            <td>${Number(row.orderCount) || 0}</td>
+            <td>GH₵${Number(row.totalDue || 0).toFixed(2)}</td>
+            <td>GH₵${Number(row.cashReceived || 0).toFixed(2)}</td>
+            <td>GH₵${Number(row.changeGiven || 0).toFixed(2)}</td>
+            <td><strong>GH₵${Number(row.cashToRemit || 0).toFixed(2)}</strong></td>
+            <td>${row.cashHandedOver === null || row.cashHandedOver === undefined ? 'Not closed' : 'GH₵' + Number(row.cashHandedOver).toFixed(2)}</td>
+            <td style="color:${varianceTone};font-weight:700;">${row.variance === null || row.variance === undefined ? 'Pending count' : 'GH₵' + Number(row.variance).toFixed(2)}</td>
+            <td>${driverCloseouts.length ? driverCloseouts.map(item => escapeHtml(item.id) + ' · ' + new Date(item.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })).join('<br>') : 'Not closed'}</td>
+          </tr>`;
+        }).join('')
+        : `<tr><td colspan="9" style="text-align:center;padding:18px;color:var(--muted);">No cash collections recorded for this date.</td></tr>`;
+      document.getElementById('dailyCashReconciliationWrap').style.display = 'block';
 
       const tbody = document.getElementById('dailyReportTableBody');
       tbody.innerHTML = r.orders.length === 0

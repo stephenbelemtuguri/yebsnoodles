@@ -754,6 +754,13 @@
       <p style="font-size:0.82rem; color:var(--muted); margin:0 0 12px; line-height:1.45;">
         Select an arrived, assigned cash order to load its amount due, or look up an order by <strong>Order ID</strong> / the customer's separate <strong>4-digit pickup PIN</strong>. Cash received, change, and receipt are recorded for admin.
       </p>
+      <div id="driverCashierSummary" style="padding:10px 12px; margin-bottom:10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:9px; font-size:0.82rem;" aria-live="polite">
+        Cash shift summary will appear after your first cash collection.
+      </div>
+      <label id="cashHandedOverLabel" for="cashHandedOverInput" style="display:none;font-size:0.8rem;font-weight:700;margin-bottom:6px;">Counted cash handed over (GH₵)</label>
+      <input id="cashHandedOverInput" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Enter cash physically counted"
+        style="display:none;width:100%;max-width:260px;padding:10px;margin-bottom:10px;border:1px solid var(--line);border-radius:8px;font-size:0.9rem;">
+      <button type="button" id="closeCashShiftBtn" class="btn btn-forest btn-sm" style="margin-bottom:12px; display:none;">🔒 Reconcile &amp; close cash shift</button>
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
         <select id="driverCashOrderSelect" aria-label="Select arrived cash order"
           style="flex:1; min-width:220px; padding:11px 13px; border:1px solid var(--line); border-radius:8px; font-size:0.9rem;">
@@ -1134,7 +1141,86 @@
     const driverLookupStatus = document.getElementById('driverLookupStatus');
     const driverLookupResult = document.getElementById('driverLookupResult');
     const driverCashOrderSelect = document.getElementById('driverCashOrderSelect');
+    const driverCashierSummary = document.getElementById('driverCashierSummary');
+    const closeCashShiftBtn = document.getElementById('closeCashShiftBtn');
+    const cashHandedOverLabel = document.getElementById('cashHandedOverLabel');
+    const cashHandedOverInput = document.getElementById('cashHandedOverInput');
     let lookedUpOrderId = null;
+    let lastCashierRefreshAt = 0;
+    let cashierRefreshPromise = null;
+
+    async function refreshDriverCashierSummary(force = false) {
+      const token = sessionStorage.getItem('yebs_driver_token') || localStorage.getItem('yebs_driver_token_persist') || '';
+      if (!token || !driverCashierSummary) return;
+      if (!force && Date.now() - lastCashierRefreshAt < 10000) return;
+      if (cashierRefreshPromise) return cashierRefreshPromise;
+      lastCashierRefreshAt = Date.now();
+      cashierRefreshPromise = (async () => {
+        try {
+          const response = await fetch('/api/drivers/me/cashier', {
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            cache: 'no-store'
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || !result.success) throw new Error(result.message || 'Could not load cash-shift totals.');
+          const active = result.active;
+          if (!active) {
+            driverCashierSummary.textContent = 'No open cash shift. A shift starts automatically when you record your first cash collection.';
+            closeCashShiftBtn.style.display = 'none';
+            cashHandedOverLabel.style.display = 'none';
+            cashHandedOverInput.style.display = 'none';
+            return;
+          }
+          driverCashierSummary.innerHTML = `<strong>Open shift</strong> · ${Number(active.orderCount || 0)} collected order(s) · Due GH₵${Number(active.totalDue || 0).toFixed(2)} · Received GH₵${Number(active.cashReceived || 0).toFixed(2)} · Change GH₵${Number(active.changeGiven || 0).toFixed(2)} · <strong>Cash to remit GH₵${Number(active.cashToRemit || 0).toFixed(2)}</strong>`;
+          closeCashShiftBtn.style.display = 'inline-flex';
+          cashHandedOverLabel.style.display = 'block';
+          cashHandedOverInput.style.display = 'block';
+          cashHandedOverInput.placeholder = `Expected GH₵${Number(active.cashToRemit || 0).toFixed(2)} — count actual cash`;
+          closeCashShiftBtn.disabled = false;
+        } catch (error) {
+          driverCashierSummary.textContent = `Cash reconciliation unavailable: ${error.message}`;
+          closeCashShiftBtn.style.display = 'none';
+        } finally {
+          cashierRefreshPromise = null;
+        }
+      })();
+      return cashierRefreshPromise;
+    }
+
+    if (closeCashShiftBtn) {
+      closeCashShiftBtn.addEventListener('click', async () => {
+        const cashHandedOver = Number(cashHandedOverInput.value);
+        if (!Number.isFinite(cashHandedOver) || cashHandedOver < 0) {
+          driverCashierSummary.textContent = 'Count the cash and enter the physical amount before closing the shift.';
+          return;
+        }
+        if (!confirm(`Close this shift with GH₵${cashHandedOver.toFixed(2)} physically counted?`)) return;
+        const token = sessionStorage.getItem('yebs_driver_token') || localStorage.getItem('yebs_driver_token_persist') || '';
+        closeCashShiftBtn.disabled = true;
+        closeCashShiftBtn.textContent = 'Saving reconciliation…';
+        try {
+          const response = await fetch('/api/drivers/me/cashier/close', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cashHandedOver })
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || !result.success) throw new Error(result.message || 'Could not close the cash shift.');
+          const report = result.reconciliation;
+          driverCashierSummary.textContent = `Shift closed: ${report.orderCount} order(s) · Expected GH₵${Number(report.cashToRemit).toFixed(2)} · Handed over GH₵${Number(report.cashHandedOver).toFixed(2)} · Variance GH₵${Number(report.variance).toFixed(2)}. Admin can review this closeout in Daily Reports.`;
+          closeCashShiftBtn.style.display = 'none';
+          cashHandedOverLabel.style.display = 'none';
+          cashHandedOverInput.style.display = 'none';
+          cashHandedOverInput.value = '';
+          lastCashierRefreshAt = Date.now();
+        } catch (error) {
+          driverCashierSummary.textContent = `Could not reconcile shift: ${error.message}`;
+          closeCashShiftBtn.disabled = false;
+        } finally {
+          closeCashShiftBtn.textContent = '🔒 Reconcile & close cash shift';
+        }
+      });
+    }
 
     // Setup Pickup Point Dropdown & Live Geocoding
     let pickupPointsInitialized = false;
@@ -1557,6 +1643,7 @@
     }
 
     function renderSessionPackages() {
+      void refreshDriverCashierSummary();
       const orders = getOrders();
       const session = getSessionState();
       const driver = getCurrentDriver();
@@ -2020,6 +2107,7 @@
           <div style="margin-top:8px; font-size:0.82rem; background:white; border:1px solid #e5e7eb; border-radius:8px; padding:8px 10px;">
             ${itemsText}
             <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #e5e7eb;">${paymentSummaryHtml(order)}</div>
+            ${isCash && order.cashReceipt ? `<div style="margin-top:6px;color:#92400e;font-size:0.78rem;">Cash recorded: GH₵${Number(order.cashReceipt.receivedAmount || 0).toFixed(2)} · Receipt ${order.cashReceipt.receiptNumber || ''}${order.paymentStatus === 'review' ? ' · awaiting admin review; do not collect again' : ''}</div>` : ''}
           </div>
 
           <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #e5e7eb;">
@@ -2032,7 +2120,7 @@
             </div>
           </div>
 
-          ${isCash && !paid ? `
+          ${isCash && !paid && !order.cashReceipt ? `
             <div style="margin-top:10px; padding:12px; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px;">
               <div style="font-size:0.82rem; font-weight:800; color:#92400e; margin-bottom:6px;">💵 Cash on delivery — record the amount received</div>
               <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -2124,12 +2212,18 @@
                 receiptWindow.document.close();
               }
             }
+            renderSessionPackages();
+          } else if (res && res.needsReview && res.receipt && receiptWindow) {
+            const receipt = res.receipt;
+            const safe = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+            receiptWindow.document.write(`<!doctype html><title>YEBS Cash Collection Record</title><body style="font-family:Arial,sans-serif;padding:24px;color:#111;"><div style="max-width:360px;margin:auto;border:1px solid #ddd;padding:20px;"><h2 style="text-align:center;color:#1f7a3a;margin:0;">YEBS NOODLES</h2><p style="text-align:center;">Cash Collection · Payment Review</p><hr><p><strong>Receipt:</strong> ${safe(receipt.receiptNumber)}</p><p><strong>Order:</strong> ${safe(receipt.orderId)}</p><p><strong>Customer:</strong> ${safe(receipt.customer)}</p><hr><p>Amount due: GH₵${Number(receipt.expectedAmount).toFixed(2)}</p><p>Cash received: GH₵${Number(receipt.receivedAmount).toFixed(2)}</p><p><strong>Balance for admin review: GH₵${Math.max(0, Number(receipt.expectedAmount) - Number(receipt.receivedAmount)).toFixed(2)}</strong></p><p><small>Collected by ${safe(receipt.collectedBy)}<br>${safe(new Date(receipt.collectedAt).toLocaleString())}</small></p><hr><p>Payment is not confirmed. Do not collect cash again until an admin resolves this record.</p><button onclick="print()" style="width:100%;padding:10px;">Print collection record</button></div></body>`);
+            receiptWindow.document.close();
           } else if (receiptWindow) {
             receiptWindow.close();
-            renderSessionPackages();
           }
           lookupRenderSig = '';
           renderLookupResult((res && res.order) || getOrders().find(o => o.id === order.id) || order);
+          await refreshDriverCashierSummary(true);
         };
       }
 
