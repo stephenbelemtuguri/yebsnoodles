@@ -226,7 +226,7 @@ General capability:
           preferredGeminiModels.push(...availableFlashModels);
         }
       } catch (_) {}
-      const geminiModels = [...new Set(preferredGeminiModels)].slice(0, 4);
+      const geminiModels = [...new Set(preferredGeminiModels)].slice(0, 2);
       const contents = suppliedHistory.slice(-10).filter(entry =>
         entry && typeof entry.content === 'string' && ['user', 'assistant', 'model'].includes(entry.role)
       ).map(entry => ({
@@ -265,7 +265,7 @@ General capability:
             toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
             generationConfig: { temperature: 0.25, maxOutputTokens: 700 }
           }),
-          signal: AbortSignal.timeout(9000)
+          signal: AbortSignal.timeout(7000)
           });
         } catch (error) {
           geminiFailureReason = error.name === 'TimeoutError' ? 'Gemini model request timed out.' : error.message;
