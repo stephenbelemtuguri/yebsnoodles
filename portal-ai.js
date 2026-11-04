@@ -75,7 +75,9 @@
       });
       const data = await response.json();
       thinking.remove();
-      const answer = data.reply || data.message || 'The assistant is unavailable right now.';
+      const answer = response.ok && data.success !== false && data.reply
+        ? data.reply
+        : 'The AI service is busy. Your question was received; please try again in a moment.';
       add(answer, false);
       history.push({ role: 'user', content: question }, { role: 'assistant', content: answer });
     } catch (_) {

@@ -200,13 +200,29 @@ General capability:
   if (geminiKey) {
     try {
       const configuredGeminiModel = String(process.env.GEMINI_MODEL || process.env.AI_MODEL || '').trim();
-      const geminiModels = [...new Set([
+      const preferredGeminiModels = [...new Set([
         configuredGeminiModel,
         'gemini-2.5-flash-lite',
         'gemini-2.5-flash',
         'gemini-2.0-flash',
         'gemini-flash-latest'
       ].filter(Boolean))];
+      try {
+        const modelListResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100', {
+          headers: { 'x-goog-api-key': geminiKey },
+          signal: AbortSignal.timeout(8000)
+        });
+        if (modelListResponse.ok) {
+          const modelList = await modelListResponse.json();
+          const availableFlashModels = (modelList.models || [])
+            .filter(model => Array.isArray(model.supportedGenerationMethods) &&
+              model.supportedGenerationMethods.includes('generateContent'))
+            .map(model => String(model.name || '').replace(/^models\//, ''))
+            .filter(model => /flash/i.test(model));
+          preferredGeminiModels.splice(1, 0, ...availableFlashModels);
+        }
+      } catch (_) {}
+      const geminiModels = [...new Set(preferredGeminiModels)];
       const contents = suppliedHistory.slice(-10).filter(entry =>
         entry && typeof entry.content === 'string' && ['user', 'assistant', 'model'].includes(entry.role)
       ).map(entry => ({
