@@ -237,7 +237,10 @@ General capability:
           { name: 'list_orders', description: 'List and inspect live orders, optionally filtered by status.', parameters: { type: 'object', properties: { status: { type: 'string', description: 'Exact order status such as preparing, ready, delivered, or cancelled' }, limit: { type: 'number' } } } },
           { name: 'inspect_payments', description: 'Inspect payment review queue, pending Mobile Money payments, and payment mismatches.', parameters: { type: 'object', properties: {} } },
           { name: 'notify_team', description: 'Create an in-app notification for admin or driver staff.', parameters: { type: 'object', properties: { title: { type: 'string' }, message: { type: 'string' }, audience: { type: 'string', enum: ['admin', 'driver', 'all'] }, confirmed: { type: 'boolean' } }, required: ['title', 'message', 'audience', 'confirmed'] } },
-          { name: 'driver_update_availability', description: 'Update the authenticated driver availability when the driver explicitly confirms it.', parameters: { type: 'object', properties: { available: { type: 'boolean' }, confirmed: { type: 'boolean' } }, required: ['available', 'confirmed'] } }
+          { name: 'driver_update_availability', description: 'Update the authenticated driver availability when the driver explicitly confirms it.', parameters: { type: 'object', properties: { available: { type: 'boolean' }, confirmed: { type: 'boolean' } }, required: ['available', 'confirmed'] } },
+          { name: 'driver_mark_arrived', description: 'Mark the authenticated driver arrival for one assigned active order.', parameters: { type: 'object', properties: { orderId: { type: 'string' }, confirmed: { type: 'boolean' } }, required: ['orderId', 'confirmed'] } },
+          { name: 'optimize_driver_route', description: 'Calculate an efficient road stop order for the authenticated driver assigned orders that have delivery coordinates.', parameters: { type: 'object', properties: {} } },
+          { name: 'verify_delivery_pin', description: 'Verify the customer delivery PIN for one assigned order and log its successful delivery.', parameters: { type: 'object', properties: { orderId: { type: 'string' }, pin: { type: 'string' }, confirmed: { type: 'boolean' } }, required: ['orderId', 'pin', 'confirmed'] } }
         ]
       }];
       let lastReply = '';
@@ -328,6 +331,111 @@ General capability:
               driver.availability = args.available ? 'available' : 'offline';
               saveDatabase(live);
               output = { ok: true, available: driver.isActive };
+            }
+          } else if (call.functionCall.name === 'driver_mark_arrived' && role === 'driver' && authenticated && args.confirmed === true) {
+            const order = live.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(args.orderId));
+            const ownsOrder = order && (String(order.driverId) === String(authenticated.driver.id) ||
+              String(order.driver && order.driver.id) === String(authenticated.driver.id));
+            if (!order || !ownsOrder) output = { ok: false, reason: 'Order is not assigned to this driver.' };
+            else if (order.status !== 'enroute') output = { ok: false, reason: 'Live tracking must be started before arrival can be recorded.', currentStatus: order.status };
+            else {
+              order.status = 'arrived';
+              order.arrivedAt = new Date().toISOString();
+              saveDatabase(live);
+              if (typeof pushOrderUpdate === 'function') pushOrderUpdate(order.id, { type: 'status', order: projectOrder(order, 'customer') });
+              output = { ok: true, orderId: order.id, status: order.status, arrivedAt: order.arrivedAt };
+            }
+          } else if (call.functionCall.name === 'optimize_driver_route' && role === 'driver' && authenticated) {
+            const driverId = String(authenticated.driver.id);
+            const current = authenticated.driver;
+            const assigned = live.orders.filter(o => !['delivered', 'cancelled'].includes(String(o.status).toLowerCase()) &&
+              (String(o.driverId) === driverId || String(o.driver && o.driver.id) === driverId));
+            const stops = assigned.map(order => {
+              const pin = order.mapPin || order.deliveryPin || {};
+              return { orderId: order.id, lat: Number(pin.lat), lng: Number(pin.lng || pin.lon), address: order.address || pin.address || 'Destination pin' };
+            }).filter(stop => Number.isFinite(stop.lat) && Number.isFinite(stop.lng));
+            const distanceKm = (a, b) => {
+              const rad = Math.PI / 180;
+              const dLat = (b.lat - a.lat) * rad;
+              const dLng = (b.lng - a.lng) * rad;
+              const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+              return 6371 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+            };
+            const origin = { lat: Number(current.lat), lng: Number(current.lng) };
+            const remaining = [...stops];
+            const route = [];
+            let cursor = Number.isFinite(origin.lat) && Number.isFinite(origin.lng) ? origin : (remaining[0] || null);
+            let routeMethod = 'coordinate-distance-fallback';
+            if (stops.length > 1 && cursor) {
+              try {
+                const points = [cursor, ...stops];
+                const uniquePoints = points.filter((point, index) =>
+                  points.findIndex(candidate => Math.abs(candidate.lat - point.lat) < 0.00001 && Math.abs(candidate.lng - point.lng) < 0.00001) === index);
+                const matrixResponse = await fetch(`https://router.project-osrm.org/table/v1/driving/${uniquePoints.map(point => `${point.lng},${point.lat}`).join(';')}?annotations=duration`, {
+                  signal: AbortSignal.timeout(8000)
+                });
+                if (matrixResponse.ok) {
+                  const matrix = await matrixResponse.json();
+                  if (Array.isArray(matrix.durations)) {
+                    routeMethod = 'live-road-duration-matrix';
+                    while (remaining.length) {
+                      const pointIndex = uniquePoints.findIndex(point =>
+                        Math.abs(point.lat - cursor.lat) < 0.00001 && Math.abs(point.lng - cursor.lng) < 0.00001);
+                      let bestIndex = 0;
+                      let bestDuration = Infinity;
+                      for (let i = 0; i < remaining.length; i++) {
+                        const stopPointIndex = uniquePoints.findIndex(point =>
+                          Math.abs(point.lat - remaining[i].lat) < 0.00001 && Math.abs(point.lng - remaining[i].lng) < 0.00001);
+                        const duration = matrix.durations[pointIndex] && matrix.durations[pointIndex][stopPointIndex];
+                        if (Number.isFinite(duration) && duration < bestDuration) {
+                          bestDuration = duration;
+                          bestIndex = i;
+                        }
+                      }
+                      const next = remaining.splice(bestIndex, 1)[0];
+                      route.push(next);
+                      cursor = next;
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+            while (routeMethod !== 'live-road-duration-matrix' && cursor && remaining.length) {
+              let bestIndex = 0;
+              for (let i = 1; i < remaining.length; i++) {
+                if (distanceKm(cursor, remaining[i]) < distanceKm(cursor, remaining[bestIndex])) bestIndex = i;
+              }
+              const next = remaining.splice(bestIndex, 1)[0];
+              route.push(next);
+              cursor = next;
+            }
+            output = {
+              ok: true,
+              method: routeMethod,
+              stops: route.map((stop, index) => ({ stop: index + 1, ...stop })),
+              unlocatedOrderIds: assigned.filter(order => !route.some(stop => stop.orderId === order.id)).map(order => order.id)
+            };
+          } else if (call.functionCall.name === 'verify_delivery_pin' && role === 'driver' && authenticated && args.confirmed === true) {
+            const order = live.orders.find(o => String(o.id).toUpperCase() === normalizeOrderId(args.orderId));
+            const ownsOrder = order && (String(order.driverId) === String(authenticated.driver.id) ||
+              String(order.driver && order.driver.id) === String(authenticated.driver.id));
+            if (!order || !ownsOrder) output = { ok: false, reason: 'Order is not assigned to this driver.' };
+            else if (String(order.deliveryPin || '') !== String(args.pin).replace(/\D/g, '').slice(-4)) output = { ok: false, reason: 'PIN does not match this order.' };
+            else if (order.status === 'delivered') output = { ok: true, idempotent: true, orderId: order.id, status: 'delivered', deliveredAt: order.deliveredAt };
+            else if (order.status !== 'arrived') output = { ok: false, reason: 'Driver must mark arrival before delivery can be verified.', currentStatus: order.status };
+            else if (order.paymentStatus !== 'paid' && order.paymentVerified !== true) output = { ok: false, reason: 'Payment must be confirmed before delivery completion.' };
+            else {
+              const timestamp = new Date().toISOString();
+              order.status = 'delivered';
+              order.deliveredAt = timestamp;
+              order.verifiedAt = timestamp;
+              order.verifiedByDriver = true;
+              order.deliveryProof = { method: 'ai-pin-verification', verifiedAt: timestamp, driverId: authenticated.driver.id };
+              live.deliveryReports = Array.isArray(live.deliveryReports) ? live.deliveryReports : [];
+              live.deliveryReports.push({ id: 'delivery-ai-' + timestamp, orderId: order.id, driverId: authenticated.driver.id, deliveredAt: timestamp, source: 'ai-assistant' });
+              saveDatabase(live);
+              if (typeof pushOrderUpdate === 'function') pushOrderUpdate(order.id, { type: 'status', order: projectOrder(order, 'customer') });
+              output = { ok: true, orderId: order.id, status: 'delivered', deliveredAt: timestamp };
             }
           } else if (args.confirmed !== true) output = { ok: false, requiresConfirmation: true };
           else output = { ok: false, reason: 'Unauthorized for this role.' };
