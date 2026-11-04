@@ -279,7 +279,7 @@ General capability:
           if (!response.ok) {
             geminiError = `Gemini returned HTTP ${response.status}`;
             geminiFailureReason = geminiError;
-            if ([404, 429, 502, 503].includes(response.status)) continue;
+            if ([404, 429, 502, 503].includes(response.status)) break;
             break;
           }
           throw new Error(`Gemini ${geminiModel} returned invalid JSON.`);
@@ -290,7 +290,7 @@ General capability:
           geminiError = data.error && data.error.message || `Gemini returned HTTP ${response.status}`;
           geminiFailureReason = geminiError;
           if ([404, 429, 502, 503].includes(response.status) ||
-              /not found|is not supported|high demand|unavailable|overloaded/i.test(geminiError)) continue;
+              /not found|is not supported|high demand|unavailable|overloaded/i.test(geminiError)) break;
           break;
         }
         const calls = parts.filter(part => part.functionCall);
