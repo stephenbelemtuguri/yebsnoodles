@@ -276,6 +276,12 @@ General capability:
         try {
           data = JSON.parse(rawData);
         } catch {
+          if (!response.ok) {
+            geminiError = `Gemini returned HTTP ${response.status}`;
+            geminiFailureReason = geminiError;
+            if ([404, 429, 502, 503].includes(response.status)) continue;
+            break;
+          }
           throw new Error(`Gemini ${geminiModel} returned invalid JSON.`);
         }
         const candidate = data.candidates && data.candidates[0];
