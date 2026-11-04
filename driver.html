@@ -1050,12 +1050,14 @@
       getPickupPoint,
       applyServerSession,
       startLiveOrderSync,
+      startStaffNotifications,
       getCustomerAvatar
     } from './shared.js';
     import { openRecovery } from './recovery.js';
 
     initStore();
 
+    let stopDriverNotifications = null;
     const sendDriverReportBtn = document.getElementById('sendDriverReportBtn');
     const driverReportStatus = document.getElementById('driverReportStatus');
     if (sendDriverReportBtn) {
@@ -2369,6 +2371,10 @@
     window.addEventListener('load', () => setTimeout(initializeGoogleSignIn, 300));
 
     function bootDriverDashboard() {
+      const notificationToken = sessionStorage.getItem('yebs_driver_token') || localStorage.getItem('yebs_driver_token_persist') || '';
+      if (notificationToken && !stopDriverNotifications) {
+        stopDriverNotifications = startStaffNotifications('driver', notificationToken);
+      }
       initPickupPoints();
       initGoogleMap();
       startGpsStreaming();
@@ -2727,6 +2733,10 @@
 
     driverLogoutBtn.addEventListener('click', () => {
       if (confirm('Log out from Driver Portal?')) {
+        if (stopDriverNotifications) {
+          stopDriverNotifications();
+          stopDriverNotifications = null;
+        }
         stopCameraStream();
         ['yebs_driver_token', 'yebs_driver_user', 'yebs_driver_login_at', 'yebs_driver_photo'].forEach(k => sessionStorage.removeItem(k));
         ['yebs_driver_token_persist', 'yebs_driver_user_persist', 'yebs_driver_login_at_persist'].forEach(k => localStorage.removeItem(k));

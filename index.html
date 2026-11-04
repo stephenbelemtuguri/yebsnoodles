@@ -4619,7 +4619,8 @@
       const dial = document.getElementById('payNowDialBtn');
       if (dial) {
         dial.href = 'tel:' + encodeURIComponent(net.dial + '#');
-        dial.textContent = 'Dial ' + net.ussd + ' (' + net.shortLabel + ')';
+        dial.textContent = 'Open dialer · ' + net.ussd;
+        dial.setAttribute('aria-label', 'Open phone dialer with ' + net.ussd + ' for ' + net.shortLabel);
         dial.style.background = net.color;
         dial.style.color = net.textColor;
       }
@@ -5002,8 +5003,8 @@
       awaitingUssdReturn = true;
       ussdArmedAt = Date.now();
       rememberPendingPayment(currentPayOrder, selectedPayNetwork);
-      showReturnBanner('Approve the payment in the USSD menu, then come back to this page. Your order and details are saved — we will pick up exactly here.');
-      setPayNowStatus('Waiting for you to return from the USSD menu…', '');
+      showReturnBanner('Your order is saved. Complete the USSD steps and approve the payment on your phone, then return here. USSD cannot be completed or authorized automatically by the website.');
+      setPayNowStatus('Open the phone dialer, start the USSD session, and approve the payment yourself. Come back here when finished.', '');
     }
 
     async function handleUssdReturn(force) {
@@ -5073,6 +5074,17 @@
 
     const payDialBtn = document.getElementById('payNowDialBtn');
     if (payDialBtn) payDialBtn.addEventListener('click', armUssdReturn);
+    const copyPaymentReferenceBtn = document.getElementById('payNowCopyRefBtn');
+    if (copyPaymentReferenceBtn) copyPaymentReferenceBtn.addEventListener('click', async () => {
+      if (!currentPayOrder) return;
+      try {
+        await navigator.clipboard.writeText(String(currentPayOrder.paymentRef || currentPayOrder.id));
+        copyPaymentReferenceBtn.textContent = 'Copied';
+        window.setTimeout(() => { copyPaymentReferenceBtn.textContent = 'Copy reference'; }, 1800);
+      } catch (error) {
+        window.prompt('Copy this payment reference:', String(currentPayOrder.paymentRef || currentPayOrder.id));
+      }
+    });
     const payPasteBtn = document.getElementById('payNowPasteBtn');
     if (payPasteBtn) payPasteBtn.addEventListener('click', pasteMomoSms);
     document.addEventListener('visibilitychange', () => {
@@ -5129,19 +5141,19 @@
 
         <div class="pay-step">
           <span class="num">1</span>
-          <div class="step-text">Dial <strong id="payNowUssd">*170#</strong> from your <strong id="payNowNetworkName">MTN MoMo</strong> line and send <strong id="payNowStepAmount">GH&#8373;0.00</strong> to <strong id="payNowStepWallet">055 910 3452</strong>.</div>
+          <div class="step-text">Tap <strong>Open dialer</strong>, start <strong id="payNowUssd">*170#</strong>, and follow your network's prompts. The website cannot send or approve a USSD payment for you. Send <strong id="payNowStepAmount">GH&#8373;0.00</strong> to <strong id="payNowStepWallet">055 910 3452</strong>.</div>
         </div>
         <div class="pay-step">
           <span class="num">2</span>
-          <div class="step-text">Use your Order ID <strong id="payNowStepRef">YB----</strong> as the reference / narration.</div>
+          <div class="step-text">Use this Order ID <strong id="payNowStepRef">YB----</strong> as the payment reference / narration. <button type="button" id="payNowCopyRefBtn" style="border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;background:#fff;color:#173d30;font-size:.72rem;font-weight:700;">Copy reference</button></div>
         </div>
         <div class="pay-step">
           <span class="num">3</span>
-          <div class="step-text">Enter the transaction ID from your MoMo SMS and upload the receipt screenshot. An administrator will verify the proof before payment is marked successful.</div>
+          <div class="step-text">After payment succeeds, save a screenshot of the MoMo confirmation showing the amount and transaction ID. Return to this page, enter that transaction ID, attach the screenshot, and submit it. YEBS will review the proof before marking the order paid.</div>
         </div>
 
         <div class="pay-actions">
-          <a id="payNowDialBtn" href="tel:*170%23" class="button" style="flex:1; min-height:40px; font-size:.82rem; display:flex; align-items:center; justify-content:center; background:#facc15; color:#713f12; font-weight:800;">Dial *170#</a>
+          <a id="payNowDialBtn" href="tel:*170%23" class="button" style="flex:1; min-height:40px; font-size:.82rem; display:flex; align-items:center; justify-content:center; background:#facc15; color:#713f12; font-weight:800;">Open dialer · *170#</a>
           <button type="button" id="payNowPushBtn" class="button" style="flex:1; min-height:40px; font-size:.82rem; background:#16342a; color:#fff; display:none;">Send payment prompt</button>
         </div>
         <div id="payNowPushStatus" style="font-size:.76rem; color:#15803d; margin-top:8px;" role="status" aria-live="polite"></div>
@@ -5153,7 +5165,7 @@
           <div class="pay-paste-row">
             <button type="button" id="payNowPasteBtn" class="button" style="background:#eef5f0; color:var(--forest); border:1px solid #c9decb;">📋 Paste MoMo SMS</button>
           </div>
-          <label for="payNowReceipt" style="font-size:.78rem; font-weight:800; color:#374151; display:block; margin-top:8px;">MoMo receipt screenshot (required)</label>
+          <label for="payNowReceipt" style="font-size:.78rem; font-weight:800; color:#374151; display:block; margin-top:8px;">Screenshot of successful payment (required)</label>
           <input id="payNowReceipt" type="file" accept="image/jpeg,image/png,image/webp" required style="margin-top:4px; font-size:.75rem; padding:4px;">
           <button type="button" id="payNowConfirmBtn" class="button button-orange" style="width:100%; min-height:42px; margin-top:10px; font-size:.9rem;">I have paid &mdash; submit proof</button>
           <div id="payNowStatus" style="font-size:.8rem; margin-top:8px; font-weight:600; color:#6b7280;" role="status" aria-live="polite"></div>

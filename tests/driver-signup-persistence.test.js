@@ -62,6 +62,7 @@ describe('driver signup persistence', () => {
       payouts: [],
       reviews: [],
       notifications: [],
+      pushSubscriptions: [],
       recoveryCodes: [],
       settings: {
         momo: { payTo: '0000000000', accountName: 'Test' },

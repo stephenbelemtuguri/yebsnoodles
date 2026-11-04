@@ -20,10 +20,17 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { OAuth2Client } = require('google-auth-library');
+const webPush = require('web-push');
 const store = require('./src/data/store');
 const media = require('./src/data/media');
 const { resolveAdminCredentialResetVersion } = require('./scripts/render-deploy-version');
 const messagingService = require('./src/services/messaging');
+const pushPublicKey = String(process.env.YEBS_VAPID_PUBLIC_KEY || '').trim();
+const pushPrivateKey = String(process.env.YEBS_VAPID_PRIVATE_KEY || '').trim();
+const pushSubject = String(process.env.YEBS_VAPID_SUBJECT || 'mailto:support@yebsnoodles.com').trim();
+if (pushPublicKey && pushPrivateKey) {
+  webPush.setVapidDetails(pushSubject, pushPublicKey, pushPrivateKey);
+}
 
 const resolvedAdminCredentialResetVersion = resolveAdminCredentialResetVersion(process.env);
 if (resolvedAdminCredentialResetVersion) {
@@ -1145,7 +1152,7 @@ function deliveryReportText(order, actor) {
 
 app.get('/api/admin/notifications', requireRole('admin'), (req, res) => {
   const db = loadDatabase();
-  res.json({ success: true, notifications: (db.notifications || []).slice(0, 100) });
+  res.json({ success: true, notifications: (db.notifications || []).filter(entry => !entry.audienceRole).slice(0, 100) });
 });
 
 app.use('/api/admin/messages', rateLimit({
@@ -1697,7 +1704,7 @@ const DEFAULT_PICKUP_POINT = {
 };
 
 function ensureSystemAccounts(db) {
-  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'notifications', 'recoveryCodes'];
+  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'notifications', 'recoveryCodes', 'pushSubscriptions'];
   let changed = false;
 
   const isOldPickup = point => point && (
@@ -1822,7 +1829,7 @@ function ensureSystemAccounts(db) {
 function loadDatabase() {
   const cached = store.get();
   if (cached) {
-    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations']) {
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations', 'pushSubscriptions']) {
       if (!Array.isArray(cached[key])) cached[key] = [];
     }
     return cached;
@@ -1871,7 +1878,7 @@ function loadDatabase() {
       try { fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2)); } catch (e) { /* read-only fs */ }
     }
     ensureSystemAccounts(initialData);
-    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations']) {
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations', 'pushSubscriptions']) {
       if (!Array.isArray(initialData[key])) initialData[key] = [];
     }
     return initialData;
@@ -1881,14 +1888,14 @@ function loadDatabase() {
     if (ensureSystemAccounts(parsed) && store.remoteMode === 'local') {
       try { fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2)); } catch (e) { /* read-only fs */ }
     }
-    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations']) {
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations', 'pushSubscriptions']) {
       if (!Array.isArray(parsed[key])) parsed[key] = [];
     }
     return parsed;
   } catch (e) {
     console.error("Database read error, restoring default", e);
     const fallback = {
-      admins: [], drivers: [], orders: [], sessions: [], auditLogs: [], menuItems: [], payouts: [], reviews: [], notifications: [],
+      admins: [], drivers: [], orders: [], sessions: [], auditLogs: [], menuItems: [], payouts: [], reviews: [], notifications: [], pushSubscriptions: [],
       settings: { momo: { ...DEFAULT_MOMO_SETTINGS }, pickup: { ...DEFAULT_PICKUP_POINT }, deliveryFee: 15 },
       cashReconciliations: []
     };
@@ -3278,6 +3285,15 @@ function momoApiConfig() {
   return cfg;
 }
 
+function momoCallbackUrl(callbackHost) {
+  const host = String(callbackHost || '').trim();
+  if (!host) return '';
+  const baseUrl = host.includes('://') ? host : `https://${host}`;
+  const url = new URL(baseUrl);
+  if (url.protocol !== 'https:') throw new Error('MTN callback URL must use HTTPS.');
+  return new URL('/api/payments/momo/callback', url).toString();
+}
+
 async function momoFetch(url, options, timeoutMs = 15000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -3334,7 +3350,7 @@ async function requestMomoCollection({ amount, phone, referenceId, payerMessage,
         'X-Target-Environment': cfg.targetEnvironment,
         'Ocp-Apim-Subscription-Key': cfg.subscriptionKey,
         'Content-Type': 'application/json',
-        ...(cfg.callbackHost ? { 'X-Callback-Url': `https://${cfg.callbackHost}/api/payments/momo/callback` } : {})
+        ...(cfg.callbackHost ? { 'X-Callback-Url': momoCallbackUrl(cfg.callbackHost) } : {})
       },
       body: JSON.stringify({
         amount: String(Number(amount).toFixed(2)),
@@ -3576,6 +3592,7 @@ app.post('/api/orders/:id/pay/momo', (req, res) => {
   });
 
   saveDatabase(db);
+  notifyPaymentOutcome(db, order, result);
   if (typeof pushOrderUpdate === 'function') {
     pushOrderUpdate(order.id, { type: 'payment', order: projectOrder(order, 'customer') });
   }
@@ -3759,6 +3776,11 @@ app.get('/api/orders/:id/pay/status', async (req, res) => {
         });
       }
       saveDatabase(db);
+      if (order.paymentStatus === 'paid') {
+        notifyPaymentOutcome(db, order, { ok: true, alreadyPaid: false });
+      } else if (networkStatus === 'successful') {
+        notifyPaymentOutcome(db, order, { needsReview: true });
+      }
     }
   }
 
@@ -3822,6 +3844,7 @@ app.post('/api/payments/momo/callback', async (req, res) => {
   });
   order.momoRequestStatus = 'successful';
   await requireDurableSave(db);
+  notifyPaymentOutcome(db, order, { ok: true, alreadyPaid: false });
   logAction('MOMO_CALLBACK_SETTLED', 'MTN MOMO CALLBACK', order.id, { amount: order.total, referenceId }, req);
   if (typeof pushOrderUpdate === 'function') {
     pushOrderUpdate(order.id, { type: 'payment', order: projectOrder(order, 'customer') });
@@ -3912,6 +3935,9 @@ app.post('/api/drivers/me/cashier/close', requireRole('driver'), async (req, res
     db.cashReconciliations = previousReconciliations;
     return res.status(503).json({ success: false, persisted: false, message: persistenceError });
   }
+  notifyStaffSafely(db, 'admin', 'Driver cash shift reconciled',
+    `${reconciliation.driverName} submitted a cash reconciliation for ${snapshot.orderCount} order(s).`,
+    '/admin.html#reports', reconciliation.id);
   logAction('DRIVER_CASH_SHIFT_CLOSED', reconciliation.driverName, reconciliation.id, {
     driverId: driver.id,
     orderCount: snapshot.orderCount,
@@ -4005,6 +4031,12 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), async (req,
     addPaymentAudit(order, 'CASH_SHORT', actorName, { expected: total, received, changeGiven: 0 });
     const persistenceError = await requireDurableSave(db);
     if (persistenceError) return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+    notifyStaffSafely(db, 'admin', 'Cash payment needs review',
+      `Order ${order.id}: GH₵${received.toFixed(2)} cash received against GH₵${total.toFixed(2)} due.`,
+      '/admin.html#orders', order.id);
+    if (typeof pushOrderUpdate === 'function') {
+      pushOrderUpdate(order.id, { type: 'payment', order: projectOrder(order, 'customer') });
+    }
     logAction('CASH_PAYMENT_SHORT', actorName, order.id, { expected: total, received, receiptNumber: order.cashReceipt.receiptNumber }, req);
     return res.status(202).json({
       success: false,
@@ -4026,6 +4058,9 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), async (req,
   if (typeof pushOrderUpdate === 'function') {
     pushOrderUpdate(order.id, { type: 'payment', order: projectOrder(order, 'customer') });
   }
+  notifyStaffSafely(db, 'admin', 'Cash payment confirmed',
+    `Order ${order.id}: GH₵${received.toFixed(2)} cash was collected and recorded.`,
+    '/admin.html#orders', order.id);
   logAction('CASH_PAYMENT_COLLECTED', actorName, order.id, { received, expected: total, changeGiven, receiptNumber: order.cashReceipt.receiptNumber }, req);
 
   res.json({
@@ -4219,6 +4254,7 @@ async function processMomoSms(req, res, actor, ingestionKey = null, providerVeri
   } else {
     saveDatabase(db);
   }
+  notifyPaymentOutcome(db, order, result);
   logAction(result.ok ? 'MOMO_SMS_AUTO_VERIFIED' : 'MOMO_SMS_REVIEW', actor, order.id, {
     amount: parsed.amount,
     transactionRef: parsed.transactionRef,
@@ -4301,6 +4337,7 @@ app.post('/api/orders/:id/receipt', async (req, res) => {
   if (order.momoReceipt && receiptUrl) order.momoReceipt.imageUrl = receiptUrl;
 
   saveDatabase(db);
+  notifyPaymentOutcome(db, order, result);
   res.status(result.ok ? 200 : (result.status || 400)).json({
     success: result.ok,
     needsReview: !!result.needsReview,
@@ -4752,6 +4789,9 @@ app.post('/api/orders', async (req, res) => {
     pin: newOrder.pickupPin,
     paymentMode: newOrder.paymentMode
   }, req);
+  notifyStaffSafely(db, 'admin', 'New YEBS order',
+    `Order ${newOrder.id} from ${newOrder.customer} · GH₵${Number(newOrder.total).toFixed(2)} · payment ${newOrder.paymentStatus}.`,
+    '/admin.html#orders', newOrder.id);
 
   // Fire-and-forget: Cloud API → CallMeBot retries happen here while the
   // customer sees "Bot working — please wait while the message is sent."
@@ -6687,6 +6727,200 @@ app.post('/api/drivers/purge-inactive', requireRole('admin'), (req, res) => {
 // Sends server-side event — clients poll /api/drivers/:id/approval
 // ==========================================================
 
+const staffSseClients = new Map();
+
+app.get('/api/push/public-key', (_req, res) => {
+  res.json({
+    success: true,
+    configured: Boolean(pushPublicKey && pushPrivateKey),
+    publicKey: pushPublicKey || null,
+    message: pushPublicKey && pushPrivateKey ? null : 'Web Push VAPID keys are not configured on this server.'
+  });
+});
+
+app.post('/api/push/subscriptions', requireRole('admin', 'driver'), async (req, res) => {
+  if (!pushPublicKey || !pushPrivateKey) {
+    return res.status(503).json({ success: false, message: 'Background push notifications are not configured.' });
+  }
+  const body = req.body || {};
+  const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim() : '';
+  const p256dh = body.keys && typeof body.keys.p256dh === 'string' ? body.keys.p256dh : '';
+  const auth = body.keys && typeof body.keys.auth === 'string' ? body.keys.auth : '';
+  let endpointUrl;
+  try { endpointUrl = new URL(endpoint); } catch (error) {
+    return res.status(400).json({ success: false, message: 'A valid push endpoint is required.' });
+  }
+  const hostname = endpointUrl.hostname.toLowerCase().replace(/\.$/, '');
+  const supportedPushHost = hostname === 'fcm.googleapis.com'
+    || hostname.endsWith('.fcm.googleapis.com')
+    || hostname === 'push.services.mozilla.com'
+    || hostname.endsWith('.push.services.mozilla.com')
+    || hostname === 'web.push.apple.com'
+    || hostname.endsWith('.web.push.apple.com')
+    || hostname === 'notify.windows.com'
+    || hostname.endsWith('.notify.windows.com');
+  if (endpointUrl.protocol !== 'https:' || !supportedPushHost || !p256dh || !auth || endpoint.length > 2048) {
+    return res.status(400).json({ success: false, message: 'The push subscription is invalid.' });
+  }
+
+  const db = loadDatabase();
+  db.pushSubscriptions = db.pushSubscriptions || [];
+  const role = req.auth.payload.role;
+  const accountId = String(req.auth.payload.sub);
+  db.pushSubscriptions = db.pushSubscriptions.filter(item =>
+    !(item.role === role && String(item.accountId) === accountId && item.endpoint === endpoint));
+  db.pushSubscriptions.push({
+    role,
+    accountId,
+    endpoint,
+    keys: { p256dh, auth },
+    updatedAt: new Date().toISOString()
+  });
+  const accountSubscriptions = db.pushSubscriptions.filter(item => item.role === role && String(item.accountId) === accountId);
+  if (accountSubscriptions.length > 10) {
+    const removable = accountSubscriptions.slice(0, accountSubscriptions.length - 10);
+    db.pushSubscriptions = db.pushSubscriptions.filter(item => !removable.includes(item));
+  }
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+  res.json({ success: true, message: 'This device is registered for YEBS notifications.' });
+});
+
+app.delete('/api/push/subscriptions', requireRole('admin', 'driver'), async (req, res) => {
+  const db = loadDatabase();
+  const role = req.auth.payload.role;
+  const accountId = String(req.auth.payload.sub);
+  const endpoint = String(req.body && req.body.endpoint || '');
+  db.pushSubscriptions = (db.pushSubscriptions || []).filter(item =>
+    !(item.role === role && String(item.accountId) === accountId && (!endpoint || item.endpoint === endpoint)));
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+  res.json({ success: true });
+});
+
+app.get('/api/sse/notifications', (req, res) => {
+  const auth = authenticate(req);
+  if (!auth || !['admin', 'driver'].includes(auth.payload.role)) {
+    return res.status(401).json({ success: false, message: 'Staff authentication required.' });
+  }
+  const key = `${auth.payload.role}:${auth.payload.sub}`;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  if (!staffSseClients.has(key)) staffSseClients.set(key, new Set());
+  const clients = staffSseClients.get(key);
+  clients.add(res);
+  res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(': keep-alive\n\n');
+  }, 20000);
+  res.on('close', () => {
+    clearInterval(heartbeat);
+    clients.delete(res);
+    if (!clients.size) staffSseClients.delete(key);
+  });
+});
+
+function pushStaffNotification(notification) {
+  const key = `${notification.audienceRole}:${notification.recipientId}`;
+  const clients = staffSseClients.get(key);
+  if (!clients || !clients.size) return;
+  const message = `data: ${JSON.stringify({ type: 'notification', notification })}\n\n`;
+  clients.forEach(response => {
+    try { response.write(message); } catch (error) {
+      clients.delete(response);
+      console.warn('Staff notification stream write failed:', error.message);
+    }
+  });
+}
+
+async function deliverStaffPush(notification) {
+  if (!pushPublicKey || !pushPrivateKey) return;
+  const db = loadDatabase();
+  const subscriptions = (db.pushSubscriptions || []).filter(item =>
+    item.role === notification.audienceRole && String(item.accountId) === String(notification.recipientId));
+  for (const subscription of subscriptions) {
+    try {
+      await webPush.sendNotification(
+        { endpoint: subscription.endpoint, keys: subscription.keys },
+        JSON.stringify({
+          title: notification.title,
+          body: notification.body,
+          id: notification.id,
+          url: notification.url
+        }),
+        { TTL: 60 * 60 }
+      );
+    } catch (error) {
+      if (error.statusCode === 404 || error.statusCode === 410) {
+        db.pushSubscriptions = (db.pushSubscriptions || []).filter(item => item.endpoint !== subscription.endpoint);
+        const persistenceError = await requireDurableSave(db);
+        if (persistenceError) console.error('Could not remove expired push subscription:', persistenceError);
+      } else {
+        console.error('Background push delivery failed:', error.message);
+      }
+    }
+  }
+}
+
+async function notifyStaff(db, audienceRole, title, body, url, entityId, recipientId = null) {
+  const recipients = audienceRole === 'admin'
+    ? (db.admins || []).filter(account => account && account.id)
+    : audienceRole === 'driver'
+      ? (db.drivers || []).filter(account =>
+        account && account.id && account.isActive !== false && (!recipientId || String(account.id) === String(recipientId)))
+      : [];
+  if (!recipients.length) return;
+  db.notifications = db.notifications || [];
+  const notifications = recipients.map(account => ({
+    id: `staff-${crypto.randomUUID()}`,
+    kind: 'staff',
+    audienceRole,
+    recipientId: String(account.id),
+    title: String(title || 'YEBS update').slice(0, 120),
+    body: String(body || '').slice(0, 500),
+    url: url || (audienceRole === 'admin' ? '/admin.html' : '/driver.html'),
+    entityId: entityId ? String(entityId) : null,
+    createdAt: new Date().toISOString(),
+    read: false
+  }));
+  db.notifications.unshift(...notifications);
+  if (db.notifications.length > 500) db.notifications.length = 500;
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) throw new Error(`Staff notification could not be saved: ${persistenceError}`);
+  notifications.forEach(notification => {
+    pushStaffNotification(notification);
+    void deliverStaffPush(notification).catch(error => {
+      console.error('Background push delivery failed:', error.message);
+    });
+  });
+}
+
+function notifyStaffSafely(db, role, title, body, url, entityId, recipientId = null) {
+  void notifyStaff(db, role, title, body, url, entityId, recipientId).catch(error => {
+    console.error('Could not deliver staff notification:', error.message);
+  });
+}
+
+function notifyPaymentOutcome(db, order, result) {
+  if (result && (result.needsReview || result.conflict)) {
+    notifyStaffSafely(db, 'admin', 'MoMo payment needs review',
+      `Order ${order.id}: GH₵${Number(order.momoAmount || order.total).toFixed(2)} was submitted and needs verification.`,
+      `/admin.html#orders`, order.id);
+  } else if (result && result.ok && !result.alreadyPaid) {
+    notifyStaffSafely(db, 'admin', 'MoMo payment confirmed',
+      `Order ${order.id} payment of GH₵${Number(order.total).toFixed(2)} was verified.`,
+      `/admin.html#orders`, order.id);
+    if (order.driverId) {
+      notifyStaffSafely(db, 'driver', 'New paid delivery assigned',
+        `Order ${order.id} is paid and ready. Open your driver dashboard for details.`,
+        '/driver.html', order.id, order.driverId);
+    }
+  }
+}
+
 // Server-Sent Events stream for real-time push (no external service needed)
 const sseClients = new Map(); // driverId -> res
 
@@ -6878,7 +7112,7 @@ app.get('/api/admin/provider-health', requireRole('admin'), (req, res) => {
   const whatsappCloud = Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
   const whatsappRelay = Boolean(process.env.WHATSAPP_CALLMEBOT_APIKEY || process.env.CALLMEBOT_APIKEY);
   const gemini = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY);
-  const momo = Boolean(process.env.MOMO_SUBSCRIPTION_KEY && process.env.MOMO_API_USER && process.env.MOMO_API_KEY);
+  const momo = momoApiConfig().configured;
   res.json({
     success: true,
     providers: {

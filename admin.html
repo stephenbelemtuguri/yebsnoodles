@@ -1859,6 +1859,7 @@
       getPickupPoint,
       applyServerSession,
       startLiveOrderSync,
+      startStaffNotifications,
       apiFetchOrders,
       apiOrderStats,
       getMenuItems,
@@ -1874,6 +1875,7 @@
 
     initStore();
 
+    let stopAdminNotifications = null;
     let map = null;
     let markersLayer = null;
 
@@ -3801,6 +3803,10 @@
     }
 
     function clearAdminSession() {
+      if (stopAdminNotifications) {
+        stopAdminNotifications();
+        stopAdminNotifications = null;
+      }
       ['yebs_admin_token', 'yebs_admin_user', 'yebs_admin_login_at', 'yebs_admin_expires_in'].forEach(k => removeStoredItem(sessionStorage, k));
       ['yebs_admin_token_persist', 'yebs_admin_user_persist', 'yebs_admin_login_at_persist'].forEach(k => removeStoredItem(localStorage, k));
     }
@@ -3872,6 +3878,10 @@
 
     function unlockDashboard() {
       checkAdminAuth();
+      const notificationToken = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
+      if (notificationToken && !stopAdminNotifications) {
+        stopAdminNotifications = startStaffNotifications('admin', notificationToken);
+      }
       renderDashboard();
       loadAuditLogs();
       refreshDrivers();

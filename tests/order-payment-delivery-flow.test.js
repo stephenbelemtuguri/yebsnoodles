@@ -94,7 +94,10 @@ Object.assign(process.env, {
   MOMO_SUBSCRIPTION_KEY: '',
   MOMO_API_USER: '',
   MOMO_API_KEY: '',
-  MOMO_CALLBACK_HOST: ''
+  MOMO_CALLBACK_HOST: '',
+  YEBS_VAPID_PUBLIC_KEY: '',
+  YEBS_VAPID_PRIVATE_KEY: '',
+  YEBS_VAPID_SUBJECT: ''
 });
 
 const { app, start } = require('../server');
@@ -261,6 +264,112 @@ describe('customer order to verified delivery flow', () => {
       reference: order.paymentRef,
       amount: order.total
     });
+  });
+
+  test('protects staff notification streams and push subscriptions', async () => {
+    const stream = await request(app).get('/api/sse/notifications');
+    expect(stream.status).toBe(401);
+
+    const publicKey = await request(app).get('/api/push/public-key');
+    expect(publicKey.status).toBe(200);
+    expect(publicKey.body).toMatchObject({ configured: false, publicKey: null });
+
+    const unauthorizedSubscription = await request(app)
+      .post('/api/push/subscriptions')
+      .send({ endpoint: 'https://fcm.googleapis.com/test', keys: { p256dh: 'key', auth: 'auth' } });
+    expect(unauthorizedSubscription.status).toBe(401);
+
+    const unconfiguredSubscription = await request(app)
+      .post('/api/push/subscriptions')
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({ endpoint: 'https://fcm.googleapis.com/test', keys: { p256dh: 'key', auth: 'auth' } });
+    expect(unconfiguredSubscription.status).toBe(503);
+  });
+
+  test('persists new-order alerts for administrators', async () => {
+    const order = await createDelivery();
+    let notification;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const database = JSON.parse(fs.readFileSync(databasePath, 'utf8'));
+      notification = (database.notifications || []).find(item =>
+        item.kind === 'staff'
+        && item.audienceRole === 'admin'
+        && item.entityId === order.id
+        && item.title === 'New YEBS order');
+      if (notification) break;
+      await new Promise(resolve => { setTimeout(resolve, 10); });
+    }
+    expect(notification).toMatchObject({
+      audienceRole: 'admin',
+      recipientId: 'adm-order-flow-test',
+      entityId: order.id,
+      title: 'New YEBS order'
+    });
+  });
+
+  test('confirms an MTN website payment and advances the order after provider settlement', async () => {
+    const envNames = [
+      'MOMO_SUBSCRIPTION_KEY', 'MOMO_API_USER', 'MOMO_API_KEY', 'MOMO_CALLBACK_HOST',
+      'MTN_MOMO_SUBSCRIPTION_KEY', 'MTN_MOMO_API_USER', 'MTN_MOMO_API_KEY', 'MTN_MOMO_CALLBACK_HOST'
+    ];
+    const originalEnv = Object.fromEntries(envNames.map(name => [name, process.env[name]]));
+    const originalFetch = global.fetch;
+    process.env.MTN_MOMO_SUBSCRIPTION_KEY = 'test-subscription-key';
+    process.env.MTN_MOMO_API_USER = 'test-api-user';
+    process.env.MTN_MOMO_API_KEY = 'test-api-key';
+    process.env.MTN_MOMO_CALLBACK_HOST = 'https://yebsnoodles.onrender.com';
+    for (const name of ['MOMO_SUBSCRIPTION_KEY', 'MOMO_API_USER', 'MOMO_API_KEY', 'MOMO_CALLBACK_HOST']) {
+      delete process.env[name];
+    }
+    let settlementAmount = '';
+
+    global.fetch = jest.fn(async (url, options = {}) => {
+      if (url.endsWith('/collection/token/')) {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ access_token: 'test-access-token' }) };
+      }
+      if (url.endsWith('/collection/v1_0/requesttopay')) {
+        expect(options.headers['X-Callback-Url']).toBe('https://yebsnoodles.onrender.com/api/payments/momo/callback');
+        return { ok: true, status: 202, text: async () => '' };
+      }
+      if (url.includes('/collection/v1_0/requesttopay/') && options.method === 'GET') {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ status: 'SUCCESSFUL', amount: settlementAmount }) };
+      }
+      throw new Error('Unexpected MTN request');
+    });
+
+    try {
+      const order = await createDelivery();
+      settlementAmount = Number(order.total).toFixed(2);
+      const prompt = await request(app)
+        .post(`/api/orders/${order.id}/pay/request`)
+        .set('X-Order-Access-Token', order.trackingToken)
+        .send({ network: 'mtn', phone: '0241234567' });
+
+      expect(prompt.status).toBe(200);
+      expect(prompt.body).toMatchObject({ requested: true, mode: 'api', status: 'pending' });
+
+      const paymentStatus = await request(app)
+        .get(`/api/orders/${order.id}/pay/status`)
+        .set('X-Order-Access-Token', order.trackingToken);
+
+      expect(paymentStatus.status).toBe(200);
+      expect(paymentStatus.body).toMatchObject({
+        paid: true,
+        paymentStatus: 'paid',
+        order: expect.objectContaining({ paymentVerified: true })
+      });
+
+      const health = await request(app)
+        .get('/api/admin/provider-health')
+        .set('Authorization', 'Bearer ' + adminToken);
+      expect(health.body.providers.momo.configured).toBe(true);
+    } finally {
+      global.fetch = originalFetch;
+      for (const [name, value] of Object.entries(originalEnv)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
   });
 
   test('sends admin customer messages through YEBS Message Hub and retains failed delivery results', async () => {

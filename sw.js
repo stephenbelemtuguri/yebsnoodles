@@ -1,5 +1,5 @@
 // YEBS Noodles Service Worker for Progressive Web App (PWA) Offline Performance
-const CACHE_NAME = 'yebs-noodles-v12';
+const CACHE_NAME = 'yebs-noodles-v13';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -62,5 +62,35 @@ self.addEventListener('fetch', (e) => {
   // Network first with cache fallback (keeps portals fresh while online).
   e.respondWith(
     fetch(e.request).catch(() => caches.match(e.request))
+  );
+});
+
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch (error) {
+    console.warn('Could not parse push notification payload:', error);
+  }
+  const title = String(payload.title || 'YEBS Noodles update');
+  const options = {
+    body: String(payload.body || 'There is a new update for you.'),
+    icon: '/logo.png',
+    badge: '/logo.png',
+    tag: String(payload.id || `yebs-${Date.now()}`),
+    data: { url: String(payload.url || '/'), id: payload.id || null },
+    requireInteraction: true
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data && event.notification.data.url || '/', self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const existing = clients.find(client => client.url === targetUrl);
+      if (existing && 'focus' in existing) return existing.focus();
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+      return undefined;
+    })
   );
 });

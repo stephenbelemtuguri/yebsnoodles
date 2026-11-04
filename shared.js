@@ -667,6 +667,208 @@ export async function requestNotificationPermission() {
   return { granted: result === "granted" };
 }
 
+export function connectStaffNotifications(token, onNotification) {
+  const controller = new AbortController();
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  (async () => {
+    let retryDelay = 1000;
+    while (!controller.signal.aborted) {
+      try {
+        const response = await fetch(`${API_BASE}/api/sse/notifications`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: "text/event-stream" },
+          cache: "no-store",
+          signal: controller.signal
+        });
+        if (!response.ok || !response.body) throw new Error(`Notification stream unavailable (${response.status}).`);
+        retryDelay = 1000;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const frames = buffer.split(/\r?\n\r?\n/);
+          buffer = frames.pop() || "";
+          for (const frame of frames) {
+            const data = frame.split(/\r?\n/).find(line => line.startsWith("data:"));
+            if (!data) continue;
+            try {
+              const payload = JSON.parse(data.slice(5).trim());
+              if (payload.type === "notification" && payload.notification) onNotification(payload.notification);
+            } catch (error) {
+              console.warn("Could not parse staff notification event:", error);
+            }
+          }
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        if (error.name !== "AbortError") console.warn("Staff notification stream disconnected:", error.message);
+      }
+      await pause(retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 15000);
+    }
+  })();
+
+  return () => controller.abort();
+}
+
+function showStaffToast(notification) {
+  let container = document.getElementById("yebsStaffToastStack");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "yebsStaffToastStack";
+    container.setAttribute("aria-live", "polite");
+    container.setAttribute("aria-atomic", "false");
+    container.style.cssText = "position:fixed;right:16px;top:16px;z-index:1000001;display:grid;gap:8px;width:min(360px,calc(100vw - 32px));";
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement("div");
+  toast.setAttribute("role", "status");
+  toast.style.cssText = "display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:12px;background:#173d30;color:#fff;box-shadow:0 10px 32px rgba(0,0,0,.24);font:600 14px/1.45 system-ui,sans-serif;";
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = notification.title || "YEBS update";
+  const body = document.createElement("div");
+  body.textContent = notification.body || "There is a new update for you.";
+  body.style.cssText = "margin-top:3px;color:#e5eee7;font-weight:400;";
+  copy.append(title, body);
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "Dismiss notification");
+  close.style.cssText = "margin-left:auto;border:0;background:transparent;color:#fff;font-size:22px;line-height:1;cursor:pointer;";
+  close.addEventListener("click", () => toast.remove());
+  toast.append(copy, close);
+  container.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 9000);
+}
+
+export async function enableStaffPushNotifications(token) {
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return { success: false, message: "This browser does not support background push notifications." };
+  }
+  if (!window.isSecureContext) {
+    return { success: false, message: "Push notifications require a secure HTTPS connection." };
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    return { success: false, message: permission === "denied" ? "Notifications are blocked in browser settings." : "Notification permission was not granted." };
+  }
+
+  const keyResponse = await fetch(`${API_BASE}/api/push/public-key`, { cache: "no-store" });
+  const keyData = await keyResponse.json().catch(() => ({}));
+  if (!keyResponse.ok || !keyData.configured || !keyData.publicKey) {
+    return { success: false, message: keyData.message || "Background alerts are not configured on the server yet." };
+  }
+  const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+  const readyRegistration = await navigator.serviceWorker.ready;
+  const base64 = keyData.publicKey.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = "=".repeat((4 - base64.length % 4) % 4);
+  const applicationServerKey = Uint8Array.from(atob(base64 + padding), char => char.charCodeAt(0));
+  const subscription = await readyRegistration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey
+  });
+  const response = await fetch(`${API_BASE}/api/push/subscriptions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(subscription)
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.success) {
+    throw new Error(result.message || `Could not save this device for notifications (${response.status}).`);
+  }
+  return { success: true, message: "Background notifications are enabled on this device." };
+}
+
+export function startStaffNotifications(role, token) {
+  const stopStream = connectStaffNotifications(token, notification => {
+    showStaffToast(notification);
+    if ("Notification" in window && Notification.permission === "granted" && document.visibilityState !== "visible") {
+      try {
+        navigator.serviceWorker.ready.then(registration => registration.showNotification(notification.title || "YEBS update", {
+          body: notification.body || "There is a new update for you.",
+          icon: "/logo.png",
+          badge: "/logo.png",
+          tag: notification.id || `yebs-${Date.now()}`,
+          data: { url: notification.url || (role === "admin" ? "/admin.html" : "/driver.html") }
+        })).catch(error => {
+          console.warn("Could not display staff notification:", error);
+        });
+      } catch (error) {
+        console.warn("Could not display staff notification:", error);
+      }
+    }
+  });
+
+  if (!document.getElementById("yebsEnablePushButton")) {
+    const button = document.createElement("button");
+    button.id = "yebsEnablePushButton";
+    button.type = "button";
+    button.textContent = "Enable lock-screen alerts";
+    button.setAttribute("aria-label", "Enable YEBS background notifications");
+    button.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:1000000;border:0;border-radius:999px;padding:11px 16px;background:#e57a45;color:white;font:700 13px system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.2);cursor:pointer;";
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        const result = await enableStaffPushNotifications(token);
+        button.textContent = result.message;
+        button.style.borderRadius = "12px";
+        button.style.maxWidth = "min(360px,calc(100vw - 32px))";
+        button.style.whiteSpace = "normal";
+        button.style.textAlign = "left";
+        button.style.background = result.success ? "#166534" : "#7c2d12";
+        window.setTimeout(() => button.remove(), result.success ? 3500 : 7000);
+      } catch (error) {
+        button.textContent = error.message || "Could not enable notifications.";
+        button.style.background = "#7c2d12";
+        window.setTimeout(() => {
+          button.disabled = false;
+          button.textContent = "Enable lock-screen alerts";
+        }, 7000);
+      }
+    });
+    document.body.appendChild(button);
+  }
+
+  return () => {
+    stopStream();
+    const pushButton = document.getElementById("yebsEnablePushButton");
+    if (pushButton) pushButton.remove();
+    if (!("serviceWorker" in navigator)) return;
+
+    navigator.serviceWorker.getRegistration("/").then(registration => {
+      if (!registration) return null;
+      return registration.pushManager.getSubscription();
+    }).then(subscription => {
+      if (!subscription) return null;
+      return fetch(`${API_BASE}/api/push/subscriptions`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ endpoint: subscription.endpoint })
+      }).then(response => {
+        if (!response.ok) {
+          console.warn(`Could not remove push subscription (${response.status}).`);
+        }
+        return subscription.unsubscribe();
+      }).catch(error => {
+        console.warn("Could not remove server-side push subscription:", error.message);
+        return subscription.unsubscribe();
+      });
+    }).catch(error => {
+      console.warn("Could not remove staff push subscription:", error.message);
+    });
+  };
+}
+
 export function requestLocationPermission(callback) {
   if (!navigator.geolocation) {
     callback({ granted: false, reason: "not_supported" });

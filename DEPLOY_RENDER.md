@@ -70,13 +70,16 @@ a database key. Everything else is optional:
 | `SUPABASE_STATE_TABLE` | `yebs_state` | Optional shared DB |
 | `YEBS_AUTH_SECRET` | Generated and stored by Render Blueprint | Stable session signing across deploys |
 | `DATABASE_POOL_URL` | Supabase session-pooler URI | Optional PostgreSQL connection; takes precedence over `DATABASE_URL` when set |
-| `MOMO_SUBSCRIPTION_KEY` | MTN key | Optional automatic MoMo |
-| `MOMO_API_USER` | MTN API user | Optional automatic MoMo |
-| `MOMO_API_KEY` | MTN API key | Optional automatic MoMo |
-| `MOMO_CALLBACK_HOST` | `https://your-service.onrender.com` | Optional automatic MoMo |
-| `MOMO_TARGET_ENV` | `sandbox` or `mtnghana` | MoMo environment |
+| `MOMO_SUBSCRIPTION_KEY` | MTN Collections API subscription key (not a Collection Widget key) | Website payment prompts |
+| `MOMO_API_USER` | MTN Collections API user UUID | Website payment prompts |
+| `MOMO_API_KEY` | API key generated for that Collections API user | Website payment prompts |
+| `MOMO_CALLBACK_HOST` | `https://your-service.onrender.com` (origin; HTTPS required) | Optional MTN payment callback |
+| `MOMO_TARGET_ENV` | `sandbox` for sandbox credentials or `mtnghana` for approved Ghana production credentials | MoMo environment |
 | `MOMO_PAY_TO` | `0559103452` | Wallet that receives payment |
 | `MOMO_MERCHANT_NAME` | `MATHEW TIA` | Wallet account name |
+| `YEBS_VAPID_PUBLIC_KEY` | Public key from `npx web-push generate-vapid-keys` | Enables staff device subscriptions |
+| `YEBS_VAPID_PRIVATE_KEY` | Private key from the same command; keep secret | Sends staff lock-screen push alerts |
+| `YEBS_VAPID_SUBJECT` | `mailto:support@yebsnoodles.com` or an HTTPS contact URL | VAPID sender identity |
 | `MOMO_SMS_INGEST_TOKEN` | Random secret, at least 32 characters | Authenticates the SMS bridge |
 | `MOMO_SMS_ALLOWED_SENDERS` | Comma-separated official MoMo sender IDs | Limits accepted SMS sources |
 | `SENDGRID_API_KEY` | SendGrid Mail Send API key | Password recovery email |
@@ -93,6 +96,11 @@ committed to Git. If using Supabase REST storage, set it in Render from
 `supabase-postgres`, so database reads and writes use `DATABASE_POOL_URL`;
 that PostgreSQL connection does not require the REST service-role key.
 `YEBS_AUTH_SECRET` is generated and persisted by Render for stable sessions.
+Generate the Web Push VAPID key pair once with `npx web-push generate-vapid-keys`;
+store both values in Render, never in source control. Admins and drivers must
+sign in on each device and tap **Enable lock-screen alerts** to subscribe.
+Browser and operating-system notification permissions and power settings still
+determine whether alerts appear while a device is locked.
 
 ### Recovering an existing administrator login
 
