@@ -533,7 +533,6 @@ General capability:
 
 // Week 1/2 feature API modules.
 app.use('/api/customers', require('./src/routes/customers'));
-app.use('/api/drivers', require('./src/routes/drivers'));
 app.use('/api/reviews', require('./src/routes/reviews'));
 app.use('/api/chat', require('./src/routes/chat'));
 app.use('/api/inventory', require('./src/routes/inventory'));
@@ -5398,10 +5397,11 @@ app.post('/api/drivers/:id/payouts', requireRole('driver', 'admin'), (req, res) 
   if (!amount || amount <= 0) {
     return res.status(400).json({ success: false, message: 'There is no pending delivery fee to request yet.' });
   }
-  if (amount > snapshot.pendingPayout) {
+  const available = Number(snapshot.pendingPayout);
+  if (!Number.isFinite(available) || available <= 0 || amount > available) {
     return res.status(400).json({
       success: false,
-      message: `The requested payout cannot exceed your pending earnings of GH₵${snapshot.pendingPayout.toFixed(2)}.`
+      message: `The requested payout cannot exceed your pending earnings of GH₵${Number.isFinite(available) ? available.toFixed(2) : '0.00'}.`
     });
   }
   const payout = {

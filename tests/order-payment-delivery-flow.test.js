@@ -362,10 +362,15 @@ describe('customer order to verified delivery flow', () => {
     expect(delivered.body.order.status).toBe('delivered');
     expect(delivered.body.order.paymentVerified).toBe(true);
 
+    const earnings = await request(app)
+      .get(`/api/drivers/${driverId}/earnings`)
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(earnings.status).toBe(200);
+
     const excessivePayout = await request(app)
       .post(`/api/drivers/${driverId}/payouts`)
       .set('Authorization', 'Bearer ' + driverToken)
-      .send({ amount: Number(order.deliveryFee) + 1 });
+      .send({ amount: Number(earnings.body.pendingPayout) + 1 });
     expect(excessivePayout.status).toBe(400);
 
     const payout = await request(app)
