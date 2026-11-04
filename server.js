@@ -3355,6 +3355,7 @@ function applyMomoPayment(db, order, opts) {
   order.paidAt = new Date().toISOString();
   order.verificationMethod = method || (receiptImage && !txn ? 'auto-receipt' : 'auto-momo');
   order.momoReceipt.verified = true;
+  automaticallyAssignPaidOrder(db, order);
   addPaymentAudit(order, 'MOMO_PAYMENT_VERIFIED', actor, {
     transactionRef: order.momoTransactionRef,
     amount: paidAmount,
@@ -3706,6 +3707,7 @@ app.post('/api/orders/:id/pay/cash', requireRole('driver', 'admin'), (req, res) 
   order.paymentVerified = true;
   order.paidAt = new Date().toISOString();
   addPaymentAudit(order, 'CASH_COLLECTED', actorName, { received, expected: total });
+  automaticallyAssignPaidOrder(db, order);
 
   saveDatabase(db);
   if (typeof pushOrderUpdate === 'function') {
@@ -3739,6 +3741,7 @@ app.post('/api/orders/:id/pay/review', requireRole('admin'), async (req, res) =>
     order.verificationMethod = order.verificationMethod || 'admin-manual';
     if (order.momoReceipt) order.momoReceipt.verified = true;
     addPaymentAudit(order, 'PAYMENT_APPROVED_BY_ADMIN', actor, { reason });
+    automaticallyAssignPaidOrder(db, order);
   } else {
     order.paymentStatus = 'review';
     order.paymentVerified = false;
@@ -4590,7 +4593,10 @@ app.patch('/api/orders/:id/status', requireRole('driver', 'admin'), (req, res) =
 
   if (order.status === 'kitchen') order.kitchenAt = order.kitchenAt || new Date().toISOString();
   if (order.status === 'enroute') order.enrouteAt = new Date().toISOString();
-  if (order.status === 'arrived') order.arrivedAt = new Date().toISOString();
+  if (order.status === 'arrived') {
+    order.arrivedAt = order.arrivedAt || new Date().toISOString();
+    if (!order.arrivalCustomerNotifiedAt) order.arrivalCustomerNotifiedAt = new Date().toISOString();
+  }
   if (order.status === 'delivered') order.deliveredAt = new Date().toISOString();
 
   saveDatabase(db);
@@ -4599,6 +4605,11 @@ app.patch('/api/orders/:id/status', requireRole('driver', 'admin'), (req, res) =
   // Push real-time update to any customer watching this order via SSE
   if (typeof pushOrderUpdate === 'function') {
     pushOrderUpdate(order.id, { type: 'status', order: projectOrder(order, 'customer') });
+  }
+  if (status === 'arrived') {
+    void sendRecoveryPhone(order.phone,
+      `YEBS: Your rider has arrived for order ${order.id}. Please meet the rider and provide your 4-digit pickup PIN.`
+    );
   }
 
   res.json(projectOrder(order, req.auth.payload.role === 'admin' ? 'admin' : 'driver'));
@@ -4741,6 +4752,42 @@ app.post('/api/orders/:id/refund/complete', requireRole('admin'), (req, res) => 
 });
 
 // Driver or Admin claims / accepts an order for delivery
+function automaticallyAssignPaidOrder(db, order) {
+  if (order.paymentStatus !== 'paid' && order.paymentVerified !== true) return null;
+  if (order.driverId || (order.driver && order.driver.id)) return order.driver || null;
+  if (!['Delivery', 'delivery'].includes(order.fulfilment)) return null;
+  const active = (db.drivers || []).filter(driver =>
+    driver.isActive !== false &&
+    !['pending', 'rejected'].includes(String(driver.approvalStatus || '').toLowerCase()));
+  if (!active.length) return null;
+  const workloads = active.map(driver => ({
+    driver,
+    activeOrders: (db.orders || []).filter(candidate =>
+      candidate.id !== order.id &&
+      (candidate.driverId === driver.id || (candidate.driver && candidate.driver.id === driver.id)) &&
+      !['delivered', 'cancelled'].includes(candidate.status)).length
+  })).sort((a, b) => a.activeOrders - b.activeOrders || String(a.driver.id).localeCompare(String(b.driver.id)));
+  const selected = workloads[0].driver;
+  const driverName = selected.name || `${selected.fname || ''} ${selected.lname || ''}`.trim() || selected.username || 'YEBS Rider';
+  order.driverId = selected.id;
+  order.driverName = driverName;
+  order.driverPhone = selected.phone || null;
+  order.assignedAt = new Date().toISOString();
+  order.assignmentMethod = 'automatic-paid-order';
+  order.driver = {
+    id: selected.id,
+    name: driverName,
+    phone: selected.phone || null,
+    vehicle: selected.vehicle || null,
+    currentLocation: Number.isFinite(Number(selected.lat)) && Number.isFinite(Number(selected.lng))
+      ? { lat: Number(selected.lat), lng: Number(selected.lng) }
+      : null
+  };
+  order.statusBeforeAssignment = order.status || 'pending';
+  order.status = 'driver_assigned';
+  return order.driver;
+}
+
 app.post('/api/orders/:id/claim', requireRole('driver'), async (req, res) => {
   const db = loadDatabase();
   const id = normalizeOrderId(req.params.id);
@@ -6444,6 +6491,26 @@ app.post('/api/admin/payouts/:id/pay', requireRole('admin'), (req, res) => {
   saveDatabase(db);
   logAction('DRIVER_PAYOUT_PAID', req.auth.admin.username, payout.driverId, { amount: payout.amount }, req);
   res.json({ success: true, message: 'Payout marked as paid.', payout });
+});
+
+app.get('/api/admin/provider-health', requireRole('admin'), (req, res) => {
+  const arkesel = Boolean(process.env.ARKSEL_API_KEY);
+  const hubtel = Boolean(process.env.HUBTEL_CLIENT_ID && process.env.HUBTEL_CLIENT_SECRET);
+  const twilio = Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN &&
+    (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER));
+  const whatsappCloud = Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
+  const whatsappRelay = Boolean(process.env.WHATSAPP_CALLMEBOT_APIKEY || process.env.CALLMEBOT_APIKEY);
+  const gemini = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY);
+  const momo = Boolean(process.env.MOMO_SUBSCRIPTION_KEY && process.env.MOMO_API_USER && process.env.MOMO_API_KEY);
+  res.json({
+    success: true,
+    providers: {
+      gemini: { configured: gemini, operational: gemini, provider: process.env.GEMINI_MODEL || 'auto' },
+      momo: { configured: momo, operational: momo, provider: 'MTN MoMo' },
+      sms: { configured: arkesel || hubtel || twilio, operational: arkesel || hubtel || twilio, providers: { arkesel, hubtel, twilio } },
+      whatsapp: { configured: whatsappCloud || whatsappRelay, operational: whatsappCloud || whatsappRelay, cloud: whatsappCloud, callMeBotRelay: whatsappRelay }
+    }
+  });
 });
 
 // Health check used by the portals to detect a live API server
