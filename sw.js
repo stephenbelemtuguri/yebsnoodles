@@ -1,5 +1,5 @@
 // YEBS Noodles Service Worker for Progressive Web App (PWA) Offline Performance
-const CACHE_NAME = 'yebs-noodles-v13';
+const CACHE_NAME = 'yebs-noodles-v14';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

@@ -66,6 +66,10 @@ function parseImageDataUrl(value, maxBytes = MAX_IMAGE_BYTES) {
   return buffer;
 }
 
+function parseSelfieFrames(frames) {
+  return frames.map(frame => parseImageDataUrl(frame));
+}
+
 async function readRegistrationPhoto(photo) {
   if (typeof photo !== 'string' || !photo) throw new Error('Registration photo is unavailable.');
   if (/^data:/i.test(photo)) return parseImageDataUrl(photo, MAX_REGISTRATION_IMAGE_BYTES);
@@ -140,7 +144,7 @@ async function verifyDriverFace({ registrationPhoto, selfieFrames }) {
   const frames = Array.isArray(selfieFrames) ? selfieFrames : [];
   if (frames.length !== 3) return { verified: false, reason: 'three-frame-challenge-required' };
 
-  const frameBuffers = frames.map(parseImageDataUrl);
+  const frameBuffers = parseSelfieFrames(frames);
   const human = await getHuman();
   const recoveryFaces = [];
   for (const frame of frameBuffers) {
@@ -185,4 +189,4 @@ async function verifyDriverFace({ registrationPhoto, selfieFrames }) {
   };
 }
 
-module.exports = { verifyDriverFace };
+module.exports = { verifyDriverFace, parseSelfieFrames };
