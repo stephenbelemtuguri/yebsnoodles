@@ -153,6 +153,6 @@ test('opens the local database driver selfie-recovery flow instead of SMS recove
   await page.locator('#driverForgotBtn').click();
 
   await expect(page.getByRole('heading', { name: 'Recover your driver password' })).toBeVisible();
-  await expect(page.getByText('No SMS code or external face service is used.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Submit for administrator review' })).toBeDisabled();
+  await expect(page.getByText(/face match, and live-camera challenge/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Verify face and phone' })).toBeDisabled();
 });

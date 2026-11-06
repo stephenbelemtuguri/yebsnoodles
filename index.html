@@ -1931,6 +1931,7 @@
       getMenuItems,
       apiFetchMenu,
       calculateDeliveryQuote,
+      apiFetchDeliveryQuote,
       getCustomerAvatar
     } from './shared.js';
 
@@ -2015,6 +2016,10 @@
     let sharedPickupPoint = { name: "YEBS Noodles Kitchen", lat: 5.558026, lng: -0.213706 };
     let deliveryFeeAmount = 15;
     let settingsLoaded = false;
+    let deliveryQuoteForKey = '';
+    let deliveryQuoteForKeyValue = null;
+    let deliveryQuotePendingKey = '';
+    let deliveryQuoteRequestSequence = 0;
     let customerPinMap = null;
     let customerPinMarker = null;
 
@@ -2511,8 +2516,30 @@
       const distanceKm = hasRealPin
         ? calculateDistanceKm(originLat, originLng, targetLat, targetLng)
         : 2.5;
+      const localQuote = calculateDeliveryQuote(distanceKm, mealCount, delivery);
+      const quoteKey = [originLat, originLng, targetLat, targetLng, mealCount]
+        .map(value => Number(value).toFixed(5)).join(':');
+      const quote = delivery && hasRealPin && deliveryQuoteForKey === quoteKey
+        ? deliveryQuoteForKeyValue
+        : localQuote;
 
-      const quote = calculateDeliveryQuote(distanceKm, mealCount, delivery);
+      if (delivery && hasRealPin && deliveryQuoteForKey !== quoteKey && deliveryQuotePendingKey !== quoteKey) {
+        deliveryQuotePendingKey = quoteKey;
+        const requestSequence = ++deliveryQuoteRequestSequence;
+        apiFetchDeliveryQuote(targetLat, targetLng, mealCount)
+          .then(serverQuote => {
+            if (requestSequence !== deliveryQuoteRequestSequence) return;
+            deliveryQuotePendingKey = '';
+            deliveryQuoteForKey = quoteKey;
+            deliveryQuoteForKeyValue = serverQuote;
+            updateTotals(cartSubtotal());
+          })
+          .catch(error => {
+            if (requestSequence !== deliveryQuoteRequestSequence) return;
+            deliveryQuotePendingKey = '';
+            console.warn('[checkout] server delivery quote unavailable; showing a straight-line estimate:', error.message);
+          });
+      }
       const fee = quote.finalFee;
 
       const feeLabel = document.getElementById("deliveryFeeLabel");
@@ -2526,7 +2553,7 @@
 
       if (feeLabel) {
         feeLabel.textContent = delivery
-          ? `Delivery (${quote.distanceKm} km @ GH₵${quote.ratePerKm.toFixed(2)}/km)`
+          ? `Delivery (${quote.distanceKm} km × ${quote.mealCount} meals)`
           : "Collection at shared pickup";
       }
       if (feeValue) {
@@ -2549,7 +2576,10 @@
       if (explanationEl) {
         if (delivery) {
           explanationEl.style.display = "block";
-          explanationEl.innerHTML = `🛵 <strong>${quote.distanceKm} km</strong> &times; GH₵${quote.ratePerKm.toFixed(2)}/km = GH₵${quote.finalFee.toFixed(2)} &bull; <em>${quote.nextTierMessage}</em>`;
+          const routeLabel = quote.distanceSource === 'road-route'
+            ? 'road route'
+            : 'straight-line estimate (road routing unavailable)';
+          explanationEl.textContent = `Delivery: ${quote.distanceKm} km × ${quote.mealCount} meals × GH₵${quote.ratePerKm.toFixed(2)}/km per meal = GH₵${quote.finalFee.toFixed(2)} (${routeLabel}). ${quote.nextTierMessage || ''}`;
         } else {
           explanationEl.style.display = "none";
         }
@@ -2736,8 +2766,8 @@
       const originLng = (sharedPickupPoint && Number(sharedPickupPoint.lng)) || RESTAURANT_COORDS.lng;
       const dist = calculateDistanceKm(originLat, originLng, lat, lng);
       if (locationInput) {
-        locationInput.value = `Selected Pin: ${lat.toFixed(4)}, ${lng.toFixed(4)} (~${dist.toFixed(1)} km from VIP Station)`;
-        setLocationStatus(`📍 Delivery spot pinned: ${dist.toFixed(1)} km from VIP Station. Delivery fee & volume discount updated!`, "ok");
+        locationInput.value = `Selected pin: ${lat.toFixed(4)}, ${lng.toFixed(4)} (~${dist.toFixed(1)} km direct)`;
+        setLocationStatus(`📍 Delivery pin saved. The delivery fee uses the road route when available and the meal quantity.`, "ok");
       }
       reverseGeocodeInto(lat, lng);
       renderGpsPreview();
@@ -3088,8 +3118,24 @@
       const originLng = (sharedPickupPoint && Number(sharedPickupPoint.lng)) || RESTAURANT_COORDS.lng;
       const targetLat = (customerGpsPin && Number(customerGpsPin.lat)) || originLat;
       const targetLng = (customerGpsPin && Number(customerGpsPin.lng)) || originLng;
-      const dist = customerGpsPin ? calculateDistanceKm(originLat, originLng, targetLat, targetLng) : 2.5;
-      const quote = calculateDeliveryQuote(dist, mealCount, isDelivery);
+      let quote = calculateDeliveryQuote(
+        customerGpsPin ? calculateDistanceKm(originLat, originLng, targetLat, targetLng) : 2.5,
+        mealCount,
+        isDelivery
+      );
+      if (isDelivery) {
+        try {
+          quote = await apiFetchDeliveryQuote(targetLat, targetLng, mealCount);
+          const quoteKey = [originLat, originLng, targetLat, targetLng, mealCount]
+            .map(value => Number(value).toFixed(5)).join(':');
+          deliveryQuoteForKey = quoteKey;
+          deliveryQuoteForKeyValue = quote;
+        } catch (error) {
+          formFeedback.textContent = `Could not confirm the delivery fee: ${error.message}`;
+          formFeedback.style.color = "#b91c1c";
+          return;
+        }
+      }
       const deliveryFee = quote.finalFee;
       const total = subtotal + deliveryFee;
 
@@ -3117,6 +3163,7 @@
         subtotal,
         deliveryFee,
         deliveryDistanceKm: quote.distanceKm,
+        deliveryDistanceSource: quote.distanceSource || 'straight-line-estimate',
         deliveryDiscount: quote.discount,
         total
       };
@@ -4387,6 +4434,7 @@
         clearBtn.addEventListener('click', () => {
           customerGpsPin = null;
           renderGpsPreview();
+          renderCart();
           setLocationStatus('Pin removed. You can share it again or keep the typed address.', '');
         });
       }

@@ -98,9 +98,15 @@ Object.assign(process.env, {
   MOMO_CALLBACK_HOST: '',
   YEBS_VAPID_PUBLIC_KEY: '',
   YEBS_VAPID_PRIVATE_KEY: '',
-  YEBS_VAPID_SUBJECT: ''
+  YEBS_VAPID_SUBJECT: '',
+  DELIVERY_ROUTING_URL: ''
 });
 
+const faceVerification = require('../src/services/driverFaceVerification');
+jest.spyOn(faceVerification, 'verifyDriverFace').mockResolvedValue({
+  verified: false,
+  reason: 'test-face-check-not-confident'
+});
 const { app, start } = require('../server');
 
 describe('customer order to verified delivery flow', () => {
@@ -133,7 +139,7 @@ describe('customer order to verified delivery flow', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  async function createDelivery() {
+  async function createDelivery(quantity = 1) {
     const response = await request(app)
       .post('/api/orders')
       .send({
@@ -144,7 +150,7 @@ describe('customer order to verified delivery flow', () => {
         location: 'Test delivery address',
         notes: 'Ring at the gate',
         mapPin: { lat: 5.6037, lng: -0.187, name: 'Test delivery address' },
-        items: [{ menuId: 'test-meal', name: 'Test meal', price: 25, quantity: 1 }]
+        items: [{ menuId: 'test-meal', name: 'Test meal', price: 25, quantity }]
       });
 
     expect(response.status).toBe(201);
@@ -163,7 +169,7 @@ describe('customer order to verified delivery flow', () => {
       });
   }
 
-  async function createCashDelivery() {
+  async function createCashDelivery(quantity = 1) {
     const response = await request(app)
       .post('/api/orders')
       .send({
@@ -173,7 +179,7 @@ describe('customer order to verified delivery flow', () => {
         payment: 'Pay on Delivery (Cash)',
         location: 'Cash delivery address',
         mapPin: { lat: 5.6037, lng: -0.187, name: 'Cash delivery address' },
-        items: [{ menuId: 'test-meal', name: 'Test meal', price: 25, quantity: 1 }]
+        items: [{ menuId: 'test-meal', name: 'Test meal', price: 25, quantity }]
       });
     expect(response.status).toBe(201);
     return response.body;
@@ -222,11 +228,16 @@ describe('customer order to verified delivery flow', () => {
     expect(authorizedTracking.body.order.pickupPin).toBe(order.pickupPin);
   });
 
-  test('requires admin review of a live selfie before one-time driver password reset', async () => {
+  test('falls back to admin review when the live face check is not confident', async () => {
     const selfiePhoto = `data:image/jpeg;base64,${Buffer.from('live-recovery-selfie').toString('base64')}`;
+    const selfieFrames = [
+      selfiePhoto,
+      `data:image/jpeg;base64,${Buffer.from('live-recovery-left').toString('base64')}`,
+      `data:image/jpeg;base64,${Buffer.from('live-recovery-right').toString('base64')}`
+    ];
     const submit = () => request(app)
       .post('/api/auth/driver-recovery')
-      .send({ phone: '0241111111', selfiePhoto });
+      .send({ phone: '0241111111', selfiePhoto, selfieFrames });
 
     const unauthorizedQueue = await request(app).get('/api/admin/driver-recovery-requests');
     expect(unauthorizedQueue.status).toBe(401);
@@ -319,6 +330,48 @@ describe('customer order to verified delivery flow', () => {
     expect(replay.status).toBe(404);
   });
 
+  test('automatically authorizes a reset after the local face model verifies the driver', async () => {
+    faceVerification.verifyDriverFace.mockResolvedValueOnce({ verified: true, reason: null });
+    const selfiePhoto = `data:image/jpeg;base64,${Buffer.from('verified-live-face-center').toString('base64')}`;
+    const selfieFrames = [
+      selfiePhoto,
+      `data:image/jpeg;base64,${Buffer.from('verified-live-face-left').toString('base64')}`,
+      `data:image/jpeg;base64,${Buffer.from('verified-live-face-right').toString('base64')}`
+    ];
+    const requestResult = await request(app)
+      .post('/api/auth/driver-recovery')
+      .send({ phone: '0241111111', selfiePhoto, selfieFrames });
+
+    expect(requestResult.status).toBe(201);
+    expect(requestResult.body).toMatchObject({
+      success: true,
+      status: 'approved'
+    });
+    expect(requestResult.body.message).toContain('matched');
+    expect(faceVerification.verifyDriverFace).toHaveBeenLastCalledWith({
+      registrationPhoto: expect.stringContaining('data:image/jpeg;base64,'),
+      selfieFrames
+    });
+
+    const approvalStatus = await request(app)
+      .get(`/api/auth/driver-recovery/${requestResult.body.requestId}`)
+      .set('X-Driver-Recovery-Token', requestResult.body.accessToken);
+    expect(approvalStatus.body.status).toBe('approved');
+
+    const reset = await request(app)
+      .post(`/api/auth/driver-recovery/${requestResult.body.requestId}/password`)
+      .set('X-Driver-Recovery-Token', requestResult.body.accessToken)
+      .send({ password: 'auto-reset-driver-password', confirmPassword: 'auto-reset-driver-password' });
+    expect(reset.status).toBe(200);
+    expect(reset.body.redirectTo).toBe('/driver.html');
+
+    const newLogin = await request(app)
+      .post('/api/auth/driver/login')
+      .send({ username: 'test-driver', password: 'auto-reset-driver-password' });
+    expect(newLogin.status).toBe(200);
+    driverToken = newLogin.body.token;
+  });
+
   test('does not send driver reset codes by SMS or accept legacy driver codes', async () => {
     const start = await request(app)
       .post('/api/auth/recovery/start')
@@ -338,14 +391,93 @@ describe('customer order to verified delivery flow', () => {
     expect(payOnDelivery.deliveryDistanceKm).toBe(payNow.deliveryDistanceKm);
     expect(payOnDelivery.deliveryFee).toBe(payNow.deliveryFee);
     expect(payOnDelivery.total - payOnDelivery.subtotal).toBe(payOnDelivery.deliveryFee);
+    expect(payNow.deliveryFee).toBe(Math.round(payNow.deliveryDistanceKm * 8 * 100) / 100);
+    expect(payNow.deliveryMealCount).toBe(1);
+    expect(payNow.deliveryRatePerKmPerMeal).toBe(8);
+  });
+
+  test.each([
+    [2, 6, 12],
+    [3, 4, 12],
+    [4, 2, 8],
+    [5, 2, 10]
+  ])('charges the per-meal volume tier for %i meals at %i GH₵/km each', async (mealCount, ratePerKm, totalRate) => {
+    const order = await createDelivery(mealCount);
+    expect(order.deliveryMealCount).toBe(mealCount);
+    expect(order.deliveryRatePerKmPerMeal).toBe(ratePerKm);
+    expect(order.deliveryFee).toBe(Math.round(order.deliveryDistanceKm * totalRate * 100) / 100);
+    expect(order.deliveryDiscount).toBe(0);
+  });
+
+  test('uses OSRM road distance for quotes when a usable road route is available', async () => {
+    process.env.DELIVERY_ROUTING_URL = 'https://routing.example.test';
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ routes: [{ distance: 11300 }] })
+    });
+
+    try {
+      const response = await request(app)
+        .get('/api/delivery/quote?lat=5.6037&lng=-0.187&meals=2');
+      expect(response.status).toBe(200);
+      expect(response.body.quote).toMatchObject({
+        distanceKm: 11.3,
+        distanceSource: 'road-route',
+        mealCount: 2,
+        ratePerKm: 6,
+        finalFee: 135.6
+      });
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/route/v1/driving/'),
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
+    } finally {
+      fetchMock.mockRestore();
+      process.env.DELIVERY_ROUTING_URL = '';
+    }
   });
 
   test('driver order sync includes the full customer and pickup details', async () => {
     const order = await createDelivery();
+    const available = await request(app)
+      .get('/api/orders?scope=today')
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(available.status).toBe(200);
+    expect(available.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: order.id,
+        customer: 'Customer nearby',
+        phone: null,
+        notes: null,
+        location: 'Approximate delivery area (claim to reveal exact address)',
+        mapPin: expect.objectContaining({ lat: 5.6, lng: -0.19, name: 'Approximate delivery area' }),
+        pickupPin: null
+      })
+    ]));
+    expect(JSON.stringify(available.body)).not.toContain('Test delivery address');
+
     const claimed = await request(app)
       .post(`/api/orders/${order.id}/claim`)
       .set('Authorization', 'Bearer ' + driverToken);
     expect(claimed.status).toBe(200);
+    expect(claimed.body.order).toMatchObject({
+      customer: 'Test Customer',
+      phone: '0240000000',
+      location: 'Test delivery address',
+      notes: 'Ring at the gate',
+      mapPin: expect.objectContaining({ lat: 5.6037, lng: -0.187 })
+    });
+    const activity = await request(app)
+      .get('/api/drivers/me/activity')
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(activity.status).toBe(200);
+    expect(activity.body).toMatchObject({
+      resumeOrder: expect.objectContaining({ id: order.id, status: 'driver_assigned' }),
+      activity: expect.arrayContaining([
+        expect.objectContaining({ action: 'ORDER_CLAIMED', entity: order.id })
+      ]),
+      lastKnownLocation: expect.objectContaining({ lat: initialLocation.lat, lng: initialLocation.lng })
+    });
 
     const synced = await request(app)
       .get('/api/orders?scope=today')
@@ -363,6 +495,38 @@ describe('customer order to verified delivery flow', () => {
         deliveryDistanceKm: order.deliveryDistanceKm
       })
     ]));
+  });
+
+  test('requires three captured frames before automated driver recovery', async () => {
+    const selfiePhoto = `data:image/jpeg;base64,${Buffer.from('single-frame-recovery').toString('base64')}`;
+    const callsBefore = faceVerification.verifyDriverFace.mock.calls.length;
+    const response = await request(app)
+      .post('/api/auth/driver-recovery')
+      .send({ phone: '0241111111', selfiePhoto });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain('three-frame live face check');
+    expect(faceVerification.verifyDriverFace).toHaveBeenCalledTimes(callsBefore);
+  });
+
+  test('does not run face inference for an unmatched registration phone', async () => {
+    const selfiePhoto = `data:image/jpeg;base64,${Buffer.from('unknown-driver-frame').toString('base64')}`;
+    const selfieFrames = [selfiePhoto, selfiePhoto, selfiePhoto];
+    const callsBefore = faceVerification.verifyDriverFace.mock.calls.length;
+    const response = await request(app)
+      .post('/api/auth/driver-recovery')
+      .send({ phone: '0249999999', selfiePhoto, selfieFrames });
+
+    expect(response.status).toBe(201);
+    expect(response.body.status).toBe('pending');
+    expect(faceVerification.verifyDriverFace).toHaveBeenCalledTimes(callsBefore);
+    const requestEntry = require('../src/data/store').get().driverRecoveryRequests
+      .find(entry => entry.id === response.body.requestId);
+    expect(requestEntry).toMatchObject({
+      status: 'unmatched',
+      driverId: null,
+      selfiePhoto: null
+    });
   });
 
   test('edits the existing unpaid order with authenticated access', async () => {

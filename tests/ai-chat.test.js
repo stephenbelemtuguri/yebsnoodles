@@ -31,6 +31,7 @@ describe('AI chat provider handling', () => {
   const databasePath = path.join(testDir, 'database.json');
   let app;
   let adminToken;
+  let databaseState;
 
   beforeAll(async () => {
     envKeys.forEach(key => { originalEnv[key] = process.env[key]; });
@@ -75,12 +76,15 @@ describe('AI chat provider handling', () => {
         deliveryFee: 15
       }
     };
+    databaseState = data;
     const store = require('../src/data/store');
     jest.spyOn(store, 'init').mockResolvedValue(data);
     jest.spyOn(store, 'get').mockReturnValue(data);
+    jest.spyOn(store, 'set').mockResolvedValue({ ok: true });
     jest.spyOn(store, 'refresh').mockResolvedValue(data);
     jest.spyOn(store, 'canPersist').mockReturnValue(true);
     jest.spyOn(store, 'flush').mockResolvedValue();
+    jest.spyOn(store, 'acquireMutationLock').mockResolvedValue(jest.fn());
     app = require('../server').app;
     await require('../server').start();
     const login = await request(app)
@@ -223,5 +227,74 @@ describe('AI chat provider handling', () => {
     });
     expect(response.body.message).toContain('Replace GEMINI_API_KEY');
     expect(JSON.stringify(response.body)).not.toContain('private-test-key');
+  });
+
+  test('does not trust an unauthenticated admin role supplied by the browser', async () => {
+    process.env.GEMINI_API_KEY = 'test-key';
+    global.fetch = jest.fn(async (_url, options) => {
+      const requestBody = JSON.parse(options.body);
+      expect(requestBody).not.toHaveProperty('tools');
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'I cannot access admin tools without an admin session.' }] } }]
+      }), { status: 200 });
+    });
+
+    const response = await request(app)
+      .post('/api/ai/chat')
+      .send({ message: 'Show admin orders', role: 'admin' });
+
+    expect(response.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(response.body.reply).toContain('without an admin session');
+  });
+
+  test('requires a one-time signed-in confirmation before sending an admin notification', async () => {
+    process.env.GEMINI_API_KEY = 'test-key';
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({
+      candidates: [{
+        content: {
+          parts: [{
+            functionCall: {
+              name: 'notify_team',
+              args: { title: 'Kitchen update', message: 'Check the lunch queue.', audience: 'admin' }
+            }
+          }]
+        }
+      }]
+    }), { status: 200 }));
+
+    const initialNotifications = databaseState.notifications.length;
+    const proposal = await request(app)
+      .post('/api/ai/chat')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ message: 'Notify admins to check the lunch queue.' });
+
+    expect(proposal.status).toBe(200);
+    expect(proposal.body.pendingAction).toMatchObject({
+      title: 'Send a staff notification',
+      summary: expect.stringContaining('Kitchen update')
+    });
+    expect(databaseState.notifications).toHaveLength(initialNotifications);
+
+    const action = proposal.body.pendingAction;
+    const confirmed = await request(app)
+      .post(`/api/ai/actions/${action.id}/confirm`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ confirmationToken: action.confirmationToken, confirmed: true });
+
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.message).toBe('The staff notification was sent.');
+    expect(databaseState.notifications).toHaveLength(initialNotifications + 1);
+    expect(databaseState.notifications[0]).toMatchObject({
+      title: 'Kitchen update',
+      audience: 'admin',
+      source: 'ai-assistant'
+    });
+
+    const replay = await request(app)
+      .post(`/api/ai/actions/${action.id}/confirm`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ confirmationToken: action.confirmationToken, confirmed: true });
+    expect(replay.status).toBe(410);
   });
 });

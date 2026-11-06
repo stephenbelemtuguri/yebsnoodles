@@ -15,11 +15,11 @@
   <h2>Payments and notifications</h2>
   <p>Mobile Money payment requests are processed by authorised payment providers. Payment references may be retained for reconciliation. WhatsApp, SMS, email, or in-app notifications are sent only for account, order, or service purposes where configured.</p>
   <h2>Driver password recovery</h2>
-  <p>When a driver requests a password reset, YEBS captures a live camera selfie and temporarily stores it in the YEBS database for an administrator to compare with the driver’s registration photo. No SMS code or external face-recognition service is used for this process. The recovery selfie is deleted after the administrator’s decision, password reset, or request expiry (within approximately 31 minutes).</p>
+  <p>When a driver requests a password reset, YEBS verifies the registration phone and captures three live-camera frames with a head-turn challenge. Open-source face-matching, anti-spoof, and liveness models run on the YEBS server; face images are not sent to a biometric provider. A sufficiently confident result can authorize a one-time reset automatically. Uncertain checks are sent for administrator review, and photos are deleted after approval, decision, password reset, or expiry (within approximately 31 minutes). Automated face checks can make mistakes and are not a guarantee of identity or liveness.</p>
   <h2>Retention and security</h2>
   <p>Operational records are retained for order fulfilment, accounting, fraud prevention, and legal obligations. Access is restricted by account role and protected by authentication controls.</p>
   <h2>Your choices</h2>
   <p>You may request access, correction, export, or deletion of personal data by contacting YEBS through WhatsApp or by using the support details on this website. We may retain records where required for payment, tax, fraud, or legal compliance.</p>
   <footer><a href="/">Back to YEBS Noodles</a> · <a href="/terms.html">Terms of service</a></footer>
-</div></main></body>
+</div></main><script src="/portal-ai.js"></script></body>
 </html>

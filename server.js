@@ -22,6 +22,7 @@ const bcrypt = require('bcryptjs');
 const webPush = require('web-push');
 const store = require('./src/data/store');
 const media = require('./src/data/media');
+const { verifyDriverFace } = require('./src/services/driverFaceVerification');
 const { resolveAdminCredentialResetVersion } = require('./scripts/render-deploy-version');
 const messagingService = require('./src/services/messaging');
 const pushPublicKey = String(process.env.YEBS_VAPID_PUBLIC_KEY || '').trim();
@@ -106,6 +107,77 @@ app.use(express.json({
   }
 }));
 
+const AI_MUTATING_TOOLS = new Set([
+  'notify_team',
+  'driver_send_report',
+  'driver_claim_order',
+  'driver_update_availability',
+  'driver_mark_arrived',
+  'verify_delivery_pin'
+]);
+const pendingAiActions = new Map();
+const pendingAiActionCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [id, action] of pendingAiActions) {
+    if (action.expiresAt <= now) pendingAiActions.delete(id);
+  }
+}, 60 * 1000);
+pendingAiActionCleanup.unref();
+
+function createPendingAiAction(name, args, authenticated) {
+  const role = authenticated && authenticated.payload && authenticated.payload.role;
+  const allowed = role === 'admin'
+    ? name === 'notify_team'
+    : role === 'driver' && ['driver_send_report', 'driver_claim_order', 'driver_update_availability', 'driver_mark_arrived', 'verify_delivery_pin'].includes(name);
+  if (!allowed) return null;
+
+  const title = {
+    notify_team: 'Send a staff notification',
+    driver_send_report: 'Send a delivery activity report to the admin',
+    driver_claim_order: 'Claim an available delivery',
+    driver_update_availability: 'Change driver availability',
+    driver_mark_arrived: 'Mark arrival at the delivery',
+    verify_delivery_pin: 'Confirm delivery handover'
+  }[name];
+  const summaries = {
+    notify_team: `${String(args.title || 'Staff update').slice(0, 100)} · ${String(args.audience || 'staff')} · ${String(args.message || '').slice(0, 220)}`,
+    driver_send_report: 'Send your assigned-delivery status summary to the admin via the configured report channel.',
+    driver_claim_order: `Claim order ${normalizeOrderId(args.orderId)} and reveal the customer details for that assignment.`,
+    driver_update_availability: `Set your availability to ${args.available === true ? 'available' : 'offline'}.`,
+    driver_mark_arrived: `Mark order ${normalizeOrderId(args.orderId)} as arrived.`,
+    verify_delivery_pin: `Complete the handover for order ${normalizeOrderId(args.orderId)} using the PIN you provided.`
+  };
+  const id = crypto.randomUUID();
+  const confirmationToken = crypto.randomBytes(32).toString('base64url');
+  for (const [pendingId, pending] of pendingAiActions) {
+    if (pending.expiresAt <= Date.now()) pendingAiActions.delete(pendingId);
+  }
+  const subject = String(authenticated.payload.sub);
+  const userActions = Array.from(pendingAiActions.entries())
+    .filter(([, pending]) => pending.role === role && pending.subject === subject);
+  while (userActions.length >= 5) {
+    const [oldestId] = userActions.shift();
+    pendingAiActions.delete(oldestId);
+  }
+  while (pendingAiActions.size >= 500) pendingAiActions.delete(pendingAiActions.keys().next().value);
+  pendingAiActions.set(id, {
+    id,
+    tokenHash: crypto.createHash('sha256').update(confirmationToken).digest('hex'),
+    name,
+    args: JSON.parse(JSON.stringify(args || {})),
+    role,
+    subject,
+    expiresAt: Date.now() + 5 * 60 * 1000
+  });
+  return {
+    id,
+    confirmationToken,
+    title,
+    summary: summaries[name],
+    expiresInSeconds: 300
+  };
+}
+
 app.post('/api/ai/chat', async (req, res) => {
   const message = String(req.body && req.body.message || '').trim().slice(0, 1200);
   if (!message) return res.status(400).json({ success: false, reply: 'Please ask a question.' });
@@ -113,11 +185,8 @@ app.post('/api/ai/chat', async (req, res) => {
   const suppliedTrackingContext = req.body.trackingContext && typeof req.body.trackingContext === 'object'
     ? req.body.trackingContext
     : null;
-  let role = ['customer', 'driver', 'admin'].includes(String(req.body.role || '').toLowerCase())
-    ? String(req.body.role).toLowerCase()
-    : 'customer';
   const authenticated = authenticate(req);
-  if (authenticated) role = authenticated.payload.role;
+  const role = authenticated ? authenticated.payload.role : 'customer';
 
   const db = loadDatabase();
   const momo = getMomoSettings(db);
@@ -227,19 +296,27 @@ General capability:
         parts: [{ text: entry.content.slice(0, 1200) }]
       }));
       contents.push({ role: 'user', parts: [{ text: message }] });
-      const tools = [{
-        functionDeclarations: [
+      const allToolDeclarations = [
           { name: 'inspect_dashboard', description: 'Inspect live YEBS operations counts and risks. Use for summaries, validation, maintenance checks, and staff requests.', parameters: { type: 'object', properties: {} } },
           { name: 'analyze_business', description: 'Analyze live orders, revenue, payment risk, menu demand, cancellations, and staff performance, then provide prioritized recommendations.', parameters: { type: 'object', properties: {} } },
           { name: 'list_orders', description: 'List and inspect live orders, optionally filtered by status.', parameters: { type: 'object', properties: { status: { type: 'string', description: 'Exact order status such as preparing, ready, delivered, or cancelled' }, limit: { type: 'number' } } } },
           { name: 'inspect_payments', description: 'Inspect payment review queue, pending Mobile Money payments, and payment mismatches.', parameters: { type: 'object', properties: {} } },
-          { name: 'notify_team', description: 'Create an in-app notification for admin or driver staff.', parameters: { type: 'object', properties: { title: { type: 'string' }, message: { type: 'string' }, audience: { type: 'string', enum: ['admin', 'driver', 'all'] }, confirmed: { type: 'boolean' } }, required: ['title', 'message', 'audience', 'confirmed'] } },
-          { name: 'driver_update_availability', description: 'Update the authenticated driver availability when the driver explicitly confirms it.', parameters: { type: 'object', properties: { available: { type: 'boolean' }, confirmed: { type: 'boolean' } }, required: ['available', 'confirmed'] } },
-          { name: 'driver_mark_arrived', description: 'Mark the authenticated driver arrival for one assigned active order.', parameters: { type: 'object', properties: { orderId: { type: 'string' }, confirmed: { type: 'boolean' } }, required: ['orderId', 'confirmed'] } },
+          { name: 'notify_team', description: 'Prepare an in-app team notification. The signed-in admin must approve it in the website before it is sent.', parameters: { type: 'object', properties: { title: { type: 'string' }, message: { type: 'string' }, audience: { type: 'string', enum: ['admin', 'driver', 'all'] } }, required: ['title', 'message', 'audience'] } },
+          { name: 'driver_list_deliveries', description: 'List this authenticated driver’s assigned active deliveries and nearby available order summaries. Never return customer contact details for unclaimed orders.', parameters: { type: 'object', properties: {} } },
+          { name: 'driver_send_report', description: 'Prepare a summary report of this authenticated driver’s delivery activity for the admin. The driver must confirm before the report is sent.', parameters: { type: 'object', properties: {} } },
+          { name: 'driver_claim_order', description: 'Prepare to claim an available order for the authenticated driver. The driver must confirm the claim in the website.', parameters: { type: 'object', properties: { orderId: { type: 'string' } }, required: ['orderId'] } },
+          { name: 'driver_update_availability', description: 'Prepare an availability change for the authenticated driver. The driver must confirm it in the website.', parameters: { type: 'object', properties: { available: { type: 'boolean' } }, required: ['available'] } },
+          { name: 'driver_mark_arrived', description: 'Prepare to mark arrival for one assigned active order. The driver must confirm it in the website.', parameters: { type: 'object', properties: { orderId: { type: 'string' } }, required: ['orderId'] } },
           { name: 'optimize_driver_route', description: 'Calculate an efficient road stop order for the authenticated driver assigned orders that have delivery coordinates.', parameters: { type: 'object', properties: {} } },
-          { name: 'verify_delivery_pin', description: 'Verify the customer delivery PIN for one assigned order and log its successful delivery.', parameters: { type: 'object', properties: { orderId: { type: 'string' }, pin: { type: 'string' }, confirmed: { type: 'boolean' } }, required: ['orderId', 'pin', 'confirmed'] } }
-        ]
-      }];
+          { name: 'verify_delivery_pin', description: 'Prepare to verify the customer handover PIN for one assigned order. The driver must confirm delivery in the website.', parameters: { type: 'object', properties: { orderId: { type: 'string' }, pin: { type: 'string' } }, required: ['orderId', 'pin'] } }
+        ];
+      const allowedTools = !authenticated
+        ? new Set()
+        : role === 'admin'
+          ? new Set(['inspect_dashboard', 'analyze_business', 'list_orders', 'inspect_payments', 'notify_team'])
+          : new Set(['driver_list_deliveries', 'driver_send_report', 'driver_claim_order', 'driver_update_availability', 'driver_mark_arrived', 'optimize_driver_route', 'verify_delivery_pin']);
+      const functionDeclarations = allToolDeclarations.filter(tool => allowedTools.has(tool.name));
+      const tools = functionDeclarations.length ? [{ functionDeclarations }] : [];
       let lastReply = '';
       let geminiError = 'Gemini returned no usable response.';
       for (const geminiModel of geminiModels) {
@@ -254,8 +331,10 @@ General capability:
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: knowledge + '\nYou can inspect live data and perform authorized staff operations with tools. For destructive or externally visible actions, require explicit confirmation and explain what you are about to do. Never expose secrets, tokens, passwords, API keys, private customer addresses, phone numbers, or internal database fields. Base conclusions on tool output, not guesses. Keep answers practical and natural; do not repeat the user.' }] },
             contents,
-            tools,
-            toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+            ...(tools.length ? {
+              tools,
+              toolConfig: { functionCallingConfig: { mode: 'AUTO' } }
+            } : {}),
             generationConfig: { temperature: 0.25, maxOutputTokens: 700 }
           }),
           signal: AbortSignal.timeout(7000)
@@ -293,6 +372,29 @@ General capability:
           if (lastReply) return res.json({ success: true, reply: lastReply, provider: 'gemini', model: geminiModel });
           break;
         }
+        const actionCall = calls.find(call => AI_MUTATING_TOOLS.has(call.functionCall.name));
+        if (actionCall) {
+          if (!allowedTools.has(actionCall.functionCall.name)) {
+            return res.status(403).json({ success: false, message: 'This action is not available for your account role.' });
+          }
+          const pendingAction = createPendingAiAction(
+            actionCall.functionCall.name,
+            actionCall.functionCall.args || {},
+            authenticated
+          );
+          if (!pendingAction) {
+            return res.status(403).json({ success: false, message: 'This action is not authorized for your account.' });
+          }
+          return res.json({
+            success: true,
+            provider: 'gemini',
+            reply: 'Review the proposed action below. Nothing will change until you confirm it.',
+            pendingAction
+          });
+        }
+        if (calls.some(call => !allowedTools.has(call.functionCall.name))) {
+          return res.status(403).json({ success: false, message: 'The requested live-data tool is not available for your account role.' });
+        }
         const functionResponses = [];
         for (const call of calls) {
           const args = call.functionCall.args || {};
@@ -323,6 +425,22 @@ General capability:
           } else if (call.functionCall.name === 'inspect_payments') {
             const paymentQueue = live.orders.filter(o => o.paymentStatus === 'review' || o.paymentStatus === 'pending' || o.momoRequestStatus === 'pending').slice(0, 25).map(o => ({ id: o.id, total: o.total, paymentStatus: o.paymentStatus, momoRequestStatus: o.momoRequestStatus, paymentMode: o.paymentMode }));
             output = { count: paymentQueue.length, payments: paymentQueue };
+          } else if (call.functionCall.name === 'driver_list_deliveries' && role === 'driver' && authenticated) {
+            const driverId = String(authenticated.driver.id);
+            const activeStatuses = new Set(['driver_assigned', 'enroute', 'arrived']);
+            const assigned = live.orders
+              .filter(order => activeStatuses.has(String(order.status || '').toLowerCase()) &&
+                (String(order.driverId || (order.driver && order.driver.id) || '') === driverId))
+              .slice(0, 20)
+              .map(order => projectDriverOrder(order, driverId, true));
+            const available = live.orders
+              .filter(order => !order.driverId && !(order.driver && order.driver.id) &&
+                !['delivered', 'cancelled'].includes(String(order.status || '').toLowerCase()) &&
+                !(order.cancellation && order.cancellation.status === 'pending'))
+              .slice(0, 25)
+              .map(order => projectDriverOrder(order, driverId, true))
+              .filter(Boolean);
+            output = { assigned, available, availableCount: available.length };
           } else if (call.functionCall.name === 'notify_team' && role !== 'customer' && args.confirmed === true) {
             live.notifications = Array.isArray(live.notifications) ? live.notifications : [];
             live.notifications.unshift({ id: 'ai-' + Date.now(), title: String(args.title).slice(0, 120), message: String(args.message).slice(0, 500), audience: args.audience, createdAt: new Date().toISOString(), source: 'ai-assistant' });
@@ -585,6 +703,256 @@ app.use('/api', async (req, res, next) => {
     return res;
   };
   next();
+});
+
+app.post('/api/ai/actions/:id/confirm', requireRole('admin', 'driver'), async (req, res) => {
+  const pending = pendingAiActions.get(String(req.params.id || ''));
+  if (!pending || pending.expiresAt <= Date.now()) {
+    pendingAiActions.delete(String(req.params.id || ''));
+    return res.status(410).json({ success: false, message: 'This action preview has expired. Ask the assistant to prepare it again.' });
+  }
+
+  const auth = req.auth;
+  const role = auth.payload.role;
+  const subject = String(auth.payload.sub);
+  const submittedToken = String((req.body || {}).confirmationToken || '');
+  const submittedHash = crypto.createHash('sha256').update(submittedToken).digest();
+  const expectedHash = Buffer.from(pending.tokenHash, 'hex');
+  if (pending.role !== role || pending.subject !== subject ||
+      submittedHash.length !== expectedHash.length ||
+      !crypto.timingSafeEqual(submittedHash, expectedHash)) {
+    return res.status(404).json({ success: false, message: 'This action preview does not belong to the signed-in account.' });
+  }
+
+  pendingAiActions.delete(pending.id);
+  if ((req.body || {}).confirmed !== true) {
+    return res.json({ success: true, cancelled: true, message: 'The proposed action was cancelled.' });
+  }
+
+  const db = loadDatabase();
+  const previousState = JSON.stringify(db);
+  const args = pending.args || {};
+  const timestamp = new Date().toISOString();
+  let actor;
+  let entity = 'GENERAL';
+  let action;
+  let actionDetails = {};
+  let message = 'Action completed.';
+  let changedOrder = null;
+  let orderEventType = 'status';
+  let driver = null;
+  let reportToSend = null;
+
+  if (role === 'admin' && pending.name === 'notify_team') {
+    const title = cleanString(args.title, 120);
+    const body = cleanString(args.message, 500);
+    const audience = ['admin', 'driver', 'all'].includes(args.audience) ? args.audience : '';
+    if (!title || !body || !audience) {
+      return res.status(400).json({ success: false, message: 'The notification requires a title, message, and valid audience.' });
+    }
+    db.notifications = Array.isArray(db.notifications) ? db.notifications : [];
+    db.notifications.unshift({
+      id: `ai-${crypto.randomUUID()}`,
+      title,
+      message: body,
+      audience,
+      createdAt: timestamp,
+      source: 'ai-assistant'
+    });
+    db.notifications.length = Math.min(db.notifications.length, 300);
+    actor = auth.admin.name || auth.admin.username;
+    action = 'AI_TEAM_NOTIFICATION_SENT';
+    actionDetails = { audience };
+    message = 'The staff notification was sent.';
+  } else if (role === 'driver') {
+    driver = (db.drivers || []).find(item => String(item.id) === String(auth.driver.id));
+    if (!driver) return res.status(404).json({ success: false, message: 'The signed-in driver account could not be found.' });
+    actor = driver.name || `${driver.fname || ''} ${driver.lname || ''}`.trim() || driver.username || 'YEBS Rider';
+
+    if (pending.name === 'driver_send_report') {
+      const driverId = String(driver.id || '');
+      const assigned = (db.orders || []).filter(order =>
+        String(order.driverId || (order.driver && order.driver.id) || '') === driverId
+      );
+      const activeCount = assigned.filter(order => !['delivered', 'cancelled'].includes(String(order.status || '').toLowerCase())).length;
+      const lines = assigned.slice(0, 30).map((order, index) =>
+        `${index + 1}. Order ${order.id}: ${order.status || 'pending'}`
+      );
+      const reportMessage = [
+        'YEBS DRIVER ACTIVITY REPORT',
+        `Driver: ${actor}`,
+        `Submitted: ${new Date(timestamp).toLocaleString()}`,
+        `Orders assigned: ${assigned.length}`,
+        `Orders still active: ${activeCount}`,
+        '',
+        lines.join('\n') || 'No assigned orders.'
+      ].join('\n');
+      reportToSend = {
+        id: `driver-report-${crypto.randomUUID()}`,
+        driverId,
+        driverName: actor,
+        status: 'queued',
+        createdAt: timestamp,
+        message: reportMessage
+      };
+      db.driverReports = Array.isArray(db.driverReports) ? db.driverReports : [];
+      db.driverReports.unshift(reportToSend);
+      db.driverReports.length = Math.min(db.driverReports.length, 200);
+      db.notifications = Array.isArray(db.notifications) ? db.notifications : [];
+      db.notifications.unshift({
+        id: `ntf-${crypto.randomUUID()}`,
+        channel: 'whatsapp',
+        to: whatsappConfig().to,
+        createdAt: timestamp,
+        status: 'queued',
+        kind: 'driver-report',
+        driverReportId: reportToSend.id,
+        message: reportMessage
+      });
+      action = 'AI_DRIVER_REPORT_QUEUED';
+      actionDetails = { assignedOrders: assigned.length, activeOrders: activeCount };
+      message = 'Your delivery activity report was queued for the admin.';
+    } else if (pending.name === 'driver_update_availability') {
+      if (typeof args.available !== 'boolean') return res.status(400).json({ success: false, message: 'Choose available or offline before confirming.' });
+      driver.isActive = args.available;
+      driver.availability = args.available ? 'available' : 'offline';
+      action = 'AI_DRIVER_AVAILABILITY_UPDATED';
+      actionDetails = { availability: driver.availability };
+      message = `You are now ${driver.availability}.`;
+    } else {
+      const orderId = normalizeOrderId(args.orderId);
+      changedOrder = (db.orders || []).find(order => String(order.id).toUpperCase() === orderId) || null;
+      if (!changedOrder) return res.status(404).json({ success: false, message: 'The order was not found.' });
+      entity = changedOrder.id;
+
+      if (pending.name === 'driver_claim_order') {
+        const assignedId = String(changedOrder.driverId || (changedOrder.driver && changedOrder.driver.id) || '');
+        if (driver.isActive === false || driver.approvalStatus === 'pending' || driver.approvalStatus === 'rejected') {
+          return res.status(403).json({ success: false, message: 'Your rider account must be active and approved before accepting deliveries.' });
+        }
+        if (['delivered', 'cancelled'].includes(String(changedOrder.status || '').toLowerCase()) ||
+            (changedOrder.cancellation && changedOrder.cancellation.status === 'pending')) {
+          return res.status(409).json({ success: false, message: 'This order is no longer available for delivery.' });
+        }
+        if (assignedId && assignedId !== String(driver.id)) {
+          return res.status(409).json({ success: false, message: 'Another rider has already accepted this delivery.' });
+        }
+        if (assignedId === String(driver.id)) {
+          return res.json({ success: true, message: 'You already accepted this delivery.', order: projectOrder(changedOrder, 'driver') });
+        }
+        const driverName = actor;
+        changedOrder.driverId = driver.id || null;
+        changedOrder.driverName = driverName;
+        changedOrder.driverPhone = driver.phone || null;
+        if (changedOrder.status !== 'driver_assigned') changedOrder.statusBeforeAssignment = changedOrder.status || 'pending';
+        changedOrder.driver = {
+          id: driver.id || null,
+          name: driverName,
+          phone: driver.phone || null,
+          vehicle: driver.vehicle || null,
+          currentLocation: Number.isFinite(Number(driver.lat)) && Number.isFinite(Number(driver.lng))
+            ? { lat: Number(driver.lat), lng: Number(driver.lng) }
+            : null
+        };
+        changedOrder.assignedAt = changedOrder.assignedAt || timestamp;
+        if (['Received', 'pending', 'kitchen', ''].includes(String(changedOrder.status || ''))) changedOrder.status = 'driver_assigned';
+        action = 'ORDER_CLAIMED';
+        orderEventType = 'assignment';
+        actionDetails = { driverId: driver.id, status: changedOrder.status };
+        message = `Order ${changedOrder.id} is now assigned to you.`;
+      } else {
+        const ownsOrder = String(changedOrder.driverId || (changedOrder.driver && changedOrder.driver.id) || '') === String(driver.id);
+        if (!ownsOrder) return res.status(403).json({ success: false, message: 'This order is not assigned to you.' });
+
+        if (pending.name === 'driver_mark_arrived') {
+          if (changedOrder.status !== 'enroute') {
+            return res.status(409).json({ success: false, message: 'Live tracking must be started before arrival can be recorded.' });
+          }
+          changedOrder.status = 'arrived';
+          changedOrder.arrivedAt = timestamp;
+          action = 'DRIVER_ARRIVED';
+          actionDetails = { status: changedOrder.status };
+          message = `Arrival recorded for order ${changedOrder.id}.`;
+        } else if (pending.name === 'verify_delivery_pin') {
+          const submittedPin = String(args.pin || '').replace(/\D/g, '').slice(-4);
+          if (!/^\d{4}$/.test(submittedPin) || String(changedOrder.deliveryPin || '') !== submittedPin) {
+            return res.status(400).json({ success: false, message: 'The delivery PIN does not match this order.' });
+          }
+          if (changedOrder.status === 'delivered') {
+            return res.json({ success: true, idempotent: true, message: 'This delivery is already complete.', order: projectOrder(changedOrder, 'driver') });
+          }
+          if (changedOrder.status !== 'arrived') {
+            return res.status(409).json({ success: false, message: 'Mark arrival before confirming the delivery.' });
+          }
+          if (changedOrder.paymentStatus !== 'paid' && changedOrder.paymentVerified !== true) {
+            return res.status(409).json({ success: false, message: 'Payment must be confirmed before delivery completion.' });
+          }
+          changedOrder.status = 'delivered';
+          changedOrder.deliveredAt = timestamp;
+          changedOrder.verifiedAt = timestamp;
+          changedOrder.verifiedByDriver = true;
+          changedOrder.deliveryProof = { method: 'ai-pin-verification', verifiedAt: timestamp, driverId: driver.id };
+          db.deliveryReports = Array.isArray(db.deliveryReports) ? db.deliveryReports : [];
+          db.deliveryReports.push({ id: `delivery-ai-${crypto.randomUUID()}`, orderId: changedOrder.id, driverId: driver.id, deliveredAt: timestamp, source: 'ai-assistant' });
+          action = 'DELIVERY_PIN_VERIFIED';
+          actionDetails = { status: changedOrder.status };
+          message = `Delivery ${changedOrder.id} is complete.`;
+        } else {
+          return res.status(403).json({ success: false, message: 'This action is not available for your account role.' });
+        }
+      }
+    }
+  } else {
+    return res.status(403).json({ success: false, message: 'This action is not available for your account role.' });
+  }
+
+  db.auditLogs = Array.isArray(db.auditLogs) ? db.auditLogs : [];
+  const logId = `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  db.auditLogs.unshift({
+    id: logId,
+    timestamp,
+    action,
+    actor,
+    entity,
+    actorId: driver ? driver.id : auth.admin.id,
+    details: JSON.stringify(actionDetails),
+    ipOrAgent: req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'local'
+  });
+  db.auditLogs.length = Math.min(db.auditLogs.length, 500);
+  if (driver) {
+    driver.activityLog = Array.isArray(driver.activityLog) ? driver.activityLog : [];
+    driver.activityLog.unshift({ id: logId, timestamp, action, entity, details: actionDetails });
+    driver.activityLog.length = Math.min(driver.activityLog.length, 200);
+    driver.lastActiveAt = timestamp;
+  }
+
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) {
+    const restored = JSON.parse(previousState);
+    Object.keys(db).forEach(key => delete db[key]);
+    Object.assign(db, restored);
+    return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+  }
+  if (reportToSend) {
+    void sendOwnerWhatsApp(reportToSend.message).then(async delivered => {
+      reportToSend.status = delivered.ok ? 'sent' : 'failed';
+      reportToSend.provider = delivered.provider || null;
+      reportToSend.providerId = delivered.providerId || null;
+      reportToSend.reason = delivered.reason || null;
+      reportToSend.sentAt = delivered.ok ? new Date().toISOString() : null;
+      const notification = (db.notifications || []).find(item => item.driverReportId === reportToSend.id);
+      if (notification) Object.assign(notification, reportToSend, { status: reportToSend.status });
+      await requireDurableSave(db).catch(err => console.warn('[whatsapp] AI driver report status persistence failed:', err.message));
+    }).catch(error => console.warn('[whatsapp] AI driver report send failed:', error.message));
+  }
+  if (changedOrder && typeof pushOrderUpdate === 'function') {
+    pushOrderUpdate(changedOrder.id, { type: orderEventType, order: projectOrder(changedOrder, 'customer') });
+  }
+  return res.json({
+    success: true,
+    message,
+    ...(changedOrder ? { order: projectOrder(changedOrder, 'driver') } : {})
+  });
 });
 
 // Friendly clean URL routes
@@ -1948,15 +2316,40 @@ async function migratePasswords() {
 function logAction(action, actor, entity, details = null, req = null) {
   const db = loadDatabase();
   db.auditLogs = db.auditLogs || [];
+  const tokenPayload = req ? verifyToken(bearerFrom(req)) : null;
+  const detailObject = details && typeof details === 'object' && !Array.isArray(details) ? details : null;
+  const driverId = tokenPayload && tokenPayload.role === 'driver'
+    ? tokenPayload.sub
+    : (detailObject && detailObject.driverId ? String(detailObject.driverId) : '');
   const logEntry = {
     id: "log-" + Date.now() + "-" + Math.floor(Math.random() * 1000),
     timestamp: new Date().toISOString(),
     action,
     actor: actor || "ANONYMOUS",
     entity: entity || "GENERAL",
+    actorId: driverId || undefined,
     details: typeof details === 'object' ? JSON.stringify(details) : details,
     ipOrAgent: req ? (req.headers['x-forwarded-for'] || req.socket.remoteAddress) : "LOCAL"
   };
+  if (driverId) {
+    const driver = (db.drivers || []).find(item => String(item.id) === String(driverId));
+    if (driver) {
+      const safeDetails = detailObject
+        ? Object.fromEntries(Object.entries(detailObject).filter(([key]) =>
+          !/phone|pin|token|password|receipt|image|customer|secret/i.test(key)))
+        : {};
+      driver.activityLog = Array.isArray(driver.activityLog) ? driver.activityLog : [];
+      driver.activityLog.unshift({
+        id: logEntry.id,
+        timestamp: logEntry.timestamp,
+        action: String(action || 'ACTIVITY').slice(0, 80),
+        entity: String(entity || 'GENERAL').slice(0, 100),
+        details: safeDetails
+      });
+      if (driver.activityLog.length > 200) driver.activityLog.length = 200;
+      driver.lastActiveAt = logEntry.timestamp;
+    }
+  }
   db.auditLogs.unshift(logEntry);
   if (db.auditLogs.length > 500) db.auditLogs.pop();
   saveDatabase(db);
@@ -2196,6 +2589,9 @@ function projectOrder(order, viewer = 'public') {
     location: order.location,
     mapPin: order.mapPin,
     deliveryDistanceKm: Number(order.deliveryDistanceKm) || 0,
+    deliveryDistanceSource: order.deliveryDistanceSource || null,
+    deliveryRatePerKmPerMeal: Number(order.deliveryRatePerKmPerMeal) || 0,
+    deliveryMealCount: Number(order.deliveryMealCount) || 0,
     deliveryBaseFee: Number(order.deliveryBaseFee) || 0,
     deliveryDiscount: Number(order.deliveryDiscount) || 0,
     customerCurrentLocation: order.customerCurrentLocation || null,
@@ -2519,7 +2915,7 @@ app.post('/api/auth/driver/login', (req, res) => {
   }
 
   rateSuccess(req, 'driver', username);
-  logAction("DRIVER_LOGIN_SUCCESS", driver.username, "DRIVER_PORTAL", { name: driver.name }, req);
+  logAction("DRIVER_LOGIN_SUCCESS", driver.username, "DRIVER_PORTAL", { name: driver.name, driverId: driver.id }, req);
 
   const token = createToken(driver.id, 'driver', { username: driver.username, name: driver.name || `${driver.fname} ${driver.lname}`, sessionEpoch: driver.sessionEpoch || 0 });
   res.json({
@@ -2998,10 +3394,17 @@ app.post('/api/auth/driver-recovery', driverRecoverySubmitLimit, async (req, res
   const phone = cleanString(req.body && req.body.phone, 30);
   const phoneDigits = phone.replace(/\D/g, '');
   const selfiePhoto = req.body && req.body.selfiePhoto;
-  if (phoneDigits.length < 9 || phoneDigits.length > 13 || !validRecoverySelfie(selfiePhoto)) {
+  const selfieFrames = Array.isArray(req.body && req.body.selfieFrames)
+    ? req.body.selfieFrames.slice(0, 3)
+    : [];
+  if (phoneDigits.length < 9 || phoneDigits.length > 13 ||
+      !validRecoverySelfie(selfiePhoto) ||
+      selfieFrames.length !== 3 ||
+      selfieFrames.some(frame => !validRecoverySelfie(frame)) ||
+      selfieFrames[0] !== selfiePhoto) {
     return res.status(400).json({
       success: false,
-      message: 'Enter the phone number used for driver registration and capture a clear live selfie.'
+      message: 'Enter your registration phone number and complete the three-frame live face check.'
     });
   }
 
@@ -3012,8 +3415,23 @@ app.post('/api/auth/driver-recovery', driverRecoverySubmitLimit, async (req, res
   const driver = (db.drivers || []).find(item => phoneKey(item.phone) === driverPhoneKey);
   const hasRegistrationPhoto = Boolean(driver && (driver.photoUrl || driver.photo));
   const eligible = Boolean(driver && hasRegistrationPhoto);
+  let faceVerified = false;
+  let faceFailureReason = 'phone-or-registration-photo-unavailable';
+  if (eligible) {
+    try {
+      const registrationPhoto = typeof driver.photo === 'string' && /^data:/i.test(driver.photo)
+        ? driver.photo
+        : (driver.photoUrl || driver.photo);
+      const verification = await verifyDriverFace({ registrationPhoto, selfieFrames });
+      faceVerified = verification.verified === true;
+      faceFailureReason = verification.reason || faceFailureReason;
+    } catch (error) {
+      faceFailureReason = 'local-face-model-unavailable';
+      console.error('[driver-recovery] local face verification unavailable:', error.message);
+    }
+  }
   const openCount = db.driverRecoveryRequests.filter(entry => entry.status === 'pending').length;
-  if (eligible && openCount >= DRIVER_RECOVERY_MAX_OPEN) {
+  if (eligible && !faceVerified && openCount >= DRIVER_RECOVERY_MAX_OPEN) {
     return res.status(503).json({
       success: false,
       message: 'The recovery review queue is full. Contact YEBS support and try again later.'
@@ -3035,11 +3453,14 @@ app.post('/api/auth/driver-recovery', driverRecoverySubmitLimit, async (req, res
     driverId: eligible ? driver.id : null,
     phoneHash: hashRecoveryValue(driverPhoneKey),
     pollTokenHash: hashRecoveryValue(accessToken),
-    selfiePhoto: eligible ? selfiePhoto : null,
-    status: eligible ? 'pending' : 'unmatched',
+    selfiePhoto: eligible && !faceVerified ? selfiePhoto : null,
+    status: faceVerified ? 'approved' : eligible ? 'pending' : 'unmatched',
+    approvedBy: faceVerified ? 'local-face-model' : null,
+    verifiedAt: faceVerified ? now.toISOString() : null,
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + DRIVER_RECOVERY_TTL_MS).toISOString()
   };
+  if (faceVerified) scrubDriverRecoveryRequest(recoveryRequest, { keepPollToken: true });
   db.driverRecoveryRequests.push(recoveryRequest);
   if (db.driverRecoveryRequests.length > 500) {
     db.driverRecoveryRequests = db.driverRecoveryRequests.slice(-500);
@@ -3050,8 +3471,11 @@ app.post('/api/auth/driver-recovery', driverRecoverySubmitLimit, async (req, res
     return res.status(503).json({ success: false, message: saveError });
   }
   if (eligible) {
-    logAction('DRIVER_PASSWORD_RECOVERY_REVIEW_REQUESTED', driver.username || driver.name || driver.id,
-      'DRIVER_PORTAL', { requestId: recoveryRequest.id }, req);
+    logAction(faceVerified ? 'DRIVER_PASSWORD_RECOVERY_FACE_MATCHED' : 'DRIVER_PASSWORD_RECOVERY_REVIEW_REQUESTED',
+      driver.username || driver.name || driver.id,
+      'DRIVER_PORTAL',
+      { requestId: recoveryRequest.id, verification: faceVerified ? 'local-face-model' : faceFailureReason },
+      req);
   }
 
   res.set('Cache-Control', 'no-store');
@@ -3060,7 +3484,10 @@ app.post('/api/auth/driver-recovery', driverRecoverySubmitLimit, async (req, res
     requestId: recoveryRequest.id,
     accessToken,
     expiresAt: recoveryRequest.expiresAt,
-    message: 'If your details match a driver account, an administrator will review the request. Check status for up to 30 minutes.'
+    status: recoveryRequest.status === 'approved' ? 'approved' : 'pending',
+    message: faceVerified
+      ? 'Your registration phone and live face check matched. Choose a new password to finish recovery.'
+      : 'Your request could not be verified automatically. An administrator will review it; check status for up to 30 minutes.'
   });
 });
 
@@ -3147,7 +3574,10 @@ app.post('/api/auth/driver-recovery/:id/password', driverRecoveryResetLimit, asy
   if (saveError) return res.status(503).json({ success: false, message: saveError });
 
   logAction('PASSWORD_RECOVERED', driver.username || driver.name || driver.id,
-    'DRIVER_PORTAL', { via: 'admin-reviewed-live-selfie', requestId: entry.id }, req);
+    'DRIVER_PORTAL', {
+      via: entry.approvedBy === 'local-face-model' ? 'automated-local-face-match' : 'admin-reviewed-live-selfie',
+      requestId: entry.id
+    }, req);
   return res.json({
     success: true,
     message: 'Password updated. Sign in to the driver portal.',
@@ -4165,6 +4595,48 @@ function ordersForCashShift(db, shiftId) {
   );
 }
 
+app.get('/api/drivers/me/activity', requireRole('driver'), (req, res) => {
+  const db = loadDatabase();
+  const driver = req.auth.driver;
+  const driverId = String(driver.id);
+  const assignedOrders = (db.orders || []).filter(order =>
+    String(order.driverId || (order.driver && order.driver.id) || '') === driverId
+  );
+  const activeOrders = assignedOrders
+    .filter(order => !['delivered', 'cancelled'].includes(String(order.status || '').toLowerCase()))
+    .sort((a, b) => {
+      const priority = order => ['enroute', 'arrived'].includes(String(order.status || '').toLowerCase()) ? 1 : 0;
+      const priorityDifference = priority(b) - priority(a);
+      if (priorityDifference) return priorityDifference;
+      const updatedAt = order => Date.parse(order.updatedAt || order.assignedAt || order.createdAt || '') || 0;
+      return updatedAt(b) - updatedAt(a);
+    });
+  const limit = Math.min(100, Math.max(1, Math.floor(Number(req.query.limit) || 50)));
+  const activity = (Array.isArray(driver.activityLog) ? driver.activityLog : [])
+    .slice(0, limit)
+    .map(entry => ({
+      id: entry.id,
+      timestamp: entry.timestamp,
+      action: entry.action,
+      entity: entry.entity,
+      details: entry.details || {}
+    }));
+  return res.json({
+    success: true,
+    activity,
+    activeOrders: activeOrders.map(order => projectOrder(order, 'driver')),
+    resumeOrder: activeOrders[0] ? projectOrder(activeOrders[0], 'driver') : null,
+    lastKnownLocation: Number.isFinite(Number(driver.lat)) && Number.isFinite(Number(driver.lng))
+      ? {
+        lat: Number(driver.lat),
+        lng: Number(driver.lng),
+        updatedAt: driver.lastLocationUpdate || null
+      }
+      : null,
+    lastActiveAt: driver.lastActiveAt || null
+  });
+});
+
 app.get('/api/drivers/me/cashier', requireRole('driver'), (req, res) => {
   const db = loadDatabase();
   const driver = (db.drivers || []).find(item => String(item.id) === String(req.auth.driver.id));
@@ -4666,9 +5138,12 @@ function projectOrderSummary(order, viewer = 'public') {
     pickupPoint: order.pickupPoint || null,
     pickupPointName: order.pickupPointName || null,
     deliveryDistanceKm: Number(order.deliveryDistanceKm) || 0,
+    deliveryDistanceSource: order.deliveryDistanceSource || null,
+    deliveryRatePerKmPerMeal: Number(order.deliveryRatePerKmPerMeal) || 0,
+    deliveryMealCount: Number(order.deliveryMealCount) || 0,
     driverId: order.driverId || (order.driver && order.driver.id) || null,
     driverName: order.driverName || (order.driver && order.driver.name) || null,
-    pickupPin: staff ? (order.pickupPin || null) : undefined,
+    pickupPin: viewer === 'admin' ? (order.pickupPin || null) : undefined,
     notificationStatus: order.notificationStatus || null,
     items: (order.items || []).map(item => ({
       menuId: item.menuId || null,
@@ -4678,6 +5153,41 @@ function projectOrderSummary(order, viewer = 'public') {
     })),
     itemCount: (order.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 1), 0)
   };
+}
+
+function projectDriverOrder(order, driverId, summary = false) {
+  const assignedId = String(order.driverId || (order.driver && order.driver.id) || '');
+  if (assignedId && assignedId !== String(driverId)) return null;
+
+  const view = summary
+    ? projectOrderSummary(order, 'driver')
+    : projectOrder(order, 'driver');
+  if (assignedId === String(driverId)) return view;
+
+  view.customer = 'Customer nearby';
+  view.phone = null;
+  view.notes = null;
+  view.customerCurrentLocation = null;
+  const isDelivery = /deliver/i.test(String(order.fulfilment || ''));
+  view.location = isDelivery
+    ? 'Approximate delivery area (claim to reveal exact address)'
+    : (order.location || order.pickupPointName || 'Shared pickup point');
+  if (isDelivery && view.mapPin && Number.isFinite(Number(view.mapPin.lat)) && Number.isFinite(Number(view.mapPin.lng))) {
+    view.mapPin = {
+      lat: Math.round(Number(view.mapPin.lat) * 100) / 100,
+      lng: Math.round(Number(view.mapPin.lng) * 100) / 100,
+      name: 'Approximate delivery area'
+    };
+  }
+  view.pickupPin = null;
+  view.paymentAudit = null;
+  view.momoSender = null;
+  for (const key of [
+    'paymentRef', 'momoRequestId', 'momoTransactionRef', 'momoReceipt',
+    'cashReceipt', 'cashReceived', 'changeGiven', 'momoRequestAt',
+    'momoAmount', 'momoRequestStatus', 'paidAt', 'verificationMethod'
+  ]) view[key] = null;
+  return view;
 }
 
 // Paginated, filtered order list. The default returns everything still in play
@@ -4726,7 +5236,10 @@ app.get('/api/orders', (req, res) => {
   if (rows.length > page.length && page.length) {
     res.set('X-Next-Cursor', new Date(page[page.length - 1].createdAt || Date.now()).toISOString());
   }
-  res.json(page.map(order => summary ? projectOrderSummary(order, viewer) : projectOrder(order, viewer)));
+  const projected = viewer === 'driver'
+    ? page.map(order => projectDriverOrder(order, auth.driver.id, summary)).filter(Boolean)
+    : page.map(order => summary ? projectOrderSummary(order, viewer) : projectOrder(order, viewer));
+  res.json(projected);
 });
 
 // Aggregate counters for the dashboard KPIs. These are computed over the whole
@@ -4807,11 +5320,16 @@ app.get('/api/orders/lookup/:code', requireRole('driver', 'admin'), (req, res) =
       success: false,
       multiple: true,
       message: `${matches.length} orders match that phone number. Use the exact Order ID instead.`,
-      orders: matches.map(o => projectOrder(o, req.auth.payload.role))
+      orders: matches.map(order => req.auth.payload.role === 'driver'
+        ? projectDriverOrder(order, req.auth.driver.id)
+        : projectOrder(order, 'admin')).filter(Boolean)
     });
   }
 
-  res.json({ success: true, order: projectOrder(matches[0], req.auth.payload.role) });
+  const orderView = req.auth.payload.role === 'driver'
+    ? projectDriverOrder(matches[0], req.auth.driver.id)
+    : projectOrder(matches[0], 'admin');
+  res.json({ success: true, order: orderView });
 });
 
 app.get('/api/orders/:id', (req, res) => {
@@ -4821,7 +5339,10 @@ app.get('/api/orders/:id', (req, res) => {
   if (!order) return res.status(404).json({ success: false, message: "Order not found" });
   if (!hasOrderAccess(order, req)) return res.status(403).json({ success: false, message: "Order access token required." });
   const viewer = viewerFromReq(req);
-  const view = projectOrder(order, viewer);
+  const view = viewer === 'driver'
+    ? projectDriverOrder(order, authenticate(req).driver.id)
+    : projectOrder(order, viewer);
+  if (!view) return res.status(404).json({ success: false, message: 'Order not found.' });
   // The customer who holds this order's access token is the one person who
   // must be able to read the handover PIN — otherwise they cannot tell the
   // rider the code when the food arrives.
@@ -4855,11 +5376,53 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-function calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup) {
-  if (!isDelivery) {
-    return { fee: 0, distanceKm: 0, discount: 0, baseFee: 0, mealCount: 0 };
+const deliveryDistanceCache = new Map();
+
+async function getDeliveryDistance(origin, destination) {
+  const straightDistanceKm = calculateDistanceKm(
+    Number(origin.lat), Number(origin.lng), Number(destination.lat), Number(destination.lng)
+  );
+  const straightRounded = Math.max(0.5, Math.round(straightDistanceKm * 10) / 10);
+  const routingBase = String(process.env.DELIVERY_ROUTING_URL === undefined
+    ? 'https://router.project-osrm.org'
+    : process.env.DELIVERY_ROUTING_URL).replace(/\/+$/, '');
+  if (!routingBase || straightDistanceKm < 0.05) {
+    return { distanceKm: straightRounded, source: 'straight-line-estimate' };
   }
-  const mealCount = (items || []).reduce((sum, i) => sum + (Number(i.quantity) || 1), 0);
+
+  const key = [origin.lat, origin.lng, destination.lat, destination.lng]
+    .map(value => Number(value).toFixed(5)).join(',');
+  const cached = deliveryDistanceCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  try {
+    const url = `${routingBase}/route/v1/driving/${Number(origin.lng)},${Number(origin.lat)};${Number(destination.lng)},${Number(destination.lat)}?overview=false`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(2500) });
+    if (!response.ok) throw new Error(`routing provider returned HTTP ${response.status}`);
+    const data = await response.json();
+    const route = data.routes && data.routes[0];
+    const roadDistanceKm = Number(route && route.distance) / 1000;
+    if (!Number.isFinite(roadDistanceKm) || roadDistanceKm <= 0) {
+      throw new Error('routing provider returned no usable route');
+    }
+    const value = { distanceKm: Math.max(0.5, Math.round(roadDistanceKm * 10) / 10), source: 'road-route' };
+    if (deliveryDistanceCache.size >= 500) deliveryDistanceCache.clear();
+    deliveryDistanceCache.set(key, { value, expiresAt: Date.now() + 10 * 60 * 1000 });
+    return value;
+  } catch (error) {
+    console.warn('[delivery-pricing] road distance unavailable; using straight-line estimate:', error.message);
+    return { distanceKm: straightRounded, source: 'straight-line-estimate' };
+  }
+}
+
+async function calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup) {
+  if (!isDelivery) {
+    return { fee: 0, distanceKm: 0, distanceSource: 'not-applicable', discount: 0, baseFee: 0, mealCount: 0, ratePerKm: 0 };
+  }
+  const mealCount = Math.max(1, (items || []).reduce((sum, item) => {
+    const quantity = Math.floor(Number(item.quantity));
+    return sum + (Number.isFinite(quantity) && quantity > 0 ? quantity : 1);
+  }, 0));
   const pickup = sharedPickup
     && Number.isFinite(Number(sharedPickup.lat))
     && Number.isFinite(Number(sharedPickup.lng))
@@ -4874,14 +5437,50 @@ function calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup) {
     : pickup;
   const destLat = Number(destination.lat);
   const destLng = Number(destination.lng);
-  const rawDist = calculateDistanceKm(originLat, originLng, destLat, destLng);
-  const distanceKm = Math.max(0.5, Math.round(rawDist * 10) / 10);
+  const distance = await getDeliveryDistance(
+    { lat: originLat, lng: originLng },
+    { lat: destLat, lng: destLng }
+  );
+  const distanceKm = distance.distanceKm;
   const ratePerKm = mealCount >= 4 ? 2 : mealCount === 3 ? 4 : mealCount === 2 ? 6 : 8;
-  const baseFee = Math.round(distanceKm * ratePerKm * 100) / 100;
+  const baseFee = Math.round(distanceKm * ratePerKm * mealCount * 100) / 100;
   const discount = 0;
   const fee = baseFee;
-  return { fee, distanceKm, discount, baseFee, mealCount };
+  return { fee, distanceKm, distanceSource: distance.source, discount, baseFee, mealCount, ratePerKm };
 }
+
+app.get('/api/delivery/quote', rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many quote requests. Please wait a moment and retry.' }
+}), async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const mealCount = Math.floor(Number(req.query.meals));
+  if (!Number.isFinite(lat) || Math.abs(lat) > 90
+      || !Number.isFinite(lng) || Math.abs(lng) > 180
+      || !Number.isInteger(mealCount) || mealCount < 1 || mealCount > 150) {
+    return res.status(400).json({ success: false, message: 'A valid delivery pin and meal quantity are required.' });
+  }
+  const db = loadDatabase();
+  const session = (db.sessions && db.sessions[0]) || {};
+  const pickup = session.pickupPoint || (db.settings && db.settings.pickup) || DEFAULT_PICKUP_POINT;
+  const quote = await calculateOrderDelivery(true, [{ quantity: mealCount }], { lat, lng }, pickup);
+  return res.json({
+    success: true,
+    quote: {
+      distanceKm: quote.distanceKm,
+      distanceSource: quote.distanceSource,
+      mealCount: quote.mealCount,
+      ratePerKm: quote.ratePerKm,
+      baseFee: quote.baseFee,
+      discount: quote.discount,
+      finalFee: quote.fee
+    }
+  });
+});
 
 function normalizeOrderItems(db, submittedItems) {
   if (!Array.isArray(submittedItems) || submittedItems.length === 0 || submittedItems.length > 30) {
@@ -4991,7 +5590,7 @@ app.post('/api/orders', async (req, res) => {
     : (sharedPin.name || DEFAULT_PICKUP_POINT.name);
 
   // The server owns delivery pricing so a client cannot submit a lower fee.
-  const deliveryCalc = calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup);
+  const deliveryCalc = await calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup);
   const deliveryFee = deliveryCalc.fee;
   const total = Math.round((subtotal + deliveryFee) * 100) / 100;
 
@@ -5023,6 +5622,9 @@ app.post('/api/orders', async (req, res) => {
     subtotal,
     deliveryFee,
     deliveryDistanceKm: deliveryCalc.distanceKm,
+    deliveryDistanceSource: deliveryCalc.distanceSource,
+    deliveryRatePerKmPerMeal: deliveryCalc.ratePerKm,
+    deliveryMealCount: deliveryCalc.mealCount,
     deliveryDiscount: deliveryCalc.discount,
     deliveryBaseFee: deliveryCalc.baseFee,
     total,
@@ -5098,7 +5700,7 @@ app.post('/api/orders', async (req, res) => {
   });
 });
 
-app.patch('/api/orders/:id/edit', (req, res) => {
+app.patch('/api/orders/:id/edit', async (req, res) => {
   const db = loadDatabase();
   const id = normalizeOrderId(req.params.id);
   const order = db.orders.find(o => String(o.id).toUpperCase() === id);
@@ -5160,7 +5762,7 @@ app.patch('/api/orders/:id/edit', (req, res) => {
   const orderLocation = isDelivery
     ? cleanString(body.location || customerPin.name || 'Customer selected location', 200)
     : (sharedPin.name || DEFAULT_PICKUP_POINT.name);
-  const deliveryCalc = calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup);
+  const deliveryCalc = await calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup);
   const requestedNetwork = normalizeNetwork(body.paymentNetwork);
   const network = requestedNetwork === 'cash' ? '' : (requestedNetwork || normalizeNetwork(body.payment));
   const payment = cleanString(body.payment || (network ? MOMO_NETWORKS[network].label : 'MTN Mobile Money'), 80);
@@ -5176,6 +5778,9 @@ app.patch('/api/orders/:id/edit', (req, res) => {
   order.subtotal = subtotal;
   order.deliveryFee = deliveryCalc.fee;
   order.deliveryDistanceKm = deliveryCalc.distanceKm;
+  order.deliveryDistanceSource = deliveryCalc.distanceSource;
+  order.deliveryRatePerKmPerMeal = deliveryCalc.ratePerKm;
+  order.deliveryMealCount = deliveryCalc.mealCount;
   order.deliveryDiscount = deliveryCalc.discount;
   order.deliveryBaseFee = deliveryCalc.baseFee;
   order.total = Math.round((subtotal + deliveryCalc.fee) * 100) / 100;

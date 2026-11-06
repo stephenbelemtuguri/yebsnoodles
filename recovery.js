@@ -4,13 +4,8 @@
 //   import { openRecovery } from './recovery.js';
 //   openRecovery('admin');   // or 'driver'
 //
-// The dialog talks to:
-//   POST /api/auth/recovery/start   { role, identifier }
-//   POST /api/auth/recovery/verify  { role, identifier, code, password }
-//
-// A code is delivered through configured channels. If admin delivery is
-// unavailable, the owner can retrieve its short-lived code from restricted
-// hosting logs; codes are never exposed in production API responses.
+// Admin recovery uses a one-time code. Driver recovery uses a live-camera
+// face-and-phone check with administrator review when the local model is unsure.
 
 const STYLE_ID = 'yebs-recovery-styles';
 
@@ -136,25 +131,25 @@ function openDriverRecovery() {
       <div class="yebs-recovery-head">
         <button type="button" class="yebs-recovery-close" data-close aria-label="Close">&times;</button>
         <h3>Recover your driver password</h3>
-        <p>YEBS reviews your live selfie against your driver registration photo. No SMS code or external face service is used.</p>
+        <p>YEBS checks your registration phone, face match, and live-camera challenge. Face models run on the YEBS server; no SMS code or biometric provider is used.</p>
       </div>
       <div class="yebs-recovery-body">
         <section data-request>
           <label class="yebs-recovery-label" for="yebsDriverRecoveryPhone">Phone number used for registration</label>
           <input class="yebs-recovery-input" id="yebsDriverRecoveryPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="e.g. 0241234567" required>
-          <p class="yebs-recovery-note">An administrator will compare the live camera photo below with your stored registration photo. Your selfie is kept in YEBS's database only while the request is open and is deleted after a decision or expiry.</p>
+          <p class="yebs-recovery-note">Look straight at the camera, then slowly turn your head left and right when prompted. Strong matches can reset automatically; uncertain checks are sent for administrator review. Recovery photos are deleted after approval, decision, or expiry.</p>
           <div class="webcam-stage" style="position:relative;min-height:220px;background:#102b22;border-radius:12px;overflow:hidden;">
             <video data-video autoplay playsinline muted style="display:none;width:100%;max-height:300px;object-fit:cover;"></video>
             <canvas data-canvas hidden></canvas>
             <img data-preview alt="Live selfie preview" style="display:none;width:100%;max-height:300px;object-fit:cover;">
-            <div data-camera-prompt style="min-height:220px;display:grid;place-items:center;padding:20px;color:#fff;text-align:center;">Use the secure live camera to capture your face.</div>
+            <div data-camera-prompt style="min-height:220px;display:grid;place-items:center;padding:20px;color:#fff;text-align:center;">Use the secure live camera for a short face-and-head-turn check.</div>
           </div>
           <div style="display:flex;gap:8px;margin:10px 0;">
             <button type="button" class="yebs-recovery-btn" data-camera style="flex:1;">Start live camera</button>
-            <button type="button" class="yebs-recovery-btn" data-capture disabled style="flex:1;">Capture selfie</button>
+            <button type="button" class="yebs-recovery-btn" data-capture disabled style="flex:1;">Start face check</button>
           </div>
           <button type="button" class="yebs-recovery-link" data-retake hidden>Retake selfie</button>
-          <button type="button" class="yebs-recovery-btn" data-submit disabled>Submit for administrator review</button>
+          <button type="button" class="yebs-recovery-btn" data-submit disabled>Verify face and phone</button>
         </section>
         <section data-review hidden>
           <p class="yebs-recovery-note" data-review-message role="status" aria-live="polite"></p>
@@ -162,7 +157,7 @@ function openDriverRecovery() {
           <button type="button" class="yebs-recovery-link" data-restart>Start a new request</button>
         </section>
         <form data-password novalidate hidden>
-          <p class="yebs-recovery-note">Your identity was approved by an administrator. Choose a new password to complete recovery.</p>
+          <p class="yebs-recovery-note">Your phone and identity check are approved. Choose a new password to complete recovery.</p>
           <label class="yebs-recovery-label" for="yebsDriverNewPassword">New password</label>
           <input class="yebs-recovery-input" id="yebsDriverNewPassword" type="password" minlength="8" autocomplete="new-password" required>
           <label class="yebs-recovery-label" for="yebsDriverConfirmPassword">Confirm new password</label>
@@ -197,6 +192,7 @@ function openDriverRecovery() {
   const status = $('[data-status]');
   let cameraStream = null;
   let selfiePhoto = '';
+  let selfieFrames = [];
   let requestId = '';
   let accessToken = '';
   let pollTimer = null;
@@ -253,10 +249,9 @@ function openDriverRecovery() {
     }
   }
 
-  function captureSelfie() {
+  function captureFrame() {
     if (!video.videoWidth || !video.videoHeight) {
-      setStatus('Wait for the camera image, then capture your selfie.', 'error');
-      return;
+      throw new Error('Wait for the camera image before continuing.');
     }
     const side = Math.min(video.videoWidth, video.videoHeight);
     const left = Math.floor((video.videoWidth - side) / 2);
@@ -265,7 +260,33 @@ function openDriverRecovery() {
     canvas.height = 360;
     const context = canvas.getContext('2d');
     context.drawImage(video, left, top, side, side, 0, 0, 360, 360);
-    selfiePhoto = canvas.toDataURL('image/jpeg', 0.62);
+    return canvas.toDataURL('image/jpeg', 0.62);
+  }
+
+  async function captureSelfie() {
+    captureButton.disabled = true;
+    cameraButton.disabled = true;
+    retakeButton.hidden = true;
+    selfieFrames = [];
+    try {
+      cameraPrompt.style.display = 'grid';
+      cameraPrompt.textContent = 'Look straight at the camera and hold still…';
+      selfieFrames.push(captureFrame());
+      await new Promise(resolve => { setTimeout(resolve, 900); });
+      cameraPrompt.textContent = 'Turn your head slightly to the left and hold…';
+      await new Promise(resolve => { setTimeout(resolve, 900); });
+      selfieFrames.push(captureFrame());
+      await new Promise(resolve => { setTimeout(resolve, 900); });
+      cameraPrompt.textContent = 'Now turn your head slightly to the right and hold…';
+      selfieFrames.push(captureFrame());
+    } catch (error) {
+      selfieFrames = [];
+      captureButton.disabled = false;
+      cameraButton.disabled = false;
+      setStatus(error.message || 'Could not capture the face check. Try again.', 'error');
+      return;
+    }
+    selfiePhoto = selfieFrames[0];
     preview.src = selfiePhoto;
     preview.style.display = 'block';
     video.style.display = 'none';
@@ -273,10 +294,10 @@ function openDriverRecovery() {
     stopCamera();
     captureButton.disabled = true;
     cameraButton.disabled = true;
-    cameraButton.textContent = 'Live selfie captured';
+    cameraButton.textContent = 'Live face check captured';
     retakeButton.hidden = false;
     submitButton.disabled = !phoneInput.value.trim();
-    setStatus('Selfie captured. Check the preview before submitting.', 'ok');
+    setStatus('Face check captured. Review the preview before submitting.', 'ok');
   }
 
   async function pollReviewStatus() {
@@ -320,6 +341,7 @@ function openDriverRecovery() {
   });
   retakeButton.addEventListener('click', async () => {
     selfiePhoto = '';
+    selfieFrames = [];
     preview.style.display = 'none';
     retakeButton.hidden = true;
     submitButton.disabled = true;
@@ -337,7 +359,7 @@ function openDriverRecovery() {
     submitButton.textContent = 'Submitting securely…';
     setStatus('');
     try {
-      const { ok, data } = await postJson('/api/auth/driver-recovery', { phone, selfiePhoto });
+      const { ok, data } = await postJson('/api/auth/driver-recovery', { phone, selfiePhoto, selfieFrames });
       if (!ok || !data.success) {
         setStatus(data.message || 'Could not submit the recovery request. Try again.', 'error');
         return;
@@ -347,13 +369,15 @@ function openDriverRecovery() {
       requestPanel.hidden = true;
       reviewPanel.hidden = false;
       $('[data-review-message]').textContent = data.message;
-      $('[data-review-status]').textContent = 'Checking the request and waiting for administrator review…';
+      $('[data-review-status]').textContent = data.status === 'approved'
+        ? 'Face and registration phone verified. Preparing the password reset…'
+        : 'Checking the face result and, if needed, requesting administrator review…';
       pollReviewStatus();
     } catch (_) {
       setStatus('Cannot reach the YEBS server. Check your connection and try again.', 'error');
     } finally {
       submitButton.disabled = false;
-      submitButton.textContent = 'Submit for administrator review';
+      submitButton.textContent = 'Verify face and phone';
     }
   });
   $('[data-restart]').addEventListener('click', () => {
@@ -361,6 +385,7 @@ function openDriverRecovery() {
     requestId = '';
     accessToken = '';
     selfiePhoto = '';
+    selfieFrames = [];
     reviewPanel.hidden = true;
     passwordForm.hidden = true;
     requestPanel.hidden = false;

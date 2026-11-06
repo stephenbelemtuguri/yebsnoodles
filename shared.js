@@ -2809,11 +2809,11 @@ export async function apiVerifyPin(orderId, pin) {
 }
 
 /**
- * Calculate delivery price per kilometer by meal count:
- *   - 1 meal: GH₵8.00/km
- *   - 2 meals: GH₵6.00/km
- *   - 3 meals: GH₵4.00/km
- *   - 4 or more meals: GH₵2.00/km
+ * Calculate delivery price using the per-meal rate for the total meal quantity:
+ *   - 1 meal: GH₵8.00/km per meal
+ *   - 2 meals: GH₵6.00/km per meal
+ *   - 3 meals: GH₵4.00/km per meal
+ *   - 4 or more meals: GH₵2.00/km per meal
  * If collection: GH₵0.00 (Free).
  */
 export function calculateDeliveryQuote(distanceKm, mealCount, isDelivery) {
@@ -2828,19 +2828,35 @@ export function calculateDeliveryQuote(distanceKm, mealCount, isDelivery) {
     };
   }
   const dist = Math.max(0.5, Math.round(Number(distanceKm || 2.5) * 10) / 10);
-  const count = Number(mealCount || 0);
+  const count = Math.max(1, Math.floor(Number(mealCount) || 1));
   const ratePerKm = count >= 4 ? 2 : count === 3 ? 4 : count === 2 ? 6 : 8;
-  const baseFee = Math.round(dist * ratePerKm * 100) / 100;
+  const baseFee = Math.round(dist * ratePerKm * count * 100) / 100;
   const finalFee = baseFee;
   return {
     distanceKm: dist,
     ratePerKm,
+    mealCount: count,
     baseFee,
     discount: 0,
     finalFee,
-    mealCount: count,
-    nextTierMessage: `GH₵${ratePerKm.toFixed(2)} per km for ${count} meal${count === 1 ? '' : 's'}`
+    nextTierMessage: `GH₵${ratePerKm.toFixed(2)}/km per meal × ${count} meal${count === 1 ? '' : 's'}`
   };
+}
+
+export async function apiFetchDeliveryQuote(lat, lng, mealCount) {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lng: String(lng),
+    meals: String(mealCount)
+  });
+  const response = await fetch(`${API_BASE}/api/delivery/quote?${params}`, {
+    headers: { Accept: 'application/json' }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.success || !data.quote) {
+    throw new Error(data.message || 'Could not calculate the delivery quote.');
+  }
+  return data.quote;
 }
 
 export async function apiClaimOrder(orderId) {

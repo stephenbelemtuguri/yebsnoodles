@@ -36,6 +36,62 @@
   const input = form.querySelector('input');
   const messages = panel.querySelector('.yebs-portals-ai-messages');
 
+  function authToken() {
+    return role === 'admin'
+      ? sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || ''
+      : role === 'driver'
+        ? sessionStorage.getItem('yebs_driver_token') || localStorage.getItem('yebs_driver_token_persist') || ''
+        : '';
+  }
+
+  function showPendingAction(action) {
+    const card = document.createElement('div');
+    card.className = 'yebs-portals-ai-action';
+    const title = document.createElement('strong');
+    title.textContent = action.title || 'Review proposed action';
+    const summary = document.createElement('p');
+    summary.textContent = action.summary || 'The assistant is proposing a change.';
+    const controls = document.createElement('div');
+    controls.className = 'yebs-portals-ai-action-controls';
+    const confirmButton = document.createElement('button');
+    confirmButton.type = 'button';
+    confirmButton.textContent = 'Confirm';
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.textContent = 'Cancel';
+    controls.append(confirmButton, cancelButton);
+    card.append(title, summary, controls);
+    messages.appendChild(card);
+    messages.scrollTop = messages.scrollHeight;
+
+    async function resolve(confirmed) {
+      confirmButton.disabled = true;
+      cancelButton.disabled = true;
+      try {
+        const response = await fetch('/api/ai/actions/' + encodeURIComponent(action.id) + '/confirm', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + authToken()
+          },
+          body: JSON.stringify({
+            confirmationToken: action.confirmationToken,
+            confirmed
+          })
+        });
+        const result = await response.json();
+        card.remove();
+        add(result.message || (response.ok ? 'Action completed.' : 'The action could not be completed.'), false);
+      } catch (_) {
+        confirmButton.disabled = false;
+        cancelButton.disabled = false;
+        add('Could not confirm the action. Please check your connection and try again.', false);
+      }
+    }
+    confirmButton.addEventListener('click', () => resolve(true));
+    cancelButton.addEventListener('click', () => resolve(false));
+  }
+
   function toggle(open) {
     panel.classList.toggle('open', open);
     launcher.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -65,11 +121,7 @@
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + (
-            role === 'admin' ? (sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '')
-              : role === 'driver' ? (sessionStorage.getItem('yebs_driver_token') || localStorage.getItem('yebs_driver_token_persist') || '')
-                : ''
-          )
+          'Authorization': 'Bearer ' + authToken()
         },
         body: JSON.stringify({ message: question, role, history: history.slice(-10) })
       });
@@ -78,6 +130,7 @@
       const answer = data.reply || [data.message, data.reason].filter(Boolean).join(' ') ||
         'The AI service is unavailable. Please try again in a moment.';
       add(answer, false);
+      if (response.ok && data.pendingAction) showPendingAction(data.pendingAction);
       if (response.ok && data.success !== false) {
         history.push({ role: 'user', content: question }, { role: 'assistant', content: answer });
       }

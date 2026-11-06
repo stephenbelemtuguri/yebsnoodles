@@ -779,6 +779,16 @@
     <div class="driver-grid">
       <!-- Left Column: Package Accounting List with Customer Details, Phone, and 4-Digit PIN Security -->
       <div>
+        <div class="card" id="driverActivityCard">
+          <div class="card-title" style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <span>🧭 My activity &amp; continue delivery</span>
+            <button type="button" class="btn btn-sm" id="refreshDriverActivityBtn" style="background:#f4f1e8; color:#173d30; border:1px solid #d8ddcf;">Refresh</button>
+          </div>
+          <div id="driverActivityLocation" style="font-size:0.78rem; color:var(--muted); margin-bottom:8px;">Loading your last known location…</div>
+          <button type="button" id="resumeDriverOrderBtn" class="btn btn-orange btn-sm" style="display:none; margin-bottom:8px;">Continue last active delivery</button>
+          <div id="driverActivityStatus" role="status" aria-live="polite" style="font-size:0.78rem; color:var(--muted); margin-bottom:6px;"></div>
+          <ol id="driverActivityList" style="margin:0; padding-left:20px; font-size:0.78rem; line-height:1.55; max-height:190px; overflow:auto;"></ol>
+        </div>
         <div class="card">
           <div class="card-title">
             <span>📦 Session Packages & Customers</span>
@@ -818,6 +828,9 @@
 
           <!-- Leaflet styled with Free Google Maps Roadmap Tiles -->
           <div id="driverGoogleMap"></div>
+          <div style="font-size:0.76rem; color:var(--muted); margin-top:6px;">
+            Available orders stay on the map; unclaimed delivery pins are approximate. Distance from your live GPS helps you compare nearby orders. Customer name, exact address, and phone appear after you claim.
+          </div>
 
           <div style="font-size:0.78rem; color:var(--muted); margin-top:8px; margin-bottom:4px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;">
             <span>🟢 Kitchen: Adabraka</span>
@@ -1015,6 +1028,7 @@
       isKitchenOpen,
       DEFAULT_PICKUP_POINTS,
       RESTAURANT_COORDS,
+      calculateDistanceKm,
       onSyncEvent,
       playChime,
       playVoiceArrivalAnnouncement,
@@ -1126,6 +1140,89 @@
     const riderNameDisplay = document.getElementById('riderNameDisplay');
     const kitchenStatusText = document.getElementById('kitchenStatusText');
     const closingCountdownClock = document.getElementById('closingCountdownClock');
+    const driverActivityLocation = document.getElementById('driverActivityLocation');
+    const driverActivityStatus = document.getElementById('driverActivityStatus');
+    const driverActivityList = document.getElementById('driverActivityList');
+    const resumeDriverOrderBtn = document.getElementById('resumeDriverOrderBtn');
+    const refreshDriverActivityBtn = document.getElementById('refreshDriverActivityBtn');
+    let driverResumeOrderId = '';
+    let driverActivityRefreshTimer = null;
+
+    function renderDriverActivityEntries(entries) {
+      if (!driverActivityList) return;
+      driverActivityList.replaceChildren();
+      if (!entries || entries.length === 0) {
+        const empty = document.createElement('li');
+        empty.textContent = 'No delivery activity recorded yet.';
+        driverActivityList.appendChild(empty);
+        return;
+      }
+      entries.forEach(entry => {
+        const row = document.createElement('li');
+        const action = String(entry.action || 'ACTIVITY').replace(/_/g, ' ').toLowerCase();
+        const time = entry.timestamp && Number.isFinite(Date.parse(entry.timestamp))
+          ? new Date(entry.timestamp).toLocaleString()
+          : 'Time unavailable';
+        row.textContent = `${time} · ${action}${entry.entity && entry.entity !== 'DRIVER_PORTAL' ? ` · ${entry.entity}` : ''}`;
+        driverActivityList.appendChild(row);
+      });
+    }
+
+    async function refreshDriverActivity(resumeOnLoad = false) {
+      const token = sessionStorage.getItem('yebs_driver_token') || localStorage.getItem('yebs_driver_token_persist') || '';
+      if (!token || !driverActivityStatus) return;
+      try {
+        const response = await fetch('/api/drivers/me/activity?limit=40', {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+          cache: 'no-store'
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(data.message || 'Could not load delivery activity.');
+        driverResumeOrderId = data.resumeOrder && data.resumeOrder.id || '';
+        if (driverActivityLocation) {
+          const point = data.lastKnownLocation;
+          driverActivityLocation.textContent = point
+            ? `Last known location: ${Number(point.lat).toFixed(5)}, ${Number(point.lng).toFixed(5)}${point.updatedAt ? ` · updated ${new Date(point.updatedAt).toLocaleString()}` : ''}`
+            : 'No driver location has been saved yet. Allow GPS to save your location while working.';
+        }
+        if (resumeDriverOrderBtn) {
+          resumeDriverOrderBtn.style.display = driverResumeOrderId ? 'inline-flex' : 'none';
+          resumeDriverOrderBtn.textContent = driverResumeOrderId
+            ? `Continue delivery #${driverResumeOrderId} · ${data.resumeOrder.status}`
+            : 'No active delivery to resume';
+        }
+        renderDriverActivityEntries(data.activity);
+        driverActivityStatus.textContent = `${(data.activeOrders || []).length} active assigned delivery(ies).`;
+
+        if (resumeOnLoad && data.resumeOrder) {
+          navigationOrderId = data.resumeOrder.id;
+          sessionStorage.setItem('yebs_driver_navigation_order', navigationOrderId);
+          await apiFetchOrder(navigationOrderId);
+          renderSessionPackages();
+          navigateToOrder(navigationOrderId);
+        }
+      } catch (error) {
+        driverActivityStatus.textContent = `Activity unavailable: ${error.message}`;
+      }
+    }
+
+    if (refreshDriverActivityBtn) {
+      refreshDriverActivityBtn.addEventListener('click', () => refreshDriverActivity(false));
+    }
+    if (resumeDriverOrderBtn) {
+      resumeDriverOrderBtn.addEventListener('click', async () => {
+        if (!driverResumeOrderId) return;
+        const order = await apiFetchOrder(driverResumeOrderId);
+        if (!order) {
+          driverActivityStatus.textContent = 'Could not restore this delivery. Refresh the dashboard and try again.';
+          return;
+        }
+        navigationOrderId = order.id;
+        sessionStorage.setItem('yebs_driver_navigation_order', order.id);
+        renderSessionPackages();
+        navigateToOrder(order.id);
+      });
+    }
 
     // Order ID handover lookup
     const driverLookupInput = document.getElementById('driverLookupInput');
@@ -1531,14 +1628,10 @@
 
     function renderDriverMapOrders(orders) {
       if (!map || !orderMarkersLayer || typeof L === 'undefined') return;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
       const driver = getCurrentDriver();
       const availableToday = (orders || []).filter(order => {
-        const createdAt = new Date(order.createdAt || 0);
-        const isToday = Number.isFinite(createdAt.getTime()) && createdAt >= today;
         const status = String(order.status || '').toLowerCase();
-        if (!isToday || ['cancelled', 'delivered'].includes(status)
+        if (['cancelled', 'delivered'].includes(status)
           || (order.cancellation && order.cancellation.status === 'pending')) return false;
         const assignedId = order.driverId || (order.driver && order.driver.id);
         const assignedName = order.driverName || (order.driver && order.driver.name);
@@ -1565,11 +1658,12 @@
           sessionStorage.removeItem('yebs_driver_navigation_order');
         }
       }
-      const visibleOrders = navigationOrderId
-        ? availableToday.filter(order => order.id === navigationOrderId)
-        : availableToday;
+      const visibleOrders = availableToday;
       const signature = JSON.stringify({
         selected: navigationOrderId,
+        driverLocationCell: hasLiveGpsFix
+          ? `${currentCoords.lat.toFixed(2)},${currentCoords.lng.toFixed(2)}`
+          : 'gps-unavailable',
         orders: visibleOrders.map(order => {
           const target = destinationForOrder(order);
           return [
@@ -1601,7 +1695,14 @@
         title.textContent = `Order ${order.id}`;
         popup.appendChild(title);
         const details = document.createElement('div');
-        details.textContent = `${order.customer || 'Customer'} · ${target.name || order.location || 'Delivery point'}`;
+        const isUnassigned = !(order.driverId || (order.driver && order.driver.id));
+        const itemCount = (order.items || []).reduce((total, item) => total + (Number(item.quantity) || 0), 0);
+        const distanceText = hasLiveGpsFix
+          ? `${calculateDistanceKm(currentCoords.lat, currentCoords.lng, target.lat, target.lng).toFixed(1)} km from you (approx.)`
+          : 'Enable GPS to see approximate distance';
+        details.textContent = isUnassigned
+          ? `${itemCount} meal(s) · ${distanceText} · claim to view customer details`
+          : `${order.customer || 'Customer'} · ${target.name || order.location || 'Delivery point'}`;
         popup.appendChild(details);
         const status = document.createElement('div');
         status.textContent = `Status: ${String(order.status || 'pending').toUpperCase()}`;
@@ -1612,7 +1713,7 @@
         action.className = 'driver-map-select-order';
         action.textContent = isSelected
           ? 'Selected · show route'
-          : (order.driverId || (order.driver && order.driver.id) ? 'Select this delivery' : 'Accept & navigate');
+          : (order.driverId || (order.driver && order.driver.id) ? 'Select this delivery' : 'Claim & navigate');
         action.style.cssText = 'border:0;border-radius:6px;padding:7px 10px;background:#173d30;color:#fff;font-weight:700;cursor:pointer;';
         action.addEventListener('click', async () => {
           if (isSelected) {
@@ -1629,7 +1730,7 @@
             const result = await apiClaimOrder(order.id);
             if (!result || !result.success) {
               action.disabled = false;
-              action.textContent = 'Accept & navigate';
+              action.textContent = 'Claim & navigate';
               alert((result && result.message) || 'Could not accept this delivery.');
               return;
             }
@@ -1650,6 +1751,7 @@
         driverMarker.setLatLng([currentCoords.lat, currentCoords.lng]);
         driverMarker.setOpacity(1);
       }
+      renderDriverMapOrders(getOrders());
       const driver = getCurrentDriver();
       updateDriverLocationOnAllOrders(driver.name, {
         lat: currentCoords.lat,
@@ -1793,6 +1895,14 @@
       const availableOrders = activeOrders.filter(o => {
         const hasDriver = o.driverId || (o.driver && o.driver.name);
         return !hasDriver && o.status !== 'delivered';
+      }).sort((a, b) => {
+        if (!hasLiveGpsFix) return 0;
+        const aTarget = destinationForOrder(a);
+        const bTarget = destinationForOrder(b);
+        if (!aTarget) return 1;
+        if (!bTarget) return -1;
+        return calculateDistanceKm(currentCoords.lat, currentCoords.lng, aTarget.lat, aTarget.lng)
+          - calculateDistanceKm(currentCoords.lat, currentCoords.lng, bTarget.lat, bTarget.lng);
       });
       renderDriverMapOrders(orders);
 
@@ -1828,6 +1938,9 @@
         const isVerified = order.verifiedByDriver || order.status === 'delivered';
         const isDirect = order.fulfilment === 'Delivery';
         const orderDestination = destinationForOrder(order);
+        const proximityKm = hasLiveGpsFix && orderDestination
+          ? calculateDistanceKm(currentCoords.lat, currentCoords.lng, orderDestination.lat, orderDestination.lng)
+          : null;
         const isMyOrder = myOrders.some(m => m.id === order.id);
         const isUnassigned = availableOrders.some(a => a.id === order.id);
         const assignedDriverName = order.driverName || (order.driver && order.driver.name) || '';
@@ -1841,6 +1954,9 @@
             <div class="package-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
               <div style="display:flex; align-items:center; gap:8px;">
                 <span class="package-order-id">#${order.id}</span>
+                ${isUnassigned && proximityKm !== null
+                  ? `<span class="badge" style="background:#eff6ff; color:#1d4ed8; font-size:0.68rem; font-weight:800;">~${proximityKm.toFixed(1)} km away · approximate</span>`
+                  : ''}
                 ${isDirect
                   ? `<span class="badge" style="background:#ffedd5; color:#c2410c; font-size:0.7rem; font-weight:800;">🚚 DIRECT CUSTOMER DELIVERY</span>`
                   : `<span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.7rem; font-weight:800;">🏢 PICKUP POINT</span>`
@@ -1854,14 +1970,16 @@
             <!-- Customer Details & Number -->
             <div class="package-cust-line">
               <span>👤 <strong>${order.customer}</strong></span>
-              <a href="${formatTelHref(order.phone)}" class="package-phone">📞 ${order.phone}</a>
-              <a href="${formatWhatsAppUrl(order.phone, `Hello ${order.customer}! I am your YEBS driver with order #${order.id}.`)}" target="_blank" style="color:#16a34a; font-size:0.85rem; text-decoration:none; font-weight:700;">💬 WhatsApp</a>
+              ${isMyOrder && order.phone ? `
+                <a href="${formatTelHref(order.phone)}" class="package-phone">📞 ${order.phone}</a>
+                <a href="${formatWhatsAppUrl(order.phone, `Hello ${order.customer}! I am your YEBS driver with order #${order.id}.`)}" target="_blank" rel="noopener" style="color:#16a34a; font-size:0.85rem; text-decoration:none; font-weight:700;">💬 WhatsApp</a>
+              ` : `<span style="font-size:0.78rem; color:#64748b;">Contact details available after you claim this order</span>`}
             </div>
 
             <!-- Delivery Location & GPS Navigation -->
             ${isDirect ? `
               <div style="margin:8px 0; padding:8px 10px; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; font-size:0.8rem;">
-                <div>📍 <strong>Customer Delivery Address:</strong> ${order.location || 'Direct address'}</div>
+                <div>📍 <strong>${isUnassigned ? 'Approximate delivery area:' : 'Customer Delivery Address:'}</strong> ${order.location || 'Direct address'}</div>
                 ${orderDestination ? `
                   <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
                     <button type="button" class="btn btn-sm go-to-delivery-btn" data-id="${order.id}" style="background:#ea580c; color:white; font-size:0.75rem; padding:4px 10px; border-radius:6px; font-weight:700;">
@@ -2452,6 +2570,10 @@
       startGpsStreaming();
       updateClosingTimeDisplay();
       renderSessionPackages();
+      void refreshDriverActivity(true);
+      if (!driverActivityRefreshTimer) {
+        driverActivityRefreshTimer = setInterval(() => void refreshDriverActivity(false), 30000);
+      }
       setTimeout(syncSharedPickupPoint, 400);
 
       // Keep the shared pickup point in step with admin/rider changes.
