@@ -714,6 +714,33 @@ export function connectStaffNotifications(token, onNotification) {
   return () => controller.abort();
 }
 
+function playStaffNotificationSound(role) {
+  const preference = role === "admin" ? "yebs_admin_sound" : "yebs_driver_sound";
+  if (localStorage.getItem(preference) === "false") return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const context = new AudioCtx();
+    const start = context.currentTime;
+    [role === "admin" ? 659.25 : 523.25, role === "admin" ? 880 : 659.25].forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(frequency, start + index * 0.16);
+      gain.gain.setValueAtTime(0.0001, start + index * 0.16);
+      gain.gain.exponentialRampToValueAtTime(0.12, start + index * 0.16 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + index * 0.16 + 0.22);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(start + index * 0.16);
+      oscillator.stop(start + index * 0.16 + 0.24);
+    });
+    window.setTimeout(() => context.close().catch(() => {}), 800);
+  } catch (error) {
+    console.warn("Could not play staff notification sound:", error.message);
+  }
+}
+
 function showStaffToast(notification) {
   let container = document.getElementById("yebsStaffToastStack");
   if (!container) {
@@ -786,9 +813,54 @@ export async function enableStaffPushNotifications(token) {
   return { success: true, message: "Background notifications are enabled on this device." };
 }
 
+export async function enableOrderPushNotifications(orderId, accessToken) {
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return { success: false, message: "This browser does not support background order notifications." };
+  }
+  if (!window.isSecureContext) {
+    return { success: false, message: "Order notifications require a secure HTTPS connection." };
+  }
+  if (!orderId || !accessToken) {
+    return { success: false, message: "The order tracking authorization is unavailable on this device." };
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    return { success: false, message: permission === "denied" ? "Notifications are blocked in browser settings." : "Notification permission was not granted." };
+  }
+
+  const keyResponse = await fetch(`${API_BASE}/api/push/public-key`, { cache: "no-store" });
+  const keyData = await keyResponse.json().catch(() => ({}));
+  if (!keyResponse.ok || !keyData.configured || !keyData.publicKey) {
+    return { success: false, message: keyData.message || "Background alerts are not configured on the server yet." };
+  }
+  await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+  const registration = await navigator.serviceWorker.ready;
+  const base64 = keyData.publicKey.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = "=".repeat((4 - base64.length % 4) % 4);
+  const applicationServerKey = Uint8Array.from(atob(base64 + padding), char => char.charCodeAt(0));
+  const subscription = await registration.pushManager.getSubscription()
+    || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+  const response = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/push-subscription`, {
+    method: "POST",
+    headers: {
+      "X-Order-Access-Token": accessToken,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(subscription)
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.success) {
+    throw new Error(result.message || `Could not enable order notifications (${response.status}).`);
+  }
+  return { success: true, message: "Delivery updates are enabled on this device." };
+}
+
 export function startStaffNotifications(role, token) {
   const stopStream = connectStaffNotifications(token, notification => {
     showStaffToast(notification);
+    if (notification && /new (yebs )?order|new delivery available|driver accepted order|payment (confirmed|verification failed|needs review)|needs verification/i.test(notification.title || '')) {
+      playStaffNotificationSound(role);
+    }
     if ("Notification" in window && Notification.permission === "granted" && document.visibilityState !== "visible") {
       try {
         navigator.serviceWorker.ready.then(registration => registration.showNotification(notification.title || "YEBS update", {

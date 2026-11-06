@@ -25,6 +25,7 @@ const media = require('./src/data/media');
 const { verifyDriverFace } = require('./src/services/driverFaceVerification');
 const { resolveAdminCredentialResetVersion } = require('./scripts/render-deploy-version');
 const messagingService = require('./src/services/messaging');
+const geminiModelService = require('./src/services/geminiModels');
 const pushPublicKey = String(process.env.YEBS_VAPID_PUBLIC_KEY || '').trim();
 const pushPrivateKey = String(process.env.YEBS_VAPID_PRIVATE_KEY || '').trim();
 const pushSubject = String(process.env.YEBS_VAPID_SUBJECT || 'mailto:support@yebsnoodles.com').trim();
@@ -92,10 +93,46 @@ app.use((req, res, next) => {
 });
 const PORT = process.env.PORT || 3000;
 const GEMINI_FALLBACK_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+const MAX_GEMINI_CHAT_MODELS = 5;
 const DB_FILE = process.env.DB_PATH
   ? path.resolve(process.env.DB_PATH)
   : path.join(__dirname, 'database.json');
 const SECRET_FILE = path.join(__dirname, '.auth-secret');
+
+async function getGeminiModelCandidates(apiKey, preferredModel = '') {
+  const configuredFallbacks = String(process.env.GEMINI_FALLBACK_MODELS || '')
+    .split(',')
+    .map(model => model.trim())
+    .filter(Boolean);
+  let discovered = [];
+  try {
+    discovered = await geminiModelService.listAvailableGeminiModels(apiKey);
+  } catch (error) {
+    console.warn('[ai] Gemini model discovery unavailable; using configured fallback models:', error.message);
+  }
+  return [...new Set([
+    preferredModel,
+    ...discovered,
+    ...configuredFallbacks,
+    ...GEMINI_FALLBACK_MODELS
+  ].filter(Boolean))];
+}
+
+async function fetchGeminiWithRetry(url, options, { attempts = 2, timeoutMs = 7000 } = {}) {
+  let response;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      response = await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
+      if (response.ok || ![408, 429, 500, 502, 503, 504].includes(response.status) || attempt === attempts) {
+        return response;
+      }
+    } catch (error) {
+      if (attempt === attempts) throw error;
+    }
+    await new Promise(resolve => { setTimeout(resolve, attempt * 500); });
+  }
+  return response;
+}
 
 app.use(cors());
 // Photos (driver live face photo + MoMo receipts) are sent as base64 data URLs,
@@ -285,10 +322,8 @@ General capability:
   if (geminiKey) {
     try {
       const configuredGeminiModel = String(process.env.GEMINI_MODEL || process.env.AI_MODEL || '').trim();
-      const geminiModels = [...new Set([
-        configuredGeminiModel,
-        ...GEMINI_FALLBACK_MODELS
-      ].filter(Boolean))];
+      const geminiModels = (await getGeminiModelCandidates(geminiKey, configuredGeminiModel))
+        .slice(0, MAX_GEMINI_CHAT_MODELS);
       const contents = suppliedHistory.slice(-10).filter(entry =>
         entry && typeof entry.content === 'string' && ['user', 'assistant', 'model'].includes(entry.role)
       ).map(entry => ({
@@ -325,7 +360,7 @@ General capability:
         for (let turn = 0; turn < 4 && !modelCompleted; turn++) {
         let response;
         try {
-          response = await fetch(geminiUrl, {
+          response = await fetchGeminiWithRetry(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
           body: JSON.stringify({
@@ -336,8 +371,7 @@ General capability:
               toolConfig: { functionCallingConfig: { mode: 'AUTO' } }
             } : {}),
             generationConfig: { temperature: 0.25, maxOutputTokens: 700 }
-          }),
-          signal: AbortSignal.timeout(7000)
+          })
           });
         } catch (error) {
           geminiFailureReason = error.name === 'TimeoutError' ? 'Gemini model request timed out.' : error.message;
@@ -1223,7 +1257,8 @@ function whatsappConfig() {
     phoneId: process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID ||
       process.env.META_WHATSAPP_PHONE_NUMBER_ID || process.env.META_PHONE_NUMBER_ID || '',
     to: String(process.env.WHATSAPP_TO || process.env.YEBS_WHATSAPP_TO || '233559103452').replace(/[^\d]/g, ''),
-    version: process.env.WHATSAPP_API_VERSION || 'v20.0'
+    version: process.env.WHATSAPP_API_VERSION || 'v20.0',
+    evolutionConfigured: messagingService.isEvolutionConfigured()
   };
 }
 
@@ -1257,6 +1292,22 @@ function callmebotConfig() {
 async function sendOwnerWhatsApp(text) {
   const cfg = whatsappConfig();
   const results = [];
+
+  if (cfg.evolutionConfigured) {
+    let delivery;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      delivery = await messagingService.sendEvolutionWhatsApp(cfg.to, text);
+      if (delivery.success) {
+        return { ok: true, provider: delivery.provider, providerId: delivery.providerId };
+      }
+      const retryable = !delivery.status || delivery.status === 408 || delivery.status === 429 || delivery.status >= 500;
+      if (!retryable || attempt === 3) break;
+      await new Promise(resolve => { setTimeout(resolve, attempt * 1000); });
+    }
+    results.push('evolution: ' + (delivery && delivery.error || 'message delivery failed'));
+  } else {
+    results.push('evolution: not-configured (set EVOLUTION_API_URL, EVOLUTION_API_KEY, and EVOLUTION_INSTANCE)');
+  }
 
   // 1. Official WhatsApp Cloud API (Meta business number) when configured.
   if (cfg.token && cfg.phoneId) {
@@ -1392,15 +1443,17 @@ function whatsappFallbackUrl(text, to) {
 function whatsappReadiness() {
   const cfg = whatsappConfig();
   const bot = callmebotConfig();
-  const provider = (cfg.token && cfg.phoneId)
+  const provider = cfg.evolutionConfigured
+    ? 'evolution-api'
+    : ((cfg.token && cfg.phoneId)
     ? 'whatsapp-cloud'
-    : ((bot.apiKey && bot.phone) ? 'callmebot' : null);
+    : ((bot.apiKey && bot.phone) ? 'callmebot' : null));
   return { configured: Boolean(provider), provider, to: cfg.to };
 }
 
-function notificationView(entry) {
+function notificationView(entry, { includeFallback = true } = {}) {
   if (!entry) return null;
-  return {
+  const view = {
     id: entry.id,
     kind: entry.kind || 'order',
     status: entry.status,
@@ -1408,9 +1461,10 @@ function notificationView(entry) {
     reason: entry.reason || null,
     createdAt: entry.createdAt || null,
     sentAt: entry.sentAt || null,
-    autoSent: entry.status === 'sent',
-    fallbackUrl: entry.fallbackUrl || whatsappFallbackUrl(entry.message || '')
+    autoSent: entry.status === 'sent'
   };
+  if (includeFallback) view.fallbackUrl = entry.fallbackUrl || whatsappFallbackUrl(entry.message || '');
+  return view;
 }
 
 // Register the message before the response is sent so the client can poll it
@@ -1464,7 +1518,10 @@ async function deliverNotification(entryId) {
   } catch (err) {
     console.warn('[whatsapp] notification ledger save failed:', err.message);
   }
-  pushOrderUpdate(entry.orderId, { type: 'notification', notification: notificationView(entry) });
+  pushOrderUpdate(entry.orderId, {
+    type: 'notification',
+    notification: notificationView(entry, { includeFallback: entry.kind !== 'order' })
+  });
   return entry;
 }
 
@@ -1592,7 +1649,7 @@ app.get('/api/orders/:id/notification', (req, res) => {
   const entries = (db.notifications || [])
     .filter(n => String(n.orderId).toUpperCase() === order.id.toUpperCase() && (!kind || (n.kind || 'order') === kind))
     .slice(0, 5)
-    .map(notificationView);
+    .map(entry => notificationView(entry, { includeFallback: entry.kind !== 'order' }));
   res.json({
     success: true,
     notification: entries[0] || null,
@@ -1725,25 +1782,38 @@ Verified business facts:
 Current available menu: ${menu || 'No current menu items are available in the database.'}
 Recent orders verified against this WhatsApp number: ${JSON.stringify(customerOrders)}
 Customer message: ${message}`;
-  const model = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST',
-    headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.35, maxOutputTokens: 500 }
-    }),
-    signal: AbortSignal.timeout(15000)
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error((payload.error && payload.error.message) || `Gemini returned HTTP ${response.status}`);
+  const models = (await getGeminiModelCandidates(apiKey, process.env.GEMINI_MODEL || ''))
+    .slice(0, 3);
+  let lastError = null;
+  for (const model of models) {
+    try {
+      const response = await fetchGeminiWithRetry(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.35, maxOutputTokens: 500 }
+          })
+        },
+        { timeoutMs: 8000 }
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        lastError = new Error((payload.error && payload.error.message) || `Gemini returned HTTP ${response.status}`);
+        continue;
+      }
+      const reply = String(payload.candidates && payload.candidates[0] && payload.candidates[0].content
+        && payload.candidates[0].content.parts && payload.candidates[0].content.parts[0]
+        ? payload.candidates[0].content.parts[0].text : '').trim();
+      if (reply) return { reply: reply.slice(0, 3800), model };
+      lastError = new Error('Gemini returned an empty response.');
+    } catch (error) {
+      lastError = error;
+    }
   }
-  const reply = String(payload.candidates && payload.candidates[0] && payload.candidates[0].content
-    && payload.candidates[0].content.parts && payload.candidates[0].content.parts[0]
-    ? payload.candidates[0].content.parts[0].text : '').trim();
-  if (!reply) throw new Error('Gemini returned an empty response.');
-  return { reply: reply.slice(0, 3800), model };
+  throw lastError || new Error('No available Gemini model could answer the message.');
 }
 
 async function handleWhatsAppAssistantMessage(from, text, providerMessageId) {
@@ -4857,6 +4927,11 @@ app.post('/api/orders/:id/pay/review', requireRole('admin'), async (req, res) =>
   }
 
   logAction(paid ? 'PAYMENT_APPROVED_BY_ADMIN' : 'PAYMENT_REJECTED_BY_ADMIN', actor, order.id, { reason }, req);
+  if (!paid) {
+    notifyStaffSafely(db, 'admin', 'Payment verification failed',
+      `Order ${order.id}: payment was not verified${reason ? ` (${reason})` : ''}.`,
+      '/admin.html#orders', order.id);
+  }
   if (typeof pushOrderUpdate === 'function') {
     pushOrderUpdate(order.id, { type: 'payment-review', order: projectOrder(order, 'customer') });
   }
@@ -5682,6 +5757,19 @@ app.post('/api/orders', async (req, res) => {
   notifyStaffSafely(db, 'admin', 'New YEBS order',
     `Order ${newOrder.id} from ${newOrder.customer} · GH₵${Number(newOrder.total).toFixed(2)} · payment ${newOrder.paymentStatus}.`,
     '/admin.html#orders', newOrder.id);
+  const orderItemsSummary = (newOrder.items || [])
+    .slice(0, 5)
+    .map(item => `${Number(item.quantity || item.qty || 1)} x ${String(item.name || 'Meal').slice(0, 60)}`)
+    .join(', ');
+  const availableDrivers = newOrder.fulfilment === 'Delivery' ? (db.drivers || []).filter(driver =>
+    driver && driver.id && driver.isActive !== false &&
+    !['pending', 'rejected'].includes(String(driver.approvalStatus || '').toLowerCase())
+  ) : [];
+  availableDrivers.forEach(driver => {
+    notifyStaffSafely(db, 'driver', 'New delivery available',
+      `${newOrder.id} · ${newOrder.fulfilment} · ${orderItemsSummary || 'Open the driver dashboard to view the order'} · GH₵${Number(newOrder.total).toFixed(2)}. Claim it to see customer contact and exact delivery details.`,
+      '/driver.html', newOrder.id, driver.id);
+  });
 
   // Fire-and-forget: Cloud API → CallMeBot retries happen here while the
   // customer sees "Bot working — please wait while the message is sent."
@@ -5695,7 +5783,7 @@ app.post('/api/orders', async (req, res) => {
   res.status(201).json({
     ...projectOrder(newOrder, 'checkout'),
     trackingToken: customerAccessToken,
-    notification: notificationView(orderNotification),
+    notification: notificationView(orderNotification, { includeFallback: false }),
     whatsapp: whatsappReadiness()
   });
 });
@@ -6095,6 +6183,9 @@ app.post('/api/orders/:id/claim', requireRole('driver'), async (req, res) => {
   if (typeof pushOrderUpdate === 'function') {
     pushOrderUpdate(order.id, { type: 'assignment', order: projectOrder(order, 'customer') });
   }
+  notifyStaffSafely(db, 'admin', 'Driver accepted order',
+    `${driverName} accepted order ${order.id}. Open dispatch to view the assigned delivery.`,
+    '/admin.html#orders', order.id);
 
   // External notification providers must not block a durable order acceptance.
   void sendRecoveryPhone(order.phone,
@@ -7691,6 +7782,79 @@ app.delete('/api/push/subscriptions', requireRole('admin', 'driver'), async (req
   res.json({ success: true });
 });
 
+function validatePushSubscription(body) {
+  const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim() : '';
+  const p256dh = body.keys && typeof body.keys.p256dh === 'string' ? body.keys.p256dh : '';
+  const auth = body.keys && typeof body.keys.auth === 'string' ? body.keys.auth : '';
+  let endpointUrl;
+  try { endpointUrl = new URL(endpoint); } catch { return null; }
+  const hostname = endpointUrl.hostname.toLowerCase().replace(/\.$/, '');
+  const supportedPushHost = hostname === 'fcm.googleapis.com'
+    || hostname.endsWith('.fcm.googleapis.com')
+    || hostname === 'push.services.mozilla.com'
+    || hostname.endsWith('.push.services.mozilla.com')
+    || hostname === 'web.push.apple.com'
+    || hostname.endsWith('.web.push.apple.com')
+    || hostname === 'notify.windows.com'
+    || hostname.endsWith('.notify.windows.com');
+  if (endpointUrl.protocol !== 'https:' || !supportedPushHost || !p256dh || !auth || endpoint.length > 2048) {
+    return null;
+  }
+  return { endpoint, keys: { p256dh, auth } };
+}
+
+app.post('/api/orders/:id/push-subscription', async (req, res) => {
+  if (!pushPublicKey || !pushPrivateKey) {
+    return res.status(503).json({ success: false, message: 'Background push notifications are not configured.' });
+  }
+  const orderId = normalizeOrderId(req.params.id);
+  const db = loadDatabase();
+  const order = db.orders.find(item => String(item.id).toUpperCase() === orderId);
+  const accessToken = String(req.get('X-Order-Access-Token') || '');
+  const accessRequest = { headers: { 'x-order-access-token': accessToken } };
+  if (!order || !accessToken || !hasOrderAccess(order, accessRequest)) {
+    return res.status(404).json({ success: false, message: 'Order not found.' });
+  }
+  const subscription = validatePushSubscription(req.body || {});
+  if (!subscription) {
+    return res.status(400).json({ success: false, message: 'The push subscription is invalid.' });
+  }
+  db.pushSubscriptions = Array.isArray(db.pushSubscriptions) ? db.pushSubscriptions : [];
+  db.pushSubscriptions = db.pushSubscriptions.filter(item =>
+    !(item.role === 'customer' && item.orderId === order.id && item.endpoint === subscription.endpoint));
+  db.pushSubscriptions.push({
+    role: 'customer',
+    orderId: order.id,
+    ...subscription,
+    updatedAt: new Date().toISOString()
+  });
+  const orderSubscriptions = db.pushSubscriptions.filter(item =>
+    item.role === 'customer' && item.orderId === order.id);
+  if (orderSubscriptions.length > 5) {
+    const removable = orderSubscriptions.slice(0, orderSubscriptions.length - 5);
+    db.pushSubscriptions = db.pushSubscriptions.filter(item => !removable.includes(item));
+  }
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+  return res.json({ success: true, message: 'Order updates are enabled on this device.' });
+});
+
+app.delete('/api/orders/:id/push-subscription', async (req, res) => {
+  const orderId = normalizeOrderId(req.params.id);
+  const db = loadDatabase();
+  const order = db.orders.find(item => String(item.id).toUpperCase() === orderId);
+  const accessToken = String(req.get('X-Order-Access-Token') || '');
+  if (!order || !accessToken || !hasOrderAccess(order, { headers: { 'x-order-access-token': accessToken } })) {
+    return res.status(404).json({ success: false, message: 'Order not found.' });
+  }
+  const endpoint = String(req.body && req.body.endpoint || '');
+  db.pushSubscriptions = (db.pushSubscriptions || []).filter(item =>
+    !(item.role === 'customer' && item.orderId === order.id && (!endpoint || item.endpoint === endpoint)));
+  const persistenceError = await requireDurableSave(db);
+  if (persistenceError) return res.status(503).json({ success: false, persisted: false, message: persistenceError });
+  return res.json({ success: true });
+});
+
 app.get('/api/sse/notifications', (req, res) => {
   const auth = authenticate(req);
   if (!auth || !['admin', 'driver'].includes(auth.payload.role)) {
@@ -7753,6 +7917,57 @@ async function deliverStaffPush(notification) {
         if (persistenceError) console.error('Could not remove expired push subscription:', persistenceError);
       } else {
         console.error('Background push delivery failed:', error.message);
+      }
+    }
+  }
+}
+
+async function deliverCustomerPushUpdate(orderId, type) {
+  if (!pushPublicKey || !pushPrivateKey ||
+      !['status', 'payment', 'payment-review', 'assignment', 'delivered', 'cancellation-review', 'refund-review'].includes(type)) return;
+  const db = loadDatabase();
+  const order = (db.orders || []).find(item => String(item.id).toUpperCase() === String(orderId).toUpperCase());
+  if (!order) return;
+  const subscriptions = (db.pushSubscriptions || []).filter(item =>
+    item.role === 'customer' && String(item.orderId).toUpperCase() === String(order.id).toUpperCase());
+  if (!subscriptions.length) return;
+
+  const status = String(order.status || 'updated').replace(/[_-]+/g, ' ');
+  let title = 'YEBS order update';
+  let body = `Order ${order.id}: ${status}. Open tracking for details.`;
+  if (type === 'delivered' || order.status === 'delivered') {
+    title = 'Your YEBS order has arrived';
+    body = `Order ${order.id} was delivered. Enjoy your meal!`;
+  } else if (type === 'payment' && order.paymentStatus === 'paid') {
+    title = 'Payment confirmed';
+    body = `Payment for order ${order.id} was verified.`;
+  } else if (type === 'payment-review' || order.paymentStatus === 'review') {
+    title = 'Payment needs attention';
+    body = `Payment for order ${order.id} needs verification. Open tracking for details.`;
+  } else if (type === 'assignment') {
+    title = 'A driver accepted your order';
+    body = `A driver accepted order ${order.id}. Live tracking will update here.`;
+  }
+  const payload = JSON.stringify({
+    title,
+    body,
+    id: `customer-${order.id}-${type}-${order.updatedAt || order.status || order.paymentStatus || ''}`,
+    url: `/?track=${encodeURIComponent(order.id)}`
+  });
+  for (const subscription of subscriptions) {
+    try {
+      await webPush.sendNotification(
+        { endpoint: subscription.endpoint, keys: subscription.keys },
+        payload,
+        { TTL: 60 * 60 }
+      );
+    } catch (error) {
+      if (error.statusCode === 404 || error.statusCode === 410) {
+        db.pushSubscriptions = (db.pushSubscriptions || []).filter(item => item.endpoint !== subscription.endpoint);
+        const persistenceError = await requireDurableSave(db);
+        if (persistenceError) console.error('Could not remove expired customer push subscription:', persistenceError);
+      } else {
+        console.error('Customer background push delivery failed:', error.message);
       }
     }
   }
@@ -7937,9 +8152,13 @@ app.post('/api/orders/:id/customer-location', (req, res) => {
 function pushOrderUpdate(orderId, payload) {
   const id = normalizeOrderId(orderId);
   const clients = orderSseClients.get(id);
-  if (!clients || clients.size === 0) return;
-  const msg = `data: ${JSON.stringify(payload)}\n\n`;
-  clients.forEach(r => { try { r.write(msg); } catch (e) { clients.delete(r); } });
+  if (clients && clients.size) {
+    const msg = `data: ${JSON.stringify(payload)}\n\n`;
+    clients.forEach(r => { try { r.write(msg); } catch (e) { clients.delete(r); } });
+  }
+  void deliverCustomerPushUpdate(id, String(payload && payload.type || '')).catch(error => {
+    console.error('Could not deliver customer order push:', error.message);
+  });
 }
 
 
@@ -8011,6 +8230,7 @@ app.get('/api/admin/provider-health', requireRole('admin'), (req, res) => {
     (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER));
   const whatsappCloud = Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
   const whatsappRelay = Boolean(process.env.WHATSAPP_CALLMEBOT_APIKEY || process.env.CALLMEBOT_APIKEY);
+  const whatsappEvolution = messagingService.isEvolutionConfigured();
   const gemini = Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY);
   const momo = momoApiConfig().configured;
   res.json({
@@ -8019,9 +8239,39 @@ app.get('/api/admin/provider-health', requireRole('admin'), (req, res) => {
       gemini: { configured: gemini, operational: null, status: gemini ? 'not-tested' : 'not-configured', provider: process.env.GEMINI_MODEL || 'auto' },
       momo: { configured: momo, operational: momo, provider: 'MTN MoMo' },
       sms: { configured: arkesel || hubtel || twilio, operational: arkesel || hubtel || twilio, providers: { arkesel, hubtel, twilio } },
-      whatsapp: { configured: whatsappCloud || whatsappRelay, operational: whatsappCloud || whatsappRelay, cloud: whatsappCloud, callMeBotRelay: whatsappRelay }
+      whatsapp: {
+        configured: whatsappEvolution || whatsappCloud || whatsappRelay,
+        operational: whatsappEvolution || whatsappCloud || whatsappRelay,
+        evolutionApi: whatsappEvolution,
+        cloud: whatsappCloud,
+        callMeBotRelay: whatsappRelay
+      }
     }
   });
+});
+
+app.get('/api/admin/gemini/models', requireRole('admin'), rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Please wait before refreshing the Gemini model list.' }
+}), async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ success: false, message: 'Gemini API key is not configured.' });
+  }
+  try {
+    const models = await geminiModelService.listAvailableGeminiModels(apiKey);
+    return res.json({
+      success: true,
+      models,
+      selectedModel: String(process.env.GEMINI_MODEL || process.env.AI_MODEL || '').trim() || null
+    });
+  } catch (error) {
+    console.error('[ai] Gemini model listing failed:', error.message);
+    return res.status(502).json({ success: false, message: 'Gemini models could not be loaded. Check the API key and provider status.' });
+  }
 });
 
 app.post('/api/admin/ai-health-check', requireRole('admin'), rateLimit({
@@ -8044,20 +8294,19 @@ app.post('/api/admin/ai-health-check', requireRole('admin'), rateLimit({
   }
 
   const configuredModel = String(process.env.GEMINI_MODEL || '').trim();
-  const models = [...new Set([configuredModel, ...GEMINI_FALLBACK_MODELS].filter(Boolean))];
+  const models = await getGeminiModelCandidates(apiKey, configuredModel);
   let lastStatus = 0;
   for (const model of models) {
     let response;
     try {
-      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      response = await fetchGeminiWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: 'Reply with exactly OK.' }] }],
           generationConfig: { temperature: 0, maxOutputTokens: 8 }
-        }),
-        signal: AbortSignal.timeout(8000)
-      });
+        })
+      }, { timeoutMs: 8000 });
     } catch (error) {
       const timedOut = error.name === 'TimeoutError' || error.name === 'AbortError';
       return res.json({

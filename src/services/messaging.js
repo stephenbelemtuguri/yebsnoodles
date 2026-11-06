@@ -8,8 +8,78 @@ function normalizePhone(phone) {
   return /^\d{10,15}$/.test(digits) && digits[0] !== '0' ? digits : '';
 }
 
+function evolutionConfig(env) {
+  const apiKey = String(env.EVOLUTION_API_KEY || '').trim();
+  const instance = String(env.EVOLUTION_INSTANCE || '').trim();
+  const rawUrl = String(env.EVOLUTION_API_URL || '').trim();
+  if (!apiKey || !instance || !rawUrl) return null;
+
+  let baseUrl;
+  try {
+    baseUrl = new URL(rawUrl);
+  } catch {
+    return { error: 'Evolution API URL is invalid.' };
+  }
+  const localHost = ['localhost', '127.0.0.1', '::1'].includes(baseUrl.hostname);
+  if ((baseUrl.protocol !== 'https:' && !(localHost && baseUrl.protocol === 'http:')) ||
+      baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash) {
+    return { error: 'Evolution API URL must be a secure HTTPS base URL.' };
+  }
+
+  baseUrl.pathname = `${baseUrl.pathname.replace(/\/+$/, '')}/message/sendText/${encodeURIComponent(instance)}`;
+  return { apiKey, endpoint: baseUrl.toString() };
+}
+
+function isEvolutionConfigured(env = process.env) {
+  const config = evolutionConfig(env);
+  return Boolean(config && !config.error);
+}
+
+async function sendEvolutionWhatsApp(phone, message, env = process.env, fetchImpl = globalThis.fetch) {
+  const to = normalizePhone(phone);
+  if (!to) return { success: false, error: 'Enter a valid phone number including its country code.' };
+  const config = evolutionConfig(env);
+  if (!config) return { success: false, error: 'Evolution API is not configured.' };
+  if (config.error) return { success: false, error: config.error };
+
+  let response;
+  try {
+    response = await fetchImpl(config.endpoint, {
+      method: 'POST',
+      headers: { apikey: config.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ number: to, text: String(message || '').slice(0, 3800), linkPreview: false }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(12000)
+    });
+  } catch (error) {
+    return { success: false, error: String(error.message || 'Evolution API request failed.').slice(0, 300) };
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const details = Array.isArray(payload.message) ? payload.message.join('; ') : payload.message;
+    return {
+      success: false,
+      status: response.status,
+      error: String(details || payload.error || `Evolution API returned HTTP ${response.status}`).slice(0, 300)
+    };
+  }
+  const key = payload.key || payload.data && payload.data.key || {};
+  return {
+    success: true,
+    provider: 'evolution-api',
+    providerId: key.id || payload.messageId || payload.id || null,
+    to
+  };
+}
+
 async function sendWhatsApp(phone, message, env = process.env, fetchImpl = globalThis.fetch) {
   const to = normalizePhone(phone);
+  const evolution = evolutionConfig(env);
+  if (evolution) {
+    const result = await sendEvolutionWhatsApp(phone, message, env, fetchImpl);
+    if (result.success || !env.WHATSAPP_TOKEN || !env.WHATSAPP_PHONE_NUMBER_ID) return result;
+  }
   const token = env.WHATSAPP_TOKEN || env.WHATSAPP_ACCESS_TOKEN || env.WHATSAPP_CLOUD_TOKEN || '';
   const phoneId = env.WHATSAPP_PHONE_NUMBER_ID || env.WHATSAPP_PHONE_ID || '';
   const version = env.WHATSAPP_API_VERSION || 'v20.0';
@@ -58,4 +128,4 @@ async function send(channel, phone, message) {
   return { success: false, error: 'Choose WhatsApp or SMS.' };
 }
 
-module.exports = { normalizePhone, sendWhatsApp, send };
+module.exports = { normalizePhone, isEvolutionConfigured, sendEvolutionWhatsApp, sendWhatsApp, send };

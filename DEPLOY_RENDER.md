@@ -65,6 +65,9 @@ a database key. Everything else is optional:
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp phone number ID | Automatic order alerts |
 | `WHATSAPP_TO` | `233559103452` | Kitchen number |
 | `WHATSAPP_API_VERSION` | `v20.0` | Graph API version |
+| `EVOLUTION_API_URL` | HTTPS base URL for your Evolution API | Optional self-hosted WhatsApp gateway |
+| `EVOLUTION_API_KEY` | Evolution `AUTHENTICATION_API_KEY` value | Server-only API authentication |
+| `EVOLUTION_INSTANCE` | Connected Evolution instance name | WhatsApp sender instance |
 | `SUPABASE_URL` | `https://dujmpwcarxliadnfdydr.supabase.co` | Optional shared DB |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role secret | Optional shared DB (REST) |
 | `SUPABASE_STATE_TABLE` | `yebs_state` | Optional shared DB |
@@ -101,6 +104,37 @@ store both values in Render, never in source control. Admins and drivers must
 sign in on each device and tap **Enable lock-screen alerts** to subscribe.
 Browser and operating-system notification permissions and power settings still
 determine whether alerts appear while a device is locked.
+
+### Evolution API WhatsApp delivery
+
+The YEBS server can send order and driver-report messages through a separately
+hosted Evolution API. Evolution is not bundled into this Render Blueprint: it
+needs its own supported runtime, persistent database/session configuration,
+and a WhatsApp account linked to an instance. Deploy and secure that service
+first, using the official [Evolution API deployment documentation](https://github.com/EvolutionAPI/evolution-api).
+
+1. In Evolution's server environment, set a strong, unique
+   `AUTHENTICATION_API_KEY`; do not reuse the YEBS admin password.
+2. Create and connect an Evolution instance to the admin WhatsApp account using
+   Evolution's protected instance/QR setup. Keep the instance connected.
+3. In Render's YEBS service environment, set `EVOLUTION_API_URL` to the HTTPS
+   base URL, `EVOLUTION_API_KEY` to that exact key, and `EVOLUTION_INSTANCE`
+   to the connected instance name. Set `WHATSAPP_TO` to the admin recipient in
+   international digits (for example `233559103452`).
+4. Save the settings and redeploy. The server sends messages with the
+   `apikey` header; provider keys never reach customer or staff browsers.
+
+Evolution is tried before the configured Cloud API and CallMeBot fallbacks.
+Orders stay on the YEBS checkout and WhatsApp forwarding runs server-side; the
+customer does not need to open WhatsApp to complete checkout. If Evolution is
+not configured or the instance is offline, the order is still saved and the
+delivery attempt is recorded for the admin to review.
+
+Customer lock-screen alerts are opt-in: after placing an order, the customer
+can enable order notifications in the confirmation dialog. Admins and drivers
+must enable lock-screen alerts on each signed-in device. Browser permission
+and VAPID configuration are required; platforms may defer notifications when
+the browser or device has restricted background activity.
 
 ### Recovering an existing administrator login
 

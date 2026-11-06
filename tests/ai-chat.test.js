@@ -128,6 +128,9 @@ describe('AI chat provider handling', () => {
     process.env.GEMINI_MODEL = 'retired-model';
     const requestedModels = [];
     global.fetch = jest.fn(async (url) => {
+      if (!String(url).includes(':generateContent')) {
+        return new Response(JSON.stringify({ models: [] }), { status: 200 });
+      }
       requestedModels.push(String(url).match(/models\/([^:]+)/)[1]);
       if (requestedModels.length === 1) {
         return new Response(JSON.stringify({ error: { message: 'Model not found.' } }), { status: 404 });
@@ -171,7 +174,10 @@ describe('AI chat provider handling', () => {
   test('reports a live Gemini response without returning the API key', async () => {
     process.env.GEMINI_API_KEY = 'private-test-key';
     process.env.GEMINI_MODEL = 'gemini-test-model';
-    global.fetch = jest.fn(async (_url, options) => {
+    global.fetch = jest.fn(async (url, options) => {
+      if (!String(url).includes(':generateContent')) {
+        return new Response(JSON.stringify({ models: [] }), { status: 200 });
+      }
       expect(options.headers['x-goog-api-key']).toBe('private-test-key');
       expect(JSON.parse(options.body).generationConfig.maxOutputTokens).toBe(8);
       return new Response(JSON.stringify({
@@ -231,7 +237,10 @@ describe('AI chat provider handling', () => {
 
   test('does not trust an unauthenticated admin role supplied by the browser', async () => {
     process.env.GEMINI_API_KEY = 'test-key';
-    global.fetch = jest.fn(async (_url, options) => {
+    global.fetch = jest.fn(async (url, options) => {
+      if (!String(url).includes(':generateContent')) {
+        return new Response(JSON.stringify({ models: [] }), { status: 200 });
+      }
       const requestBody = JSON.parse(options.body);
       expect(requestBody).not.toHaveProperty('tools');
       return new Response(JSON.stringify({
@@ -244,7 +253,7 @@ describe('AI chat provider handling', () => {
       .send({ message: 'Show admin orders', role: 'admin' });
 
     expect(response.status).toBe(200);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls.filter(([url]) => String(url).includes(':generateContent'))).toHaveLength(1);
     expect(response.body.reply).toContain('without an admin session');
   });
 

@@ -1,4 +1,4 @@
-const { normalizePhone, sendWhatsApp } = require('../src/services/messaging');
+const { normalizePhone, isEvolutionConfigured, sendEvolutionWhatsApp, sendWhatsApp } = require('../src/services/messaging');
 const smsService = require('../src/services/sms');
 
 describe('YEBS messaging service', () => {
@@ -16,6 +16,54 @@ describe('YEBS messaging service', () => {
     const result = await sendWhatsApp('0241234567', 'Hello', {}, fetchImpl);
     expect(result).toMatchObject({ success: false });
     expect(result.error).toMatch(/not configured/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('sends through Evolution using its server-side apikey header', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ key: { id: 'evolution-message-id' } })
+    });
+    const env = {
+      EVOLUTION_API_URL: 'https://evolution.example.test/api',
+      EVOLUTION_API_KEY: 'private-evolution-key',
+      EVOLUTION_INSTANCE: 'yebs-admin'
+    };
+
+    expect(isEvolutionConfigured(env)).toBe(true);
+    const result = await sendEvolutionWhatsApp('0241234567', 'Order received', env, fetchImpl);
+
+    expect(result).toMatchObject({
+      success: true,
+      provider: 'evolution-api',
+      providerId: 'evolution-message-id',
+      to: '233241234567'
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://evolution.example.test/api/message/sendText/yebs-admin',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { apikey: 'private-evolution-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number: '233241234567', text: 'Order received', linkPreview: false }),
+        redirect: 'error'
+      })
+    );
+  });
+
+  test('rejects insecure public Evolution URLs without making a provider request', async () => {
+    const fetchImpl = jest.fn();
+    const result = await sendEvolutionWhatsApp('0241234567', 'Order received', {
+      EVOLUTION_API_URL: 'http://evolution.example.test',
+      EVOLUTION_API_KEY: 'private-evolution-key',
+      EVOLUTION_INSTANCE: 'yebs-admin'
+    }, fetchImpl);
+
+    expect(result).toMatchObject({ success: false, error: expect.stringMatching(/https/i) });
+    expect(isEvolutionConfigured({
+      EVOLUTION_API_URL: 'http://evolution.example.test',
+      EVOLUTION_API_KEY: 'private-evolution-key',
+      EVOLUTION_INSTANCE: 'yebs-admin'
+    })).toBe(false);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
