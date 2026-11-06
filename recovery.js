@@ -124,7 +124,298 @@ async function postJson(path, body) {
   return { ok: res.ok, status: res.status, data };
 }
 
+function openDriverRecovery() {
+  injectStyles();
+  const overlay = document.createElement('div');
+  overlay.className = 'yebs-recovery-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'Recover your driver password');
+  overlay.innerHTML = `
+    <div class="yebs-recovery-card">
+      <div class="yebs-recovery-head">
+        <button type="button" class="yebs-recovery-close" data-close aria-label="Close">&times;</button>
+        <h3>Recover your driver password</h3>
+        <p>YEBS reviews your live selfie against your driver registration photo. No SMS code or external face service is used.</p>
+      </div>
+      <div class="yebs-recovery-body">
+        <section data-request>
+          <label class="yebs-recovery-label" for="yebsDriverRecoveryPhone">Phone number used for registration</label>
+          <input class="yebs-recovery-input" id="yebsDriverRecoveryPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="e.g. 0241234567" required>
+          <p class="yebs-recovery-note">An administrator will compare the live camera photo below with your stored registration photo. Your selfie is kept in YEBS's database only while the request is open and is deleted after a decision or expiry.</p>
+          <div class="webcam-stage" style="position:relative;min-height:220px;background:#102b22;border-radius:12px;overflow:hidden;">
+            <video data-video autoplay playsinline muted style="display:none;width:100%;max-height:300px;object-fit:cover;"></video>
+            <canvas data-canvas hidden></canvas>
+            <img data-preview alt="Live selfie preview" style="display:none;width:100%;max-height:300px;object-fit:cover;">
+            <div data-camera-prompt style="min-height:220px;display:grid;place-items:center;padding:20px;color:#fff;text-align:center;">Use the secure live camera to capture your face.</div>
+          </div>
+          <div style="display:flex;gap:8px;margin:10px 0;">
+            <button type="button" class="yebs-recovery-btn" data-camera style="flex:1;">Start live camera</button>
+            <button type="button" class="yebs-recovery-btn" data-capture disabled style="flex:1;">Capture selfie</button>
+          </div>
+          <button type="button" class="yebs-recovery-link" data-retake hidden>Retake selfie</button>
+          <button type="button" class="yebs-recovery-btn" data-submit disabled>Submit for administrator review</button>
+        </section>
+        <section data-review hidden>
+          <p class="yebs-recovery-note" data-review-message role="status" aria-live="polite"></p>
+          <div class="yebs-recovery-status" data-review-status role="status" aria-live="polite">Checking review status…</div>
+          <button type="button" class="yebs-recovery-link" data-restart>Start a new request</button>
+        </section>
+        <form data-password novalidate hidden>
+          <p class="yebs-recovery-note">Your identity was approved by an administrator. Choose a new password to complete recovery.</p>
+          <label class="yebs-recovery-label" for="yebsDriverNewPassword">New password</label>
+          <input class="yebs-recovery-input" id="yebsDriverNewPassword" type="password" minlength="8" autocomplete="new-password" required>
+          <label class="yebs-recovery-label" for="yebsDriverConfirmPassword">Confirm new password</label>
+          <input class="yebs-recovery-input" id="yebsDriverConfirmPassword" type="password" minlength="8" autocomplete="new-password" required>
+          <button type="submit" class="yebs-recovery-btn" data-reset>Save new password</button>
+        </form>
+        <section class="yebs-recovery-success" data-success hidden>
+          <div class="tick">✓</div>
+          <h3 style="margin:0 0 6px;font-family:Georgia,serif;color:#173d30;">Password updated</h3>
+          <p style="margin:0 0 14px;font-size:.86rem;color:#5b675c;">Sign in to the driver portal with your new password.</p>
+          <button type="button" class="yebs-recovery-btn" data-login>Continue to driver login</button>
+        </section>
+        <p class="yebs-recovery-status" data-status role="status" aria-live="polite"></p>
+      </div>
+    </div>
+  `;
+
+  const $ = selector => overlay.querySelector(selector);
+  const requestPanel = $('[data-request]');
+  const reviewPanel = $('[data-review]');
+  const passwordForm = $('[data-password]');
+  const successPanel = $('[data-success]');
+  const phoneInput = $('#yebsDriverRecoveryPhone');
+  const video = $('[data-video]');
+  const canvas = $('[data-canvas]');
+  const preview = $('[data-preview]');
+  const cameraPrompt = $('[data-camera-prompt]');
+  const cameraButton = $('[data-camera]');
+  const captureButton = $('[data-capture]');
+  const submitButton = $('[data-submit]');
+  const retakeButton = $('[data-retake]');
+  const status = $('[data-status]');
+  let cameraStream = null;
+  let selfiePhoto = '';
+  let requestId = '';
+  let accessToken = '';
+  let pollTimer = null;
+  let closed = false;
+
+  function setStatus(message, tone = '') {
+    status.textContent = message;
+    status.className = `yebs-recovery-status${tone ? ` ${tone}` : ''}`;
+  }
+
+  function stopCamera() {
+    if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+    cameraStream = null;
+    video.srcObject = null;
+  }
+
+  function close() {
+    closed = true;
+    if (pollTimer) clearTimeout(pollTimer);
+    stopCamera();
+    document.removeEventListener('keydown', onKey);
+    overlay.remove();
+    document.body.style.overflow = '';
+  }
+  function onKey(event) { if (event.key === 'Escape') close(); }
+  function goToLogin() { window.location.href = '/driver.html'; }
+
+  async function startCamera() {
+    setStatus('');
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus('Live camera recovery requires a secure HTTPS connection and a supported browser.', 'error');
+      return;
+    }
+    cameraButton.disabled = true;
+    cameraButton.textContent = 'Opening camera…';
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+      video.srcObject = cameraStream;
+      video.style.display = 'block';
+      cameraPrompt.style.display = 'none';
+      await video.play();
+      captureButton.disabled = false;
+      cameraButton.textContent = 'Camera ready';
+    } catch (error) {
+      stopCamera();
+      cameraButton.disabled = false;
+      cameraButton.textContent = 'Start live camera';
+      setStatus(error.name === 'NotAllowedError'
+        ? 'Allow camera access to continue with driver recovery.'
+        : 'Could not open the camera. Close other camera apps and try again.', 'error');
+    }
+  }
+
+  function captureSelfie() {
+    if (!video.videoWidth || !video.videoHeight) {
+      setStatus('Wait for the camera image, then capture your selfie.', 'error');
+      return;
+    }
+    const side = Math.min(video.videoWidth, video.videoHeight);
+    const left = Math.floor((video.videoWidth - side) / 2);
+    const top = Math.floor((video.videoHeight - side) / 2);
+    canvas.width = 360;
+    canvas.height = 360;
+    const context = canvas.getContext('2d');
+    context.drawImage(video, left, top, side, side, 0, 0, 360, 360);
+    selfiePhoto = canvas.toDataURL('image/jpeg', 0.62);
+    preview.src = selfiePhoto;
+    preview.style.display = 'block';
+    video.style.display = 'none';
+    cameraPrompt.style.display = 'none';
+    stopCamera();
+    captureButton.disabled = true;
+    cameraButton.disabled = true;
+    cameraButton.textContent = 'Live selfie captured';
+    retakeButton.hidden = false;
+    submitButton.disabled = !phoneInput.value.trim();
+    setStatus('Selfie captured. Check the preview before submitting.', 'ok');
+  }
+
+  async function pollReviewStatus() {
+    if (closed || !requestId || !accessToken) return;
+    try {
+      const response = await fetch(`${apiBase()}/api/auth/driver-recovery/${encodeURIComponent(requestId)}`, {
+        headers: { 'X-Driver-Recovery-Token': accessToken },
+        cache: 'no-store'
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 410) {
+        $('[data-review-status]').textContent = data.message || 'This request expired. Start a new request.';
+        return;
+      }
+      if (!response.ok || !data.success) {
+        $('[data-review-status]').textContent = data.message || 'Could not check the review status. Retrying…';
+      } else if (data.status === 'approved') {
+        if (pollTimer) clearTimeout(pollTimer);
+        reviewPanel.hidden = true;
+        passwordForm.hidden = false;
+        $('#yebsDriverNewPassword').focus();
+        return;
+      } else if (data.status === 'denied') {
+        if (pollTimer) clearTimeout(pollTimer);
+        $('[data-review-status]').textContent = data.message;
+        $('[data-restart]').hidden = false;
+        return;
+      } else {
+        $('[data-review-status]').textContent = data.message || 'Your request is waiting for administrator review.';
+      }
+    } catch (_) {
+      $('[data-review-status]').textContent = 'Could not reach the server. Retrying the review check…';
+    }
+    pollTimer = setTimeout(pollReviewStatus, 4000);
+  }
+
+  cameraButton.addEventListener('click', startCamera);
+  captureButton.addEventListener('click', captureSelfie);
+  phoneInput.addEventListener('input', () => {
+    submitButton.disabled = !phoneInput.value.trim() || !selfiePhoto;
+  });
+  retakeButton.addEventListener('click', async () => {
+    selfiePhoto = '';
+    preview.style.display = 'none';
+    retakeButton.hidden = true;
+    submitButton.disabled = true;
+    cameraButton.disabled = false;
+    cameraButton.textContent = 'Start live camera';
+    await startCamera();
+  });
+  submitButton.addEventListener('click', async () => {
+    const phone = phoneInput.value.trim();
+    if (!phone || !selfiePhoto) {
+      setStatus('Enter your registration phone number and capture a live selfie.', 'error');
+      return;
+    }
+    submitButton.disabled = true;
+    submitButton.textContent = 'Submitting securely…';
+    setStatus('');
+    try {
+      const { ok, data } = await postJson('/api/auth/driver-recovery', { phone, selfiePhoto });
+      if (!ok || !data.success) {
+        setStatus(data.message || 'Could not submit the recovery request. Try again.', 'error');
+        return;
+      }
+      requestId = data.requestId;
+      accessToken = data.accessToken;
+      requestPanel.hidden = true;
+      reviewPanel.hidden = false;
+      $('[data-review-message]').textContent = data.message;
+      $('[data-review-status]').textContent = 'Checking the request and waiting for administrator review…';
+      pollReviewStatus();
+    } catch (_) {
+      setStatus('Cannot reach the YEBS server. Check your connection and try again.', 'error');
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = 'Submit for administrator review';
+    }
+  });
+  $('[data-restart]').addEventListener('click', () => {
+    if (pollTimer) clearTimeout(pollTimer);
+    requestId = '';
+    accessToken = '';
+    selfiePhoto = '';
+    reviewPanel.hidden = true;
+    passwordForm.hidden = true;
+    requestPanel.hidden = false;
+    preview.style.display = 'none';
+    cameraPrompt.style.display = 'grid';
+    retakeButton.hidden = true;
+    cameraButton.disabled = false;
+    cameraButton.textContent = 'Start live camera';
+    submitButton.disabled = true;
+    phoneInput.focus();
+    setStatus('');
+  });
+  passwordForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const password = $('#yebsDriverNewPassword').value;
+    const confirmPassword = $('#yebsDriverConfirmPassword').value;
+    if (password.length < 8) { setStatus('Choose a password with at least 8 characters.', 'error'); return; }
+    if (password !== confirmPassword) { setStatus('The new passwords do not match.', 'error'); return; }
+    const button = $('[data-reset]');
+    button.disabled = true;
+    button.textContent = 'Saving…';
+    try {
+      const response = await fetch(`${apiBase()}/api/auth/driver-recovery/${encodeURIComponent(requestId)}/password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Driver-Recovery-Token': accessToken },
+        body: JSON.stringify({ password, confirmPassword })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        setStatus(data.message || 'Could not update the password. Try again.', 'error');
+        return;
+      }
+      passwordForm.hidden = true;
+      successPanel.hidden = false;
+      setStatus('');
+      setTimeout(goToLogin, 1500);
+    } catch (_) {
+      setStatus('Cannot reach the YEBS server. Check your connection and try again.', 'error');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Save new password';
+    }
+  });
+  $('[data-login]').addEventListener('click', goToLogin);
+  overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+  $('[data-close]').addEventListener('click', close);
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => phoneInput.focus(), 60);
+  return { close };
+}
+
 export function openRecovery(role = 'admin') {
+  if (role === 'driver') return openDriverRecovery();
   injectStyles();
   const isAdmin = role === 'admin';
   const roleLabel = isAdmin ? 'admin' : 'rider';

@@ -1033,6 +1033,18 @@
         </div>
         <div class="roster-grid" id="adminRiderRoster"></div>
       </div>
+
+      <div class="card" id="driverRecoveryReviewCard">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Driver Password Recovery Reviews</h2>
+            <div class="action-meta">Compare the photos and contact the driver at the registered number before approving a one-time password reset.</div>
+          </div>
+          <button type="button" id="refreshDriverRecoveryBtn" class="btn btn-outline btn-sm">↻ Refresh reviews</button>
+        </div>
+        <div id="driverRecoveryRequests" aria-live="polite" class="action-meta">Loading recovery requests…</div>
+        <div class="action-meta" style="margin-top:8px;">A still image cannot prove liveness by itself. Verify the driver over the registered phone or in person; selfies are deleted after approval, rejection, or expiry.</div>
+      </div>
     </div>
 
     <!-- TAB 2: Complete Historical Records -->
@@ -1740,7 +1752,15 @@
               <span style="font-weight:700;">WhatsApp Alerts</span>
               <span id="statusMsg_whatsapp" style="color:var(--muted); margin-left:auto;">Checking…</span>
             </div>
+            <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--line);">
+              <span id="statusDot_ai" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#d1d5db;"></span>
+              <span style="font-weight:700;">AI Assistant (Gemini)</span>
+              <span id="statusMsg_ai" style="color:var(--muted); margin-left:auto; text-align:right;">Not tested</span>
+            </div>
           </div>
+          <div id="aiHealthDetail" role="status" aria-live="polite" style="display:none; margin-top:8px; padding:10px 12px; border-radius:8px; font-size:0.8rem; line-height:1.5;"></div>
+          <button type="button" id="testAiHealthBtn" class="btn btn-outline" style="margin-top:10px; width:100%; padding:10px; font-size:0.88rem;">🧪 Test AI connection</button>
+          <div style="font-size:0.74rem; color:var(--muted); margin-top:6px;">This sends one short test request to Gemini. API keys stay on the server. Missing key? Add <code>GEMINI_API_KEY</code> in Render Environment and redeploy.</div>
           <button type="button" id="sendLatestOrderWhatsAppBtn" class="btn" style="margin-top:14px; width:100%; padding:10px; font-size:0.88rem; background:#16a34a; color:white; border-radius:8px; border:0; cursor:pointer;">💬 Send Latest Order to WhatsApp</button>
           <button type="button" id="refreshStatusBtn" class="btn" style="margin-top:8px; width:100%; padding:10px; font-size:0.88rem; background:var(--forest); color:white; border-radius:8px; border:0; cursor:pointer;">🔄 Refresh Status</button>
         </div>
@@ -1794,7 +1814,6 @@
           <button type="submit" id="adminLoginSubmitBtn" class="btn btn-orange" style="width:100%; padding:12px; font-size:0.95rem; margin-top:4px;">
             🔒 Sign In
           </button>
-          <button type="button" id="adminForgotBtn" class="auth-forgot-link">Forgot your password?</button>
         </form>
         <!-- Lockout recovery: shown when login is rate-limited -->
         <details style="margin-top:14px;">
@@ -1840,6 +1859,8 @@
       isDriverOnline,
       addReliableBasemap,
       estimateEtaMinutes,
+      calculateDistanceKm,
+      drawRoadRoute,
       OWNER_WHATSAPP_NUMBER,
       isKitchenOpen,
       apiAdminLogin,
@@ -1871,8 +1892,6 @@
       apiResetMenu,
       DEFAULT_POSTER_MENU
     } from './shared.js';
-    import { openRecovery } from './recovery.js';
-
     initStore();
 
     let stopAdminNotifications = null;
@@ -2015,6 +2034,8 @@
 
     let selectedOrderId = null;
     let liveDrivers = DEFAULT_DRIVERS.slice();
+    let selectedOrderRoute = null;
+    let selectedOrderRouteSignature = '';
 
     function initMap() {
       if (map || typeof L === "undefined") return;
@@ -2412,12 +2433,55 @@
         if (selectedPin && Number.isFinite(Number(selectedPin.lat)) && Number.isFinite(Number(selectedPin.lng))) {
           selectedPoints.push([Number(selectedPin.lat), Number(selectedPin.lng)]);
         }
-        if (selectedOrder.driver && selectedOrder.driver.currentLocation && Number.isFinite(Number(selectedOrder.driver.currentLocation.lat)) && Number.isFinite(Number(selectedOrder.driver.currentLocation.lng))) {
-          selectedPoints.push([Number(selectedOrder.driver.currentLocation.lat), Number(selectedOrder.driver.currentLocation.lng)]);
+        const driverLocation = selectedOrder.driver && selectedOrder.driver.currentLocation;
+        const hasDriverLocation = driverLocation
+          && Number.isFinite(Number(driverLocation.lat))
+          && Number.isFinite(Number(driverLocation.lng));
+        if (hasDriverLocation) {
+          selectedPoints.push([Number(driverLocation.lat), Number(driverLocation.lng)]);
         }
         if (selectedPoints.length) map.fitBounds(L.latLngBounds(selectedPoints), { padding: [36, 36], maxZoom: 15 });
+
+        if (selectedPin && hasDriverLocation) {
+          const routeSignature = [
+            selectedOrder.id,
+            Number(driverLocation.lat).toFixed(3),
+            Number(driverLocation.lng).toFixed(3),
+            Number(selectedPin.lat).toFixed(5),
+            Number(selectedPin.lng).toFixed(5)
+          ].join(':');
+          if (routeSignature !== selectedOrderRouteSignature) {
+            const previousRoute = selectedOrderRoute;
+            selectedOrderRoute = null;
+            selectedOrderRouteSignature = routeSignature;
+            drawRoadRoute(map,
+              { lat: Number(driverLocation.lat), lng: Number(driverLocation.lng) },
+              { lat: Number(selectedPin.lat), lng: Number(selectedPin.lng) },
+              { color: '#2563eb', weight: 6, previousLayer: previousRoute, showDistanceBadge: true }
+            ).then(layer => {
+              if (selectedOrderRouteSignature === routeSignature) {
+                selectedOrderRoute = layer;
+              } else if (layer) {
+                map.removeLayer(layer);
+              }
+            }).catch(error => {
+              console.warn('[tracking] Could not update selected dispatch route:', error.message);
+            });
+          }
+        } else {
+          if (selectedOrderRoute) map.removeLayer(selectedOrderRoute);
+          selectedOrderRoute = null;
+          selectedOrderRouteSignature = '';
+        }
       } else if (mapPoints.length) {
+        if (selectedOrderRoute) map.removeLayer(selectedOrderRoute);
+        selectedOrderRoute = null;
+        selectedOrderRouteSignature = '';
         map.fitBounds(L.latLngBounds(mapPoints), { padding: [36, 36], maxZoom: 13 });
+      } else {
+        if (selectedOrderRoute) map.removeLayer(selectedOrderRoute);
+        selectedOrderRoute = null;
+        selectedOrderRouteSignature = '';
       }
     }
 
@@ -3885,6 +3949,7 @@
       renderDashboard();
       loadAuditLogs();
       refreshDrivers();
+      refreshDriverRecoveryRequests();
       setTimeout(() => { initMap(); if (map) map.invalidateSize(); }, 220);
       // Load the shared pickup point as soon as the dashboard is unlocked.
       setTimeout(() => { loadSharedPickupPoint(); }, 420);
@@ -3957,11 +4022,6 @@
       }
       tick();
       _loginCountdownTimer = setInterval(tick, 1000);
-    }
-
-    const adminForgotBtn = document.getElementById('adminForgotBtn');
-    if (adminForgotBtn) {
-      adminForgotBtn.addEventListener('click', () => openRecovery('admin'));
     }
 
     // Lockout unlock button — clears rate-limit via the /api/auth/admin/unlock endpoint
@@ -4078,6 +4138,92 @@
       refreshActionPanel();
       renderRiderRoster();
     }
+
+    async function refreshDriverRecoveryRequests() {
+      if (!checkAdminAuth()) return;
+      const container = document.getElementById('driverRecoveryRequests');
+      if (!container) return;
+      try {
+        const response = await fetch(`${API_BASE}/api/admin/driver-recovery-requests`, {
+          headers: adminAuthHeaders(),
+          cache: 'no-store'
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || `Request failed (${response.status})`);
+        }
+        const requests = Array.isArray(data.requests) ? data.requests : [];
+        if (!requests.length) {
+          container.textContent = 'No driver recovery requests need review.';
+          return;
+        }
+        container.innerHTML = requests.map(item => `
+          <article style="padding:14px;margin:12px 0;border:1px solid var(--line);border-radius:12px;background:#fffdf8;">
+            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start;">
+              <div><strong>${escapeHtml(item.driver.name || item.driver.username || 'Driver')}</strong>
+                <div class="action-meta">${escapeHtml(item.driver.phone || 'No registration phone')} · ${escapeHtml(item.driver.username || '')}</div>
+              </div>
+              <div class="action-meta">Expires ${escapeHtml(new Date(item.expiresAt).toLocaleTimeString())}</div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:12px 0;">
+              <figure style="margin:0;"><img src="${escapeHtml(item.registrationPhotoUrl)}" alt="Driver registration photo" style="width:100%;height:220px;object-fit:contain;background:#eef2ec;border-radius:8px;"><figcaption class="action-meta">Registration photo</figcaption></figure>
+              <figure style="margin:0;"><img src="${escapeHtml(item.selfiePhoto)}" alt="Live recovery selfie" style="width:100%;height:220px;object-fit:contain;background:#eef2ec;border-radius:8px;"><figcaption class="action-meta">Live recovery selfie</figcaption></figure>
+            </div>
+            <label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0;font-size:.8rem;color:var(--forest);">
+              <input type="checkbox" data-recovery-identity-check style="margin-top:3px;">
+              I contacted the driver on the registered number and compared both photos.
+            </label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-forest btn-sm" data-driver-recovery-decision="approve" data-request-id="${escapeHtml(item.id)}" disabled>Approve password reset</button>
+              <button type="button" class="btn btn-outline btn-sm" data-driver-recovery-decision="reject" data-request-id="${escapeHtml(item.id)}">Reject request</button>
+            </div>
+          </article>
+        `).join('');
+      } catch (error) {
+        container.textContent = `Could not load recovery requests: ${error.message}`;
+      }
+    }
+
+    const driverRecoveryRequests = document.getElementById('driverRecoveryRequests');
+    const refreshDriverRecoveryBtn = document.getElementById('refreshDriverRecoveryBtn');
+    if (refreshDriverRecoveryBtn) refreshDriverRecoveryBtn.addEventListener('click', refreshDriverRecoveryRequests);
+    if (driverRecoveryRequests) {
+      driverRecoveryRequests.addEventListener('change', event => {
+        const checkbox = event.target.closest('[data-recovery-identity-check]');
+        if (!checkbox) return;
+        const approveButton = checkbox.closest('article').querySelector('[data-driver-recovery-decision="approve"]');
+        if (approveButton) approveButton.disabled = !checkbox.checked;
+      });
+      driverRecoveryRequests.addEventListener('click', async event => {
+        const button = event.target.closest('[data-driver-recovery-decision]');
+        if (!button) return;
+        const decision = button.dataset.driverRecoveryDecision;
+        const requestId = button.dataset.requestId;
+        const confirmText = decision === 'approve'
+          ? 'Approve this driver to set a new password? Verify the two photos before continuing.'
+          : 'Reject this recovery request? The submitted selfie will be deleted.';
+        if (!confirm(confirmText)) return;
+        button.disabled = true;
+        try {
+          const response = await fetch(`${API_BASE}/api/admin/driver-recovery-requests/${encodeURIComponent(requestId)}/review`, {
+            method: 'POST',
+            headers: adminAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              decision,
+              phoneVerified: decision === 'approve',
+              registrationPhotoCompared: decision === 'approve'
+            })
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || !data.success) throw new Error(data.message || 'Could not save this decision.');
+          await refreshDriverRecoveryRequests();
+        } catch (error) {
+          alert(error.message);
+          button.disabled = false;
+        }
+      });
+    }
+    setInterval(refreshDriverRecoveryRequests, 30000);
 
     // Confirm a remembered token is still valid on this server (it may have
     // expired, been signed with an old secret, or belong to a removed account).
@@ -4446,6 +4592,55 @@
     function adminAuthHeaders(extra = {}) {
       const token = sessionStorage.getItem('yebs_admin_token') || localStorage.getItem('yebs_admin_token_persist') || '';
       return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
+    }
+
+    const testAiHealthBtn = document.getElementById('testAiHealthBtn');
+    const aiHealthDetail = document.getElementById('aiHealthDetail');
+    if (testAiHealthBtn && aiHealthDetail) {
+      testAiHealthBtn.addEventListener('click', async () => {
+        const statusText = document.getElementById('statusMsg_ai');
+        const statusDot = document.getElementById('statusDot_ai');
+        testAiHealthBtn.disabled = true;
+        testAiHealthBtn.textContent = 'Testing Gemini connection…';
+        if (statusText) statusText.textContent = 'Testing…';
+        if (statusDot) statusDot.style.background = '#d1d5db';
+        aiHealthDetail.style.display = 'block';
+        aiHealthDetail.style.background = '#f8fafc';
+        aiHealthDetail.style.color = '#475569';
+        aiHealthDetail.textContent = 'Sending a short test request to the configured AI provider…';
+        try {
+          const response = await fetch('/api/admin/ai-health-check', {
+            method: 'POST',
+            headers: adminAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({}),
+            cache: 'no-store',
+            signal: AbortSignal.timeout(30000)
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(result.message || (response.status === 401
+              ? 'Sign in as an administrator to test the AI connection.'
+              : 'The AI health check could not be completed.'));
+          }
+          const operational = result.operational === true;
+          if (statusText) statusText.textContent = operational ? `Operational · ${result.model}` : (result.status || 'Unavailable');
+          if (statusDot) statusDot.style.background = operational ? '#16a34a' : '#dc2626';
+          aiHealthDetail.style.background = operational ? '#f0fdf4' : '#fef2f2';
+          aiHealthDetail.style.color = operational ? '#166534' : '#991b1b';
+          aiHealthDetail.textContent = `${result.message || (operational ? `Gemini answered successfully using ${result.model}.` : 'The AI connection is not operational.')}${result.checkedAt ? ` Checked ${new Date(result.checkedAt).toLocaleTimeString()}.` : ''}`;
+        } catch (error) {
+          if (statusText) statusText.textContent = 'Check failed';
+          if (statusDot) statusDot.style.background = '#dc2626';
+          aiHealthDetail.style.background = '#fef2f2';
+          aiHealthDetail.style.color = '#991b1b';
+          aiHealthDetail.textContent = error.name === 'TimeoutError'
+            ? 'The AI health check timed out. Check the provider and server, then retry.'
+            : (error.message || 'Could not reach the AI health check. Check your connection and sign-in.');
+        } finally {
+          testAiHealthBtn.disabled = false;
+          testAiHealthBtn.textContent = '🧪 Test AI connection';
+        }
+      });
     }
 
     // ---- Mobile money wallet (stored in the database) ----

@@ -90,6 +90,7 @@ app.use((req, res, next) => {
   next();
 });
 const PORT = process.env.PORT || 3000;
+const GEMINI_FALLBACK_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
 const DB_FILE = process.env.DB_PATH
   ? path.resolve(process.env.DB_PATH)
   : path.join(__dirname, 'database.json');
@@ -217,9 +218,7 @@ General capability:
       const configuredGeminiModel = String(process.env.GEMINI_MODEL || process.env.AI_MODEL || '').trim();
       const geminiModels = [...new Set([
         configuredGeminiModel,
-        'gemini-3.6-flash',
-        'gemini-3.5-flash-lite',
-        'gemini-3.1-flash-lite'
+        ...GEMINI_FALLBACK_MODELS
       ].filter(Boolean))];
       const contents = suppliedHistory.slice(-10).filter(entry =>
         entry && typeof entry.content === 'string' && ['user', 'assistant', 'model'].includes(entry.role)
@@ -1674,7 +1673,7 @@ const DEFAULT_PICKUP_POINT = {
 };
 
 function ensureSystemAccounts(db) {
-  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'notifications', 'recoveryCodes', 'pushSubscriptions'];
+  const collections = ['admins', 'drivers', 'orders', 'sessions', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'notifications', 'recoveryCodes', 'driverRecoveryRequests', 'pushSubscriptions'];
   let changed = false;
 
   const isOldPickup = point => point && (
@@ -1799,7 +1798,7 @@ function ensureSystemAccounts(db) {
 function loadDatabase() {
   const cached = store.get();
   if (cached) {
-    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations', 'pushSubscriptions']) {
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations', 'driverRecoveryRequests', 'pushSubscriptions']) {
       if (!Array.isArray(cached[key])) cached[key] = [];
     }
     return cached;
@@ -1848,7 +1847,7 @@ function loadDatabase() {
       try { fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2)); } catch (e) { /* read-only fs */ }
     }
     ensureSystemAccounts(initialData);
-    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations', 'pushSubscriptions']) {
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations', 'driverRecoveryRequests', 'pushSubscriptions']) {
       if (!Array.isArray(initialData[key])) initialData[key] = [];
     }
     return initialData;
@@ -1858,14 +1857,14 @@ function loadDatabase() {
     if (ensureSystemAccounts(parsed) && store.remoteMode === 'local') {
       try { fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2)); } catch (e) { /* read-only fs */ }
     }
-    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations', 'pushSubscriptions']) {
+    for (const key of ['orders', 'notifications', 'auditLogs', 'menuItems', 'payouts', 'reviews', 'drivers', 'admins', 'payments', 'driverReports', 'cashReconciliations', 'driverRecoveryRequests', 'pushSubscriptions']) {
       if (!Array.isArray(parsed[key])) parsed[key] = [];
     }
     return parsed;
   } catch (e) {
     console.error("Database read error, restoring default", e);
     const fallback = {
-      admins: [], drivers: [], orders: [], sessions: [], auditLogs: [], menuItems: [], payouts: [], reviews: [], notifications: [], pushSubscriptions: [],
+      admins: [], drivers: [], orders: [], sessions: [], auditLogs: [], menuItems: [], payouts: [], reviews: [], notifications: [], driverRecoveryRequests: [], pushSubscriptions: [],
       settings: { momo: { ...DEFAULT_MOMO_SETTINGS }, pickup: { ...DEFAULT_PICKUP_POINT }, deliveryFee: 15 },
       cashReconciliations: []
     };
@@ -2196,6 +2195,9 @@ function projectOrder(order, viewer = 'public') {
     fulfilment: order.fulfilment,
     location: order.location,
     mapPin: order.mapPin,
+    deliveryDistanceKm: Number(order.deliveryDistanceKm) || 0,
+    deliveryBaseFee: Number(order.deliveryBaseFee) || 0,
+    deliveryDiscount: Number(order.deliveryDiscount) || 0,
     customerCurrentLocation: order.customerCurrentLocation || null,
     timing: order.timing,
     items: order.items || [],
@@ -2538,6 +2540,85 @@ app.post('/api/auth/driver/login', (req, res) => {
 
 const RECOVERY_TTL_MS = 10 * 60 * 1000;
 const RECOVERY_MAX_ATTEMPTS = 5;
+const DRIVER_RECOVERY_TTL_MS = 30 * 60 * 1000;
+const DRIVER_RECOVERY_MAX_OPEN = 25;
+
+function hashRecoveryValue(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+function recoveryTokenMatches(token, storedHash) {
+  if (!token || !storedHash) return false;
+  const supplied = Buffer.from(hashRecoveryValue(token), 'hex');
+  const stored = Buffer.from(String(storedHash), 'hex');
+  return supplied.length === stored.length && crypto.timingSafeEqual(supplied, stored);
+}
+
+function validRecoverySelfie(value) {
+  const match = String(value || '').match(/^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/);
+  if (!match || String(value).length > 260000) return false;
+  const image = Buffer.from(match[1], 'base64');
+  return image.length > 0 && image.length <= 190000 && image.toString('base64') === match[1];
+}
+
+function scrubDriverRecoveryRequest(entry, { keepPollToken = false } = {}) {
+  entry.selfiePhoto = null;
+  entry.phoneHash = null;
+  if (!keepPollToken) entry.pollTokenHash = null;
+}
+
+function expireDriverRecoveryRequests(db, now = Date.now()) {
+  db.driverRecoveryRequests = Array.isArray(db.driverRecoveryRequests) ? db.driverRecoveryRequests : [];
+  let changed = false;
+  db.driverRecoveryRequests.forEach(entry => {
+    if (!['pending', 'approved', 'unmatched'].includes(entry.status)) return;
+    if (Date.parse(entry.expiresAt || '') > now) return;
+    entry.status = 'expired';
+    entry.expiredAt = new Date(now).toISOString();
+    scrubDriverRecoveryRequest(entry, { keepPollToken: true });
+    changed = true;
+  });
+  if (db.driverRecoveryRequests.length > 500) {
+    db.driverRecoveryRequests = db.driverRecoveryRequests.slice(-500);
+    changed = true;
+  }
+  return changed;
+}
+
+const driverRecoverySubmitLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many recovery requests. Wait 15 minutes and try again.' }
+});
+const driverRecoveryPollLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many status checks. Wait a minute and try again.' }
+});
+const driverRecoveryResetLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many password reset attempts. Wait 15 minutes and try again.' }
+});
+
+const driverRecoveryCleanupTimer = setInterval(async () => {
+  try {
+    const db = loadDatabase();
+    if (expireDriverRecoveryRequests(db)) {
+      const error = await requireDurableSave(db);
+      if (error) console.warn('[driver-recovery] Could not purge expired recovery photos:', error);
+    }
+  } catch (error) {
+    console.warn('[driver-recovery] Expiry cleanup failed:', error.message);
+  }
+}, 60 * 1000);
+driverRecoveryCleanupTimer.unref();
 
 function recoveryRole(raw) {
   const role = String(raw || '').toLowerCase();
@@ -2745,6 +2826,12 @@ function maskPhone(phone) {
 
 app.post('/api/auth/recovery/start', async (req, res) => {
   const role = recoveryRole(req.body && req.body.role);
+  if (role === 'driver') {
+    return res.status(410).json({
+      success: false,
+      message: 'Driver recovery now requires a live selfie and administrator review. Use the driver recovery form.'
+    });
+  }
   const identifier = cleanString(req.body && req.body.identifier, 120);
   if (!role) {
     return res.status(400).json({ success: false, message: "Choose whether you are recovering an admin or a rider account." });
@@ -2840,6 +2927,12 @@ app.post('/api/auth/recovery/start', async (req, res) => {
 app.post('/api/auth/recovery/verify', (req, res) => {
   const body = req.body || {};
   const role = recoveryRole(body.role);
+  if (role === 'driver') {
+    return res.status(410).json({
+      success: false,
+      message: 'Driver recovery codes are no longer accepted. Submit a live-selfie request for administrator review.'
+    });
+  }
   const identifier = cleanString(body.identifier, 120);
   const code = String(body.code || '').replace(/\D/g, '');
   const password = String(body.password || '');
@@ -2898,6 +2991,264 @@ app.post('/api/auth/recovery/verify', (req, res) => {
     success: true,
     message: "Password updated. Sign in with your new password.",
     username: account.username || account.phone || identifier
+  });
+});
+
+app.post('/api/auth/driver-recovery', driverRecoverySubmitLimit, async (req, res) => {
+  const phone = cleanString(req.body && req.body.phone, 30);
+  const phoneDigits = phone.replace(/\D/g, '');
+  const selfiePhoto = req.body && req.body.selfiePhoto;
+  if (phoneDigits.length < 9 || phoneDigits.length > 13 || !validRecoverySelfie(selfiePhoto)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Enter the phone number used for driver registration and capture a clear live selfie.'
+    });
+  }
+
+  const db = loadDatabase();
+  expireDriverRecoveryRequests(db);
+  db.driverRecoveryRequests = Array.isArray(db.driverRecoveryRequests) ? db.driverRecoveryRequests : [];
+  const driverPhoneKey = phoneKey(phone);
+  const driver = (db.drivers || []).find(item => phoneKey(item.phone) === driverPhoneKey);
+  const hasRegistrationPhoto = Boolean(driver && (driver.photoUrl || driver.photo));
+  const eligible = Boolean(driver && hasRegistrationPhoto);
+  const openCount = db.driverRecoveryRequests.filter(entry => entry.status === 'pending').length;
+  if (eligible && openCount >= DRIVER_RECOVERY_MAX_OPEN) {
+    return res.status(503).json({
+      success: false,
+      message: 'The recovery review queue is full. Contact YEBS support and try again later.'
+    });
+  }
+
+  const now = new Date();
+  if (driver) {
+    db.driverRecoveryRequests.forEach(entry => {
+      if (entry.driverId !== driver.id || !['pending', 'approved'].includes(entry.status)) return;
+      entry.status = 'superseded';
+      entry.supersededAt = now.toISOString();
+      scrubDriverRecoveryRequest(entry);
+    });
+  }
+  const accessToken = crypto.randomBytes(32).toString('base64url');
+  const recoveryRequest = {
+    id: `drr-${crypto.randomUUID()}`,
+    driverId: eligible ? driver.id : null,
+    phoneHash: hashRecoveryValue(driverPhoneKey),
+    pollTokenHash: hashRecoveryValue(accessToken),
+    selfiePhoto: eligible ? selfiePhoto : null,
+    status: eligible ? 'pending' : 'unmatched',
+    createdAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + DRIVER_RECOVERY_TTL_MS).toISOString()
+  };
+  db.driverRecoveryRequests.push(recoveryRequest);
+  if (db.driverRecoveryRequests.length > 500) {
+    db.driverRecoveryRequests = db.driverRecoveryRequests.slice(-500);
+  }
+
+  const saveError = await requireDurableSave(db);
+  if (saveError) {
+    return res.status(503).json({ success: false, message: saveError });
+  }
+  if (eligible) {
+    logAction('DRIVER_PASSWORD_RECOVERY_REVIEW_REQUESTED', driver.username || driver.name || driver.id,
+      'DRIVER_PORTAL', { requestId: recoveryRequest.id }, req);
+  }
+
+  res.set('Cache-Control', 'no-store');
+  return res.status(201).json({
+    success: true,
+    requestId: recoveryRequest.id,
+    accessToken,
+    expiresAt: recoveryRequest.expiresAt,
+    message: 'If your details match a driver account, an administrator will review the request. Check status for up to 30 minutes.'
+  });
+});
+
+app.get('/api/auth/driver-recovery/:id', driverRecoveryPollLimit, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const db = loadDatabase();
+  const entry = (db.driverRecoveryRequests || []).find(item => item.id === req.params.id);
+  const token = String(req.get('X-Driver-Recovery-Token') || '');
+  if (!entry || !recoveryTokenMatches(token, entry.pollTokenHash)) {
+    return res.status(404).json({ success: false, message: 'Recovery request not found.' });
+  }
+  if (Date.parse(entry.expiresAt || '') <= Date.now()) {
+    entry.status = 'expired';
+    entry.expiredAt = new Date().toISOString();
+    scrubDriverRecoveryRequest(entry);
+    const saveError = await requireDurableSave(db);
+    if (saveError) return res.status(503).json({ success: false, message: saveError });
+    return res.status(410).json({ success: false, status: 'expired', message: 'This recovery request expired. Start a new request.' });
+  }
+  return res.json({
+    success: true,
+    status: entry.status === 'unmatched' ? 'pending' : entry.status,
+    expiresAt: entry.expiresAt,
+    message: entry.status === 'approved'
+      ? 'Your identity was approved. Set a new password to finish recovery.'
+      : entry.status === 'denied'
+        ? 'The administrator could not verify your identity. Contact YEBS support for help.'
+        : entry.status === 'completed'
+          ? 'Your password was updated. Sign in to the driver portal.'
+          : 'Your request is waiting for administrator review.'
+  });
+});
+
+app.post('/api/auth/driver-recovery/:id/password', driverRecoveryResetLimit, async (req, res) => {
+  const db = loadDatabase();
+  const entry = (db.driverRecoveryRequests || []).find(item => item.id === req.params.id);
+  const token = String(req.get('X-Driver-Recovery-Token') || '');
+  if (!entry || !recoveryTokenMatches(token, entry.pollTokenHash)) {
+    return res.status(404).json({ success: false, message: 'Recovery authorization not found.' });
+  }
+  if (Date.parse(entry.expiresAt || '') <= Date.now()) {
+    entry.status = 'expired';
+    entry.expiredAt = new Date().toISOString();
+    scrubDriverRecoveryRequest(entry);
+    const saveError = await requireDurableSave(db);
+    if (saveError) return res.status(503).json({ success: false, message: saveError });
+    return res.status(410).json({ success: false, message: 'This recovery authorization expired. Start a new request.' });
+  }
+  if (entry.status !== 'approved') {
+    return res.status(409).json({ success: false, message: 'An administrator must approve your identity before you can reset the password.' });
+  }
+
+  const password = String(req.body && req.body.password || '');
+  const confirmPassword = String(req.body && req.body.confirmPassword || '');
+  if (password.length < 8) {
+    return res.status(400).json({ success: false, message: 'Choose a new password with at least 8 characters.' });
+  }
+  if (password !== confirmPassword) {
+    return res.status(400).json({ success: false, message: 'The new password and confirmation do not match.' });
+  }
+
+  const driver = (db.drivers || []).find(item => item.id === entry.driverId);
+  if (!driver) {
+    entry.status = 'denied';
+    entry.reviewedAt = new Date().toISOString();
+    scrubDriverRecoveryRequest(entry);
+    const saveError = await requireDurableSave(db);
+    if (saveError) return res.status(503).json({ success: false, message: saveError });
+    return res.status(410).json({ success: false, message: 'This driver account is no longer available.' });
+  }
+
+  driver.password = hashPassword(password);
+  driver.passwordUpdatedAt = new Date().toISOString();
+  driver.sessionEpoch = (Number(driver.sessionEpoch) || 0) + 1;
+  entry.status = 'completed';
+  entry.completedAt = new Date().toISOString();
+  scrubDriverRecoveryRequest(entry);
+  (db.recoveryCodes || []).forEach(code => {
+    if (code.role === 'driver' && code.accountId === driver.id && !code.usedAt) {
+      code.usedAt = entry.completedAt;
+    }
+  });
+  const saveError = await requireDurableSave(db);
+  if (saveError) return res.status(503).json({ success: false, message: saveError });
+
+  logAction('PASSWORD_RECOVERED', driver.username || driver.name || driver.id,
+    'DRIVER_PORTAL', { via: 'admin-reviewed-live-selfie', requestId: entry.id }, req);
+  return res.json({
+    success: true,
+    message: 'Password updated. Sign in to the driver portal.',
+    redirectTo: '/driver.html'
+  });
+});
+
+app.get('/api/admin/driver-recovery-requests', requireRole('admin'), async (req, res) => {
+  const db = loadDatabase();
+  if (expireDriverRecoveryRequests(db)) {
+    const saveError = await requireDurableSave(db);
+    if (saveError) return res.status(503).json({ success: false, message: saveError });
+  }
+  const requests = (db.driverRecoveryRequests || [])
+    .filter(entry => entry.status === 'pending' && entry.driverId && entry.selfiePhoto)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, DRIVER_RECOVERY_MAX_OPEN)
+    .map(entry => {
+      const driver = (db.drivers || []).find(item => item.id === entry.driverId);
+      if (!driver) return null;
+      return {
+        id: entry.id,
+        createdAt: entry.createdAt,
+        expiresAt: entry.expiresAt,
+        driver: {
+          id: driver.id,
+          name: driver.name || `${driver.fname || ''} ${driver.lname || ''}`.trim(),
+          username: driver.username || '',
+          phone: driver.phone || ''
+        },
+        registrationPhotoUrl: `/api/drivers/${encodeURIComponent(driver.id)}/photo`,
+        selfiePhoto: entry.selfiePhoto
+      };
+    })
+    .filter(Boolean);
+  res.set('Cache-Control', 'no-store');
+  return res.json({ success: true, requests });
+});
+
+app.post('/api/admin/driver-recovery-requests/:id/review', requireRole('admin'), async (req, res) => {
+  const decision = String(req.body && req.body.decision || '').toLowerCase();
+  if (!['approve', 'reject'].includes(decision)) {
+    return res.status(400).json({ success: false, message: 'Choose approve or reject.' });
+  }
+  if (decision === 'approve'
+    && (req.body.phoneVerified !== true || req.body.registrationPhotoCompared !== true)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Confirm that you contacted the registered phone and compared both photos before approving.'
+    });
+  }
+
+  const db = loadDatabase();
+  const entry = (db.driverRecoveryRequests || []).find(item => item.id === req.params.id);
+  if (!entry || entry.status !== 'pending') {
+    return res.status(404).json({ success: false, message: 'Pending recovery request not found.' });
+  }
+  if (Date.parse(entry.expiresAt || '') <= Date.now()) {
+    expireDriverRecoveryRequests(db);
+    const saveError = await requireDurableSave(db);
+    if (saveError) return res.status(503).json({ success: false, message: saveError });
+    return res.status(410).json({ success: false, message: 'This recovery request has expired.' });
+  }
+  const driver = (db.drivers || []).find(item => item.id === entry.driverId);
+  if (!driver || !entry.selfiePhoto || !(driver.photoUrl || driver.photo)) {
+    return res.status(409).json({ success: false, message: 'The driver or one of the verification photos is no longer available.' });
+  }
+
+  const now = new Date().toISOString();
+  entry.status = decision === 'approve' ? 'approved' : 'denied';
+  entry.reviewedAt = now;
+  entry.reviewedBy = req.auth.admin.username || req.auth.admin.id;
+  if (decision === 'approve') {
+    entry.phoneVerified = true;
+    entry.registrationPhotoCompared = true;
+  }
+  if (decision === 'reject') {
+    entry.selfiePhoto = null;
+    entry.phoneHash = null;
+  }
+  const saveError = await requireDurableSave(db);
+  if (saveError) return res.status(503).json({ success: false, message: saveError });
+
+  logAction(
+    decision === 'approve' ? 'DRIVER_PASSWORD_RECOVERY_APPROVED' : 'DRIVER_PASSWORD_RECOVERY_DENIED',
+    driver.username || driver.name || driver.id,
+    'ADMIN_PORTAL',
+    {
+      requestId: entry.id,
+      reviewedBy: entry.reviewedBy,
+      phoneVerified: entry.phoneVerified === true,
+      registrationPhotoCompared: entry.registrationPhotoCompared === true
+    },
+    req
+  );
+  return res.json({
+    success: true,
+    status: entry.status,
+    message: decision === 'approve'
+      ? 'Identity approved. The driver can now set a new password.'
+      : 'Recovery request rejected; the submitted selfie was removed.'
   });
 });
 
@@ -4312,6 +4663,9 @@ function projectOrderSummary(order, viewer = 'public') {
     fulfilment: order.fulfilment,
     location: order.location,
     mapPin: order.mapPin || null,
+    pickupPoint: order.pickupPoint || null,
+    pickupPointName: order.pickupPointName || null,
+    deliveryDistanceKm: Number(order.deliveryDistanceKm) || 0,
     driverId: order.driverId || (order.driver && order.driver.id) || null,
     driverName: order.driverName || (order.driver && order.driver.name) || null,
     pickupPin: staff ? (order.pickupPin || null) : undefined,
@@ -4506,10 +4860,20 @@ function calculateOrderDelivery(isDelivery, items, orderPin, sharedPickup) {
     return { fee: 0, distanceKm: 0, discount: 0, baseFee: 0, mealCount: 0 };
   }
   const mealCount = (items || []).reduce((sum, i) => sum + (Number(i.quantity) || 1), 0);
-  const originLat = (sharedPickup && Number(sharedPickup.lat)) || 5.5612;
-  const originLng = (sharedPickup && Number(sharedPickup.lng)) || -0.2155;
-  const destLat = (orderPin && Number(orderPin.lat)) || originLat;
-  const destLng = (orderPin && Number(orderPin.lng)) || originLng;
+  const pickup = sharedPickup
+    && Number.isFinite(Number(sharedPickup.lat))
+    && Number.isFinite(Number(sharedPickup.lng))
+    ? sharedPickup
+    : DEFAULT_PICKUP_POINT;
+  const originLat = Number(pickup.lat);
+  const originLng = Number(pickup.lng);
+  const destination = orderPin
+    && Number.isFinite(Number(orderPin.lat))
+    && Number.isFinite(Number(orderPin.lng))
+    ? orderPin
+    : pickup;
+  const destLat = Number(destination.lat);
+  const destLng = Number(destination.lng);
   const rawDist = calculateDistanceKm(originLat, originLng, destLat, destLng);
   const distanceKm = Math.max(0.5, Math.round(rawDist * 10) / 10);
   const ratePerKm = mealCount >= 4 ? 2 : mealCount === 3 ? 4 : mealCount === 2 ? 6 : 8;
@@ -6896,18 +7260,23 @@ app.get('/api/sse/order/:id', (req, res) => {
   orderSseClients.get(orderId).add(res);
 
   // Send current snapshot immediately
+  const projectTrackingOrder = order => {
+    const view = projectOrder(order, 'customer');
+    if (hasOrderAccess(order, req)) view.pickupPin = order.pickupPin || null;
+    return view;
+  };
   try {
-    res.write(`data: ${JSON.stringify({ type: 'snapshot', order: projectOrder(initialOrder, 'customer') })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'snapshot', order: projectTrackingOrder(initialOrder) })}\n\n`);
   } catch (e) { /* non-fatal */ }
 
-  let lastSnapshot = JSON.stringify(projectOrder(initialOrder, 'customer'));
+  let lastSnapshot = JSON.stringify(projectTrackingOrder(initialOrder));
   const heartbeat = setInterval(async () => {
     try {
       await store.refresh();
       const db = loadDatabase();
       const order = db.orders.find(o => String(o.id).toUpperCase() === orderId);
       if (!order) return;
-      const snapshot = JSON.stringify(projectOrder(order, 'customer'));
+      const snapshot = JSON.stringify(projectTrackingOrder(order));
       if (snapshot !== lastSnapshot) {
         lastSnapshot = snapshot;
         res.write(`data: ${JSON.stringify({ type: 'snapshot', order: JSON.parse(snapshot) })}\n\n`);
@@ -6936,7 +7305,9 @@ app.get('/api/orders/:id/track', (req, res) => {
     order = db.orders.find(o => String(o.pickupPin || '') === pin);
   }
   if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-  res.json({ success: true, order: projectOrder(order, 'customer') });
+  const view = projectOrder(order, 'customer');
+  if (hasOrderAccess(order, req)) view.pickupPin = order.pickupPin || null;
+  res.json({ success: true, order: view });
 });
 
 app.post('/api/orders/:id/customer-location', (req, res) => {
@@ -7040,11 +7411,115 @@ app.get('/api/admin/provider-health', requireRole('admin'), (req, res) => {
   res.json({
     success: true,
     providers: {
-      gemini: { configured: gemini, operational: gemini, provider: process.env.GEMINI_MODEL || 'auto' },
+      gemini: { configured: gemini, operational: null, status: gemini ? 'not-tested' : 'not-configured', provider: process.env.GEMINI_MODEL || 'auto' },
       momo: { configured: momo, operational: momo, provider: 'MTN MoMo' },
       sms: { configured: arkesel || hubtel || twilio, operational: arkesel || hubtel || twilio, providers: { arkesel, hubtel, twilio } },
       whatsapp: { configured: whatsappCloud || whatsappRelay, operational: whatsappCloud || whatsappRelay, cloud: whatsappCloud, callMeBotRelay: whatsappRelay }
     }
+  });
+});
+
+app.post('/api/admin/ai-health-check', requireRole('admin'), rateLimit({
+  windowMs: 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, status: 'rate-limited', message: 'Please wait a minute before testing the AI connection again.' }
+}), async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+  const checkedAt = new Date().toISOString();
+  if (!apiKey) {
+    return res.json({
+      success: true,
+      operational: false,
+      status: 'not-configured',
+      message: 'No Gemini API key is configured. Add GEMINI_API_KEY in Render Environment and redeploy.',
+      checkedAt
+    });
+  }
+
+  const configuredModel = String(process.env.GEMINI_MODEL || '').trim();
+  const models = [...new Set([configuredModel, ...GEMINI_FALLBACK_MODELS].filter(Boolean))];
+  let lastStatus = 0;
+  for (const model of models) {
+    let response;
+    try {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: 'Reply with exactly OK.' }] }],
+          generationConfig: { temperature: 0, maxOutputTokens: 8 }
+        }),
+        signal: AbortSignal.timeout(8000)
+      });
+    } catch (error) {
+      const timedOut = error.name === 'TimeoutError' || error.name === 'AbortError';
+      return res.json({
+        success: true,
+        operational: false,
+        status: timedOut ? 'timeout' : 'connection-error',
+        message: timedOut
+          ? 'Gemini did not respond within 8 seconds. Check the provider status and try again.'
+          : 'The server could not connect to Gemini. Check the server’s outbound network and try again.',
+        checkedAt
+      });
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (response.ok) {
+      const reply = (data.candidates || []).flatMap(candidate =>
+        candidate && candidate.content && Array.isArray(candidate.content.parts) ? candidate.content.parts : []
+      ).map(part => String(part.text || '').trim()).filter(Boolean).join('');
+      if (reply) {
+        return res.json({
+          success: true,
+          operational: true,
+          status: 'operational',
+          provider: 'Gemini',
+          model,
+          checkedAt
+        });
+      }
+      return res.json({
+        success: true,
+        operational: false,
+        status: 'empty-response',
+        message: 'Gemini accepted the test request but returned no text. Check the selected model and retry.',
+        checkedAt
+      });
+    }
+
+    lastStatus = response.status;
+    if (response.status === 401 || response.status === 403) {
+      return res.json({
+        success: true,
+        operational: false,
+        status: 'invalid-key',
+        message: 'Gemini rejected the API key. Replace GEMINI_API_KEY in Render Environment and redeploy.',
+        checkedAt
+      });
+    }
+    if (response.status === 429) {
+      return res.json({
+        success: true,
+        operational: false,
+        status: 'quota-exceeded',
+        message: 'Gemini’s quota or rate limit was reached. Check the API project’s quota and billing, then retry.',
+        checkedAt
+      });
+    }
+    if (![400, 404].includes(response.status)) break;
+  }
+
+  return res.json({
+    success: true,
+    operational: false,
+    status: lastStatus === 404 || lastStatus === 400 ? 'model-unavailable' : 'provider-error',
+    message: lastStatus === 404 || lastStatus === 400
+      ? 'None of the configured Gemini models is available for this API key. Check GEMINI_MODEL and the key’s model access.'
+      : 'Gemini could not complete the test request. Check the provider status and try again.',
+    checkedAt
   });
 });
 

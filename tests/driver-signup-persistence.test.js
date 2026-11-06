@@ -62,6 +62,7 @@ describe('driver signup persistence', () => {
       payouts: [],
       reviews: [],
       notifications: [],
+      driverRecoveryRequests: [],
       pushSubscriptions: [],
       recoveryCodes: [],
       settings: {

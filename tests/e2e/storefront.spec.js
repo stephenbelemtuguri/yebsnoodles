@@ -97,6 +97,37 @@ test('rejects fabricated menu items at the API boundary', async ({ request }) =>
   });
 });
 
+test('server order sync clears stale assignment and destination fields but keeps private PIN data', async ({ page }) => {
+  await page.goto('/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+  const merged = await page.evaluate(async () => {
+    const { mergeServerOrders, getOrders } = await import('/shared.js');
+    localStorage.setItem('yebs_noodles_orders_v2', JSON.stringify([{
+      id: 'YB-SYNC01',
+      pickupPin: '1234',
+      driver: { id: 'drv-old', name: 'Old Rider' },
+      mapPin: { lat: 5.6, lng: -0.2 },
+      phone: '0240000000'
+    }]));
+    mergeServerOrders([{
+      id: 'YB-SYNC01',
+      driver: null,
+      mapPin: null,
+      phone: '0241111111',
+      status: 'pending'
+    }]);
+    return getOrders()[0];
+  });
+
+  expect(merged).toMatchObject({
+    id: 'YB-SYNC01',
+    pickupPin: '1234',
+    driver: null,
+    mapPin: null,
+    phone: '0241111111',
+    status: 'pending'
+  });
+});
+
 test('loads the operations portals without uncaught JavaScript errors', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message));
@@ -107,7 +138,21 @@ test('loads the operations portals without uncaught JavaScript errors', async ({
   ]) {
     await page.goto(route, { waitUntil: 'domcontentloaded', timeout: 15000 });
     await expect(page).toHaveTitle(title);
+    if (route === '/admin.html') {
+      await expect(page.locator('#adminForgotBtn')).toHaveCount(0);
+    } else {
+      await expect(page.locator('#driverForgotBtn')).toBeVisible();
+    }
   }
 
   expect(pageErrors).toEqual([]);
+});
+
+test('opens the local database driver selfie-recovery flow instead of SMS recovery', async ({ page }) => {
+  await page.goto('/driver.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await page.locator('#driverForgotBtn').click();
+
+  await expect(page.getByRole('heading', { name: 'Recover your driver password' })).toBeVisible();
+  await expect(page.getByText('No SMS code or external face service is used.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Submit for administrator review' })).toBeDisabled();
 });

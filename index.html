@@ -3354,7 +3354,9 @@
         headerTrackSubmit.textContent = 'Finding…';
       }
       try {
-        const response = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/track`, { cache: 'no-store' });
+        const accessToken = getOrderAccessToken(orderId);
+        const headers = accessToken ? { 'X-Order-Access-Token': accessToken } : {};
+        const response = await fetch(`${API_BASE}/api/orders/${encodeURIComponent(orderId)}/track`, { headers, cache: 'no-store' });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.order || !data.order.id) {
           if (trackSearchStatus) {
@@ -3385,6 +3387,10 @@
         }
       }
 
+      if (currentlyTrackedOrderId !== order.id) {
+        trackLastAutoFitSignature = '';
+        clearCustomerRoute();
+      }
       currentlyTrackedOrderId = order.id;
       trackingOverlay.classList.add("active");
       document.body.style.overflow = "hidden";
@@ -3879,6 +3885,15 @@
       }
 
       if (trackMap && trackDriverMarker && trackCustMarker) {
+        const pickup = order.pickupPoint
+          && Number.isFinite(Number(order.pickupPoint.lat))
+          && Number.isFinite(Number(order.pickupPoint.lng))
+          ? order.pickupPoint
+          : null;
+        if (trackKitchenMarker && pickup) {
+          trackKitchenMarker.setLatLng([Number(pickup.lat), Number(pickup.lng)]);
+          trackKitchenMarker.bindPopup(`<b>YEBS Noodles pickup point</b><br>${pickup.name || order.pickupPointName || 'Shared pickup point'}`);
+        }
         if (hasDestination) {
           trackCustMarker.setLatLng([targetLat, targetLng]);
           trackCustMarker.setIcon(L.divIcon({
@@ -3947,8 +3962,10 @@
           const distanceKm = hasDestination && hasDriverLocation
             ? calculateDistanceKm(driverLat, driverLng, targetLat, targetLng)
             : 0;
-          const fitSignature = `${Math.round(distanceKm * 10) / 10}:${hasDestination ? 1 : 0}`;
-          if (!trackLastAutoFitSignature || fitSignature !== trackLastAutoFitSignature) {
+          const fitSignature = `${order.id}:${hasDestination ? `${targetLat.toFixed(5)},${targetLng.toFixed(5)}` : 'no-destination'}:${hasDriverLocation ? 1 : 0}`;
+          const driverOutOfView = hasDriverLocation
+            && !trackMap.getBounds().contains([driverLat, driverLng]);
+          if (!trackLastAutoFitSignature || fitSignature !== trackLastAutoFitSignature || driverOutOfView) {
             trackMap.fitBounds(bounds, {
               padding: [distanceKm < 1 ? 35 : 48, distanceKm < 1 ? 35 : 48],
               maxZoom: distanceKm < 1 ? 17 : 15

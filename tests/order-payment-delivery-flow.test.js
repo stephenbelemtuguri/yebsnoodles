@@ -33,6 +33,7 @@ fs.writeFileSync(databasePath, JSON.stringify({
     name: 'Test Driver',
     phone: '0241111111',
     email: 'driver@example.test',
+    photo: `data:image/jpeg;base64,${Buffer.from('registration-face').toString('base64')}`,
     vehicle: 'Motorcycle',
     isActive: true,
     approvalStatus: 'approved',
@@ -141,6 +142,7 @@ describe('customer order to verified delivery flow', () => {
         fulfilment: 'Delivery',
         payment: 'MTN Mobile Money',
         location: 'Test delivery address',
+        notes: 'Ring at the gate',
         mapPin: { lat: 5.6037, lng: -0.187, name: 'Test delivery address' },
         items: [{ menuId: 'test-meal', name: 'Test meal', price: 25, quantity: 1 }]
       });
@@ -211,7 +213,156 @@ describe('customer order to verified delivery flow', () => {
       expect(tracking.status).toBe(200);
       expect(tracking.body.order.id).toBe('YB-123456');
       expect(tracking.body.order).not.toHaveProperty('phone');
+      expect(tracking.body.order).not.toHaveProperty('pickupPin');
     }
+
+    const authorizedTracking = await request(app)
+      .get('/api/orders/YB-123456/track')
+      .set('X-Order-Access-Token', order.trackingToken);
+    expect(authorizedTracking.body.order.pickupPin).toBe(order.pickupPin);
+  });
+
+  test('requires admin review of a live selfie before one-time driver password reset', async () => {
+    const selfiePhoto = `data:image/jpeg;base64,${Buffer.from('live-recovery-selfie').toString('base64')}`;
+    const submit = () => request(app)
+      .post('/api/auth/driver-recovery')
+      .send({ phone: '0241111111', selfiePhoto });
+
+    const unauthorizedQueue = await request(app).get('/api/admin/driver-recovery-requests');
+    expect(unauthorizedQueue.status).toBe(401);
+
+    const deniedRequest = await submit();
+    expect(deniedRequest.status).toBe(201);
+    expect(deniedRequest.body).toMatchObject({ success: true });
+    expect(deniedRequest.body.accessToken).toBeTruthy();
+
+    const earlyReset = await request(app)
+      .post(`/api/auth/driver-recovery/${deniedRequest.body.requestId}/password`)
+      .set('X-Driver-Recovery-Token', deniedRequest.body.accessToken)
+      .send({ password: 'recovered-driver-password', confirmPassword: 'recovered-driver-password' });
+    expect(earlyReset.status).toBe(409);
+
+    const queue = await request(app)
+      .get('/api/admin/driver-recovery-requests')
+      .set('Authorization', 'Bearer ' + adminToken);
+    expect(queue.status).toBe(200);
+    expect(queue.body.requests).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: deniedRequest.body.requestId,
+        driver: expect.objectContaining({ phone: '0241111111' }),
+        selfiePhoto
+      })
+    ]));
+
+    const denied = await request(app)
+      .post(`/api/admin/driver-recovery-requests/${deniedRequest.body.requestId}/review`)
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({ decision: 'reject' });
+    expect(denied.status).toBe(200);
+    const deniedStatus = await request(app)
+      .get(`/api/auth/driver-recovery/${deniedRequest.body.requestId}`)
+      .set('X-Driver-Recovery-Token', deniedRequest.body.accessToken);
+    expect(deniedStatus.body.status).toBe('denied');
+
+    const approvedRequest = await submit();
+    expect(approvedRequest.status).toBe(201);
+    const approvalWithoutChecks = await request(app)
+      .post(`/api/admin/driver-recovery-requests/${approvedRequest.body.requestId}/review`)
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({ decision: 'approve' });
+    expect(approvalWithoutChecks.status).toBe(400);
+
+    const approved = await request(app)
+      .post(`/api/admin/driver-recovery-requests/${approvedRequest.body.requestId}/review`)
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({ decision: 'approve', phoneVerified: true, registrationPhotoCompared: true });
+    expect(approved.status).toBe(200);
+
+    const approvedStatus = await request(app)
+      .get(`/api/auth/driver-recovery/${approvedRequest.body.requestId}`)
+      .set('X-Driver-Recovery-Token', approvedRequest.body.accessToken);
+    expect(approvedStatus.body.status).toBe('approved');
+
+    const mismatch = await request(app)
+      .post(`/api/auth/driver-recovery/${approvedRequest.body.requestId}/password`)
+      .set('X-Driver-Recovery-Token', approvedRequest.body.accessToken)
+      .send({ password: 'recovered-driver-password', confirmPassword: 'different-password' });
+    expect(mismatch.status).toBe(400);
+
+    const oldSession = await request(app)
+      .get('/api/auth/session')
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(oldSession.status).toBe(200);
+
+    const reset = await request(app)
+      .post(`/api/auth/driver-recovery/${approvedRequest.body.requestId}/password`)
+      .set('X-Driver-Recovery-Token', approvedRequest.body.accessToken)
+      .send({ password: 'recovered-driver-password', confirmPassword: 'recovered-driver-password' });
+    expect(reset.status).toBe(200);
+    expect(reset.body.redirectTo).toBe('/driver.html');
+
+    const invalidatedSession = await request(app)
+      .get('/api/auth/session')
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(invalidatedSession.status).toBe(401);
+
+    const newLogin = await request(app)
+      .post('/api/auth/driver/login')
+      .send({ username: 'test-driver', password: 'recovered-driver-password' });
+    expect(newLogin.status).toBe(200);
+    driverToken = newLogin.body.token;
+
+    const replay = await request(app)
+      .post(`/api/auth/driver-recovery/${approvedRequest.body.requestId}/password`)
+      .set('X-Driver-Recovery-Token', approvedRequest.body.accessToken)
+      .send({ password: 'another-driver-password', confirmPassword: 'another-driver-password' });
+    expect(replay.status).toBe(404);
+  });
+
+  test('does not send driver reset codes by SMS or accept legacy driver codes', async () => {
+    const start = await request(app)
+      .post('/api/auth/recovery/start')
+      .send({ role: 'driver', identifier: '0241111111' });
+    expect(start.status).toBe(410);
+
+    const verify = await request(app)
+      .post('/api/auth/recovery/verify')
+      .send({ role: 'driver', identifier: '0241111111', code: '123456', password: 'new-driver-password' });
+    expect(verify.status).toBe(410);
+  });
+
+  test('uses the same delivery distance and fee for pay-now and pay-on-delivery orders', async () => {
+    const payNow = await createDelivery();
+    const payOnDelivery = await createCashDelivery();
+
+    expect(payOnDelivery.deliveryDistanceKm).toBe(payNow.deliveryDistanceKm);
+    expect(payOnDelivery.deliveryFee).toBe(payNow.deliveryFee);
+    expect(payOnDelivery.total - payOnDelivery.subtotal).toBe(payOnDelivery.deliveryFee);
+  });
+
+  test('driver order sync includes the full customer and pickup details', async () => {
+    const order = await createDelivery();
+    const claimed = await request(app)
+      .post(`/api/orders/${order.id}/claim`)
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(claimed.status).toBe(200);
+
+    const synced = await request(app)
+      .get('/api/orders?scope=today')
+      .set('Authorization', 'Bearer ' + driverToken);
+    expect(synced.status).toBe(200);
+    expect(synced.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: order.id,
+        customer: 'Test Customer',
+        phone: '0240000000',
+        notes: 'Ring at the gate',
+        location: 'Test delivery address',
+        mapPin: expect.objectContaining({ lat: 5.6037, lng: -0.187 }),
+        pickupPoint: expect.objectContaining({ name: 'YEBS Noodles Kitchen' }),
+        deliveryDistanceKm: order.deliveryDistanceKm
+      })
+    ]));
   });
 
   test('edits the existing unpaid order with authenticated access', async () => {

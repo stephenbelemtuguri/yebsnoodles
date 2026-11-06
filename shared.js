@@ -2264,10 +2264,18 @@ export function mergeServerOrders(serverOrders) {
       byId.set(serverOrder.id, {
         ...existing,
         ...serverOrder,
-        pickupPin: serverOrder.pickupPin || existing.pickupPin,
-        driver: serverOrder.driver || existing.driver || null,
-        momoReceipt: serverOrder.momoReceipt || existing.momoReceipt || null,
-        mapPin: serverOrder.mapPin || existing.mapPin
+        pickupPin: Object.prototype.hasOwnProperty.call(serverOrder, 'pickupPin')
+          ? serverOrder.pickupPin
+          : existing.pickupPin,
+        driver: Object.prototype.hasOwnProperty.call(serverOrder, 'driver')
+          ? serverOrder.driver
+          : existing.driver,
+        momoReceipt: Object.prototype.hasOwnProperty.call(serverOrder, 'momoReceipt')
+          ? serverOrder.momoReceipt
+          : existing.momoReceipt,
+        mapPin: Object.prototype.hasOwnProperty.call(serverOrder, 'mapPin')
+          ? serverOrder.mapPin
+          : existing.mapPin
       });
     } else {
       byId.set(serverOrder.id, serverOrder);

@@ -821,7 +821,7 @@
 
           <div style="font-size:0.78rem; color:var(--muted); margin-top:8px; margin-bottom:4px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;">
             <span>🟢 Kitchen: Adabraka</span>
-            <span>📍 Route destination: <span id="mapPickupPointLabel">Circle Odo Rice</span></span>
+            <span>📍 Shared pickup point: <span id="mapPickupPointLabel">YEBS Noodles Kitchen</span></span>
             <span>🛵 Rider GPS: <span id="riderGpsCoords">Waiting for GPS</span></span>
           </div>
           <!-- Live ETA display -->
@@ -1098,10 +1098,12 @@
     let driverMarker = null;
     let customerMarker = null;
     let pickupMarker = null;
+    let orderMarkersLayer = null;
     let routeLine = null;
+    let driverMapOrdersSignature = '';
     let currentCoords = { lat: RESTAURANT_COORDS.lat, lng: RESTAURANT_COORDS.lng };
     let hasLiveGpsFix = false;
-    let navigationOrderId = null;
+    let navigationOrderId = sessionStorage.getItem('yebs_driver_navigation_order') || null;
     let watchId = null;
     let lastPickupAppliedAt = 0;
 
@@ -1337,6 +1339,7 @@
         }
         if (map && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))) {
           updatePickupMarker(Number(point.lat), Number(point.lng), point.name);
+          renderDriverMapOrders(getOrders());
         }
       } catch (e) {}
     }
@@ -1386,6 +1389,7 @@
         attributionControl: true
       }).setView([targetPoint.lat, targetPoint.lng], 14);
       addReliableBasemap(map);
+      orderMarkersLayer = L.layerGroup().addTo(map);
 
       const pickupIcon = L.divIcon({
         html: `<div style="background:#173d30; color:white; width:38px; height:38px; border-radius:50%; display:grid; place-items:center; border:3px solid #e9bd68; box-shadow:0 4px 14px rgba(0,0,0,0.35); font-size:18px;">📍</div>`,
@@ -1393,7 +1397,7 @@
         iconAnchor: [19, 19]
       });
       pickupMarker = L.marker([targetPoint.lat, targetPoint.lng], { icon: pickupIcon }).addTo(map)
-        .bindPopup(`<b>Route destination</b><br>${targetPoint.name}`);
+        .bindPopup(`<b>Shared pickup point</b><br>${targetPoint.name}`);
 
       const riderIcon = L.divIcon({
         html: `<div style="background:#e57a45; color:white; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; border:2px solid white; box-shadow:0 3px 12px rgba(229,122,69,0.5); font-size:18px;">🛵</div>`,
@@ -1403,13 +1407,12 @@
       driverMarker = L.marker([currentCoords.lat, currentCoords.lng], { icon: riderIcon, opacity: hasLiveGpsFix ? 1 : 0 }).addTo(map);
 
       updateGoogleMapsAppLink(targetPoint.lat, targetPoint.lng);
+      renderDriverMapOrders(getOrders());
     }
 
     function updatePickupMarker(lat, lng, name) {
       if (pickupMarker) {
-        pickupMarker.setLatLng([lat, lng]).bindPopup(`<b>Route destination</b><br>${name}`).openPopup();
-        map.setView([lat, lng], 14);
-        updateGoogleMapsAppLink(lat, lng);
+        pickupMarker.setLatLng([lat, lng]).bindPopup(`<b>Shared pickup point</b><br>${name}`);
       }
       if (mapPickupPointLabel) mapPickupPointLabel.textContent = name;
     }
@@ -1464,7 +1467,9 @@
           || (driver.name && String(orderDriver.name || '').toLowerCase() === driver.name.toLowerCase());
       });
       assigned.sort((a, b) => Number(b.status === 'enroute') - Number(a.status === 'enroute'));
-      const order = assigned.find(item => item.id === navigationOrderId) || assigned[0];
+      const order = assigned.find(item => item.id === navigationOrderId)
+        || assigned.find(item => ['enroute', 'arrived'].includes(item.status))
+        || (assigned.length === 1 ? assigned[0] : null);
       const session = getSessionState();
       const point = order
         ? destinationForOrder(order)
@@ -1505,20 +1510,138 @@
         return;
       }
       navigationOrderId = order.id;
+      sessionStorage.setItem('yebs_driver_navigation_order', order.id);
       if (map) {
-        updatePickupMarker(target.lat, target.lng, target.name);
         updateCustomerMarker(target.lat, target.lng, target.name, order.customer || '');
+        updateGoogleMapsAppLink(target.lat, target.lng);
         const bounds = L.latLngBounds([[target.lat, target.lng]]);
         if (hasLiveGpsFix) bounds.extend([currentCoords.lat, currentCoords.lng]);
         map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
         drawRouteToTarget(target.lat, target.lng);
       }
+      driverMapOrdersSignature = '';
+      renderDriverMapOrders(getOrders());
       const etaEl = document.getElementById('driverEtaDisplay');
       if (etaEl && hasLiveGpsFix) {
         const eta = computeRoadEta(currentCoords, target);
         etaEl.textContent = `🛵 ETA to ${target.name}: ~${eta.etaMinutes} min · ${eta.distanceKm} km road distance`;
         etaEl.style.display = 'block';
       }
+    }
+
+    function renderDriverMapOrders(orders) {
+      if (!map || !orderMarkersLayer || typeof L === 'undefined') return;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const driver = getCurrentDriver();
+      const availableToday = (orders || []).filter(order => {
+        const createdAt = new Date(order.createdAt || 0);
+        const isToday = Number.isFinite(createdAt.getTime()) && createdAt >= today;
+        const status = String(order.status || '').toLowerCase();
+        if (!isToday || ['cancelled', 'delivered'].includes(status)
+          || (order.cancellation && order.cancellation.status === 'pending')) return false;
+        const assignedId = order.driverId || (order.driver && order.driver.id);
+        const assignedName = order.driverName || (order.driver && order.driver.name);
+        const assignedToMe = (driver.id && assignedId === driver.id)
+          || (driver.name && assignedName && assignedName.toLowerCase() === driver.name.toLowerCase());
+        return !assignedId && !assignedName || assignedToMe;
+      });
+      const selectedOrder = availableToday.find(order => order.id === navigationOrderId);
+      if (!navigationOrderId) {
+        const ongoingOrder = availableToday.find(order =>
+          ['enroute', 'arrived'].includes(String(order.status || '').toLowerCase())
+          && ((driver.id && (order.driverId === driver.id || (order.driver && order.driver.id === driver.id)))
+            || (driver.name && String(order.driverName || (order.driver && order.driver.name) || '').toLowerCase() === driver.name.toLowerCase()))
+        );
+        if (ongoingOrder) {
+          navigationOrderId = ongoingOrder.id;
+          sessionStorage.setItem('yebs_driver_navigation_order', ongoingOrder.id);
+        }
+      }
+      if (!selectedOrder && navigationOrderId) {
+        const stillActive = availableToday.some(order => order.id === navigationOrderId);
+        if (!stillActive) {
+          navigationOrderId = null;
+          sessionStorage.removeItem('yebs_driver_navigation_order');
+        }
+      }
+      const visibleOrders = navigationOrderId
+        ? availableToday.filter(order => order.id === navigationOrderId)
+        : availableToday;
+      const signature = JSON.stringify({
+        selected: navigationOrderId,
+        orders: visibleOrders.map(order => {
+          const target = destinationForOrder(order);
+          return [
+            order.id, order.customer, order.location, order.status,
+            order.driverId || (order.driver && order.driver.id) || '',
+            target ? `${target.lat},${target.lng}` : ''
+          ];
+        })
+      });
+      if (signature === driverMapOrdersSignature) return;
+      driverMapOrdersSignature = signature;
+      orderMarkersLayer.clearLayers();
+
+      visibleOrders.forEach(order => {
+        const target = destinationForOrder(order);
+        if (!target) return;
+        const isSelected = order.id === navigationOrderId;
+        const marker = L.marker([Number(target.lat), Number(target.lng)], {
+          icon: L.divIcon({
+            className: 'yebs-order-map-marker',
+            html: `<div style="background:${isSelected ? '#e57a45' : '#173d30'};color:white;min-width:36px;height:36px;padding:0 6px;border-radius:50%;display:grid;place-items:center;border:2px solid white;box-shadow:0 3px 12px rgba(0,0,0,.32);font-size:16px;">📦</div>`,
+            iconSize: [38, 38],
+            iconAnchor: [19, 19]
+          })
+        }).addTo(orderMarkersLayer);
+        const popup = document.createElement('div');
+        popup.style.cssText = 'min-width:180px;font-family:Arial,sans-serif;line-height:1.45;';
+        const title = document.createElement('strong');
+        title.textContent = `Order ${order.id}`;
+        popup.appendChild(title);
+        const details = document.createElement('div');
+        details.textContent = `${order.customer || 'Customer'} · ${target.name || order.location || 'Delivery point'}`;
+        popup.appendChild(details);
+        const status = document.createElement('div');
+        status.textContent = `Status: ${String(order.status || 'pending').toUpperCase()}`;
+        status.style.cssText = 'font-size:12px;color:#64748b;margin:3px 0 8px;';
+        popup.appendChild(status);
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'driver-map-select-order';
+        action.textContent = isSelected
+          ? 'Selected · show route'
+          : (order.driverId || (order.driver && order.driver.id) ? 'Select this delivery' : 'Accept & navigate');
+        action.style.cssText = 'border:0;border-radius:6px;padding:7px 10px;background:#173d30;color:#fff;font-weight:700;cursor:pointer;';
+        action.addEventListener('click', async () => {
+          if (isSelected) {
+            navigateToOrder(order.id);
+            return;
+          }
+          const assignedId = order.driverId || (order.driver && order.driver.id);
+          const assignedName = order.driverName || (order.driver && order.driver.name);
+          const assignedToMe = (driver.id && assignedId === driver.id)
+            || (driver.name && assignedName && assignedName.toLowerCase() === driver.name.toLowerCase());
+          if (!assignedToMe) {
+            action.disabled = true;
+            action.textContent = 'Accepting…';
+            const result = await apiClaimOrder(order.id);
+            if (!result || !result.success) {
+              action.disabled = false;
+              action.textContent = 'Accept & navigate';
+              alert((result && result.message) || 'Could not accept this delivery.');
+              return;
+            }
+          }
+          navigationOrderId = order.id;
+          sessionStorage.setItem('yebs_driver_navigation_order', order.id);
+          renderSessionPackages();
+          navigateToOrder(order.id);
+        });
+        popup.appendChild(action);
+        marker.bindPopup(popup);
+      });
     }
 
     function publishDriverLocation(speed) {
@@ -1549,10 +1672,10 @@
       });
       const target = getDriverNavigationTarget();
       if (target && Number.isFinite(Number(target.lat))) {
-        if (pickupMarker) {
-          pickupMarker.setLatLng([target.lat, target.lng]).bindPopup(`<b>Order destination</b><br>${target.name}`);
-          updateGoogleMapsAppLink(target.lat, target.lng);
-        }
+        updateCustomerMarker(target.lat, target.lng, target.name, navigationOrderId
+          ? ((getOrders().find(order => order.id === navigationOrderId) || {}).customer || '')
+          : '');
+        updateGoogleMapsAppLink(target.lat, target.lng);
         // Throttle: update ETA every ~5s, route line every ~15s
         const now = Date.now();
         if (!window._lastEtaUpdate || now - window._lastEtaUpdate > 5000) {
@@ -1611,6 +1734,7 @@
     // RENDER SESSION PACKAGES WITH DRIVER ASSIGNMENT & 4-DIGIT PIN SECURITY
     // ===============================================
     let currentDriverFilter = 'all';
+    const driverPinDrafts = new Map();
 
     const driverFilterBar = document.getElementById('driverFilterBar');
     if (driverFilterBar) {
@@ -1670,6 +1794,7 @@
         const hasDriver = o.driverId || (o.driver && o.driver.name);
         return !hasDriver && o.status !== 'delivered';
       });
+      renderDriverMapOrders(orders);
 
       const myCountEl = document.getElementById('myDeliveriesCount');
       if (myCountEl) myCountEl.textContent = String(myOrders.length);
@@ -1836,7 +1961,7 @@
                     Handover verified ✓
                   </span>
                 ` : isMyOrder && order.status === 'arrived' && order.paymentStatus === 'paid' ? `
-                  <input type="text" maxlength="4" placeholder="PIN" class="pin-input" data-id="${order.id}" id="pinInput-${order.id}">
+                  <input type="text" maxlength="4" inputmode="numeric" pattern="[0-9]{4}" placeholder="PIN" class="pin-input" data-id="${order.id}" id="pinInput-${order.id}" value="${driverPinDrafts.get(String(order.id)) || ''}">
                   <button type="button" class="btn btn-orange btn-sm verify-pin-btn" data-id="${order.id}">
                     Verify PIN
                   </button>
@@ -1848,6 +1973,13 @@
       }).join('');
 
     }
+
+    sessionPackagesList.addEventListener('input', event => {
+      const input = event.target.closest('.pin-input');
+      if (!input) return;
+      input.value = input.value.replace(/\D/g, '').slice(0, 4);
+      driverPinDrafts.set(String(input.dataset.id), input.value);
+    });
 
     // The rider's hand-over report is sent to the owner's WhatsApp by the
     // backend bot. While it works we show "Bot working…"; if no credential is
@@ -1941,6 +2073,7 @@
         const res = await verifyOrderPin(orderId, enteredPin);
         e.target.disabled = false;
         if (res.success) {
+          driverPinDrafts.delete(String(orderId));
           renderSessionPackages();
           if (lookedUpOrderId === orderId) renderLookupResult(getOrders().find(o => o.id === orderId));
           showDeliveryReportStatus(orderId, res.report || null, res.whatsapp || null);

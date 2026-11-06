@@ -2,6 +2,7 @@ const request = require('supertest');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const bcrypt = require('bcryptjs');
 
 describe('AI chat provider handling', () => {
   jest.setTimeout(30000);
@@ -29,6 +30,7 @@ describe('AI chat provider handling', () => {
   const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yebs-ai-chat-'));
   const databasePath = path.join(testDir, 'database.json');
   let app;
+  let adminToken;
 
   beforeAll(async () => {
     envKeys.forEach(key => { originalEnv[key] = process.env[key]; });
@@ -51,7 +53,14 @@ describe('AI chat provider handling', () => {
 
     jest.resetModules();
     const data = {
-      admins: [],
+      admins: [{
+        id: 'adm-ai-health-test',
+        username: 'ai-test-admin',
+        password: bcrypt.hashSync('ai-health-test-password', 10),
+        name: 'AI Health Test Admin',
+        role: 'SUPERADMIN',
+        sessionEpoch: 0
+      }],
       drivers: [],
       orders: [],
       sessions: [],
@@ -74,6 +83,11 @@ describe('AI chat provider handling', () => {
     jest.spyOn(store, 'flush').mockResolvedValue();
     app = require('../server').app;
     await require('../server').start();
+    const login = await request(app)
+      .post('/api/auth/admin/login')
+      .send({ username: 'ai-test-admin', password: 'ai-health-test-password' });
+    expect(login.status).toBe(200);
+    adminToken = login.body.token;
   });
 
   afterAll(() => {
@@ -87,6 +101,9 @@ describe('AI chat provider handling', () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
+    process.env.GEMINI_API_KEY = '';
+    process.env.GOOGLE_GEMINI_API_KEY = '';
+    process.env.GEMINI_MODEL = '';
   });
 
   test('explains that an AI provider must be configured', async () => {
@@ -127,5 +144,84 @@ describe('AI chat provider handling', () => {
       model: 'gemini-3.6-flash'
     });
     expect(requestedModels).toEqual(['retired-model', 'gemini-3.6-flash']);
+  });
+
+  test('requires an administrator and reports missing provider configuration', async () => {
+    const unauthorized = await request(app).post('/api/admin/ai-health-check');
+    expect(unauthorized.status).toBe(401);
+
+    const response = await request(app)
+      .post('/api/admin/ai-health-check')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      operational: false,
+      status: 'not-configured'
+    });
+    expect(response.body.message).toContain('GEMINI_API_KEY');
+    expect(response.body).not.toHaveProperty('apiKey');
+  });
+
+  test('reports a live Gemini response without returning the API key', async () => {
+    process.env.GEMINI_API_KEY = 'private-test-key';
+    process.env.GEMINI_MODEL = 'gemini-test-model';
+    global.fetch = jest.fn(async (_url, options) => {
+      expect(options.headers['x-goog-api-key']).toBe('private-test-key');
+      expect(JSON.parse(options.body).generationConfig.maxOutputTokens).toBe(8);
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'OK' }] } }]
+      }), { status: 200 });
+    });
+
+    const response = await request(app)
+      .post('/api/admin/ai-health-check')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      operational: true,
+      status: 'operational',
+      provider: 'Gemini',
+      model: 'gemini-test-model'
+    });
+    expect(JSON.stringify(response.body)).not.toContain('private-test-key');
+  });
+
+  test('does not report a configured Gemini key as operational before probing it', async () => {
+    process.env.GEMINI_API_KEY = 'private-test-key';
+
+    const response = await request(app)
+      .get('/api/admin/provider-health')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.providers.gemini).toMatchObject({
+      configured: true,
+      operational: null,
+      status: 'not-tested'
+    });
+  });
+
+  test('reports rejected Gemini keys as a safe actionable status', async () => {
+    process.env.GEMINI_API_KEY = 'private-test-key';
+    global.fetch = jest.fn(async () => new Response(JSON.stringify({
+      error: { message: 'API key private-test-key is invalid.' }
+    }), { status: 403 }));
+
+    const response = await request(app)
+      .post('/api/admin/ai-health-check')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      operational: false,
+      status: 'invalid-key'
+    });
+    expect(response.body.message).toContain('Replace GEMINI_API_KEY');
+    expect(JSON.stringify(response.body)).not.toContain('private-test-key');
   });
 });
