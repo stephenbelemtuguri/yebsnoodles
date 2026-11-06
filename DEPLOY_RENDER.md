@@ -136,6 +136,17 @@ must enable lock-screen alerts on each signed-in device. Browser permission
 and VAPID configuration are required; platforms may defer notifications when
 the browser or device has restricted background activity.
 
+### Driver password recovery
+
+The server-side face verifier compares the driver's saved registration photo
+with three live camera frames. It loads the pinned Human face models from
+jsDelivr on first use, so the Render service needs outbound HTTPS access to
+that CDN. If loading, liveness, or face matching is inconclusive, the request
+is held for an administrator to compare the photos and contact the registered
+phone. Pending requests appear in the admin recovery review card and trigger
+staff and configured WhatsApp alerts. Configure Evolution's variables above
+to send those WhatsApp alerts through Evolution.
+
 ### Recovering an existing administrator login
 
 Admin credentials are stored in the shared database as bcrypt hashes. Change an

@@ -90,6 +90,10 @@ Object.assign(process.env, {
   WHATSAPP_CLOUD_TOKEN: '',
   WHATSAPP_PHONE_ID: '',
   META_WHATSAPP_TOKEN: '',
+  WHATSAPP_TO: '233559103452',
+  EVOLUTION_API_URL: '',
+  EVOLUTION_API_KEY: '',
+  EVOLUTION_INSTANCE: '',
   GEMINI_API_KEY: '',
   GOOGLE_GEMINI_API_KEY: '',
   MOMO_SUBSCRIPTION_KEY: '',
@@ -328,6 +332,89 @@ describe('customer order to verified delivery flow', () => {
       .set('X-Driver-Recovery-Token', approvedRequest.body.accessToken)
       .send({ password: 'another-driver-password', confirmPassword: 'another-driver-password' });
     expect(replay.status).toBe(404);
+  });
+
+  test('notifies administrators of pending face reviews through Evolution and the admin inbox', async () => {
+    const names = ['EVOLUTION_API_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE'];
+    const previousEnv = Object.fromEntries(names.map(name => [name, process.env[name]]));
+    const previousFetch = global.fetch;
+    process.env.EVOLUTION_API_URL = 'https://evolution.example.test';
+    process.env.EVOLUTION_API_KEY = 'private-test-evolution-key';
+    process.env.EVOLUTION_INSTANCE = 'yebs-admin';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ key: { id: 'recovery-alert-id' } })
+    });
+
+    try {
+      const selfiePhoto = `data:image/jpeg;base64,${Buffer.from('recovery-review-selfie').toString('base64')}`;
+      const response = await request(app)
+        .post('/api/auth/driver-recovery')
+        .set('X-Forwarded-For', '203.0.113.91')
+        .send({ phone: '0241111111', selfiePhoto, selfieFrames: [
+          selfiePhoto,
+          `data:image/jpeg;base64,${Buffer.from('recovery-review-left').toString('base64')}`,
+          `data:image/jpeg;base64,${Buffer.from('recovery-review-right').toString('base64')}`
+        ] });
+      expect(response.status).toBe(201);
+      expect(response.body.status).toBe('pending');
+
+      for (let attempt = 0; attempt < 30 && !global.fetch.mock.calls.length; attempt += 1) {
+        await new Promise(resolve => { setTimeout(resolve, 10); });
+      }
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://evolution.example.test/message/sendText/yebs-admin',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ apikey: 'private-test-evolution-key' }),
+          body: expect.stringContaining(response.body.requestId)
+        })
+      );
+
+      const queue = await request(app)
+        .get('/api/admin/driver-recovery-requests')
+        .set('Authorization', 'Bearer ' + adminToken);
+      expect(queue.body.requests).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: response.body.requestId,
+          verificationReason: 'test-face-check-not-confident'
+        })
+      ]));
+
+      let notification;
+      for (let attempt = 0; attempt < 30 && !notification; attempt += 1) {
+        const database = JSON.parse(fs.readFileSync(databasePath, 'utf8'));
+        notification = (database.notifications || []).find(item =>
+          item.title === 'Driver password recovery needs review' && item.entityId === response.body.requestId);
+        if (!notification) await new Promise(resolve => { setTimeout(resolve, 10); });
+      }
+      expect(notification).toMatchObject({
+        audienceRole: 'admin',
+        entityId: response.body.requestId,
+        url: '/admin.html#driverRecoveryReviewCard'
+      });
+
+      const approval = await request(app)
+        .post(`/api/admin/driver-recovery-requests/${response.body.requestId}/review`)
+        .set('Authorization', 'Bearer ' + adminToken)
+        .send({ decision: 'approve', phoneVerified: true, registrationPhotoCompared: true });
+      expect(approval.status).toBe(200);
+      for (let attempt = 0; attempt < 30 && global.fetch.mock.calls.length < 2; attempt += 1) {
+        await new Promise(resolve => { setTimeout(resolve, 10); });
+      }
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(global.fetch.mock.calls[1][1].body)).toMatchObject({
+        number: '233241111111',
+        text: expect.stringContaining('request was approved')
+      });
+    } finally {
+      global.fetch = previousFetch;
+      for (const [name, value] of Object.entries(previousEnv)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
   });
 
   test('automatically authorizes a reset after the local face model verifies the driver', async () => {

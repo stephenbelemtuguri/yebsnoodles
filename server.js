@@ -1487,8 +1487,8 @@ function queueNotification(db, order, kind, message) {
   return entry;
 }
 
-// Runs after the HTTP response: tries Cloud API then CallMeBot, updates the
-// ledger, persists it, and pushes the result over SSE so open screens update.
+// Runs after the HTTP response: tries Evolution, Cloud API, then CallMeBot,
+// updates the ledger, persists it, and pushes the result over SSE.
 async function deliverNotification(entryId) {
   const db = loadDatabase();
   const entry = (db.notifications || []).find(n => n.id === entryId);
@@ -1658,35 +1658,40 @@ app.get('/api/orders/:id/notification', (req, res) => {
   });
 });
 
-// Send one plain text message to an individual WhatsApp phone. Used by the
-// password-recovery flow and rider handover notices. Tries the owner's
-// CallMeBot relay as a fallback when the Cloud API is unavailable.
+// Send one plain text message to an individual phone. Evolution is preferred;
+// Cloud API and the owner's CallMeBot relay are fallbacks.
 async function sendWhatsAppText(to, text) {
   const cfg = whatsappConfig();
   const target = String(to || cfg.to || '').replace(/[^\d]/g, '');
   if (!target) return { ok: false, reason: 'no-phone' };
-  if (cfg.token && cfg.phoneId) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
-      const response = await fetch('https://graph.facebook.com/' + cfg.version + '/' + cfg.phoneId + '/messages', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + cfg.token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: target,
-          type: 'text',
-          text: { preview_url: false, body: String(text).slice(0, 3800) }
-        }),
-        signal: controller.signal
-      }).finally(() => clearTimeout(timer));
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error((payload.error && payload.error.message) || ('WhatsApp API ' + response.status));
-      return { ok: true, providerId: payload.messages && payload.messages[0] ? payload.messages[0].id : null };
-    } catch (err) {
-      console.warn('[whatsapp] cloud message failed:', err.message);
+  if (messagingService.isEvolutionConfigured()) {
+    let delivery;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      delivery = await messagingService.sendEvolutionWhatsApp(target, text);
+      if (delivery.success) {
+        return { ok: true, provider: delivery.provider, providerId: delivery.providerId || null };
+      }
+      const retryable = !delivery.status || delivery.status === 408 || delivery.status === 429 || delivery.status >= 500;
+      if (!retryable || attempt === 3) break;
+      await new Promise(resolve => { setTimeout(resolve, attempt * 500); });
     }
+    console.warn('[whatsapp] Evolution message failed:', delivery && delivery.error || 'unknown error');
+  }
+  try {
+    const cloud = await messagingService.sendWhatsApp(target, text, {
+      ...process.env,
+      EVOLUTION_API_URL: '',
+      EVOLUTION_API_KEY: '',
+      EVOLUTION_INSTANCE: ''
+    });
+    if (cloud.success) {
+      return { ok: true, provider: cloud.provider, providerId: cloud.providerId || null };
+    }
+    if (cloud.error && !/not configured/i.test(cloud.error)) {
+      console.warn('[whatsapp] cloud message failed:', cloud.error);
+    }
+  } catch (err) {
+    console.warn('[whatsapp] cloud message failed:', err.message);
   }
   // Fallback: the owner's own relay number can still deliver notices.
   const bot = callmebotConfig();
@@ -3523,6 +3528,7 @@ app.post('/api/auth/driver-recovery', driverRecoverySubmitLimit, async (req, res
     driverId: eligible ? driver.id : null,
     phoneHash: hashRecoveryValue(driverPhoneKey),
     pollTokenHash: hashRecoveryValue(accessToken),
+    verificationReason: faceVerified ? 'local-face-model' : faceFailureReason,
     selfiePhoto: eligible && !faceVerified ? selfiePhoto : null,
     status: faceVerified ? 'approved' : eligible ? 'pending' : 'unmatched',
     approvedBy: faceVerified ? 'local-face-model' : null,
@@ -3546,6 +3552,18 @@ app.post('/api/auth/driver-recovery', driverRecoverySubmitLimit, async (req, res
       'DRIVER_PORTAL',
       { requestId: recoveryRequest.id, verification: faceVerified ? 'local-face-model' : faceFailureReason },
       req);
+  }
+  if (eligible && !faceVerified) {
+    const driverName = driver.name || `${driver.fname || ''} ${driver.lname || ''}`.trim() || 'A registered driver';
+    const message = `YEBS: Password recovery needs review for ${driverName} (${driver.phone}). Compare the signup photo with the submitted live face frames and contact the registered number before approving. Review request ${recoveryRequest.id} in the admin panel.`;
+    notifyStaffSafely(db, 'admin', 'Driver password recovery needs review',
+      `${driverName} · ${driver.phone}. Compare the signup photo and recovery selfie, then contact the registered number.`,
+      '/admin.html#driverRecoveryReviewCard', recoveryRequest.id);
+    void sendOwnerWhatsApp(message).then(delivery => {
+      if (!delivery.ok) console.warn('[driver-recovery] Admin WhatsApp alert was not delivered:', delivery.reason);
+    }).catch(error => {
+      console.warn('[driver-recovery] Admin WhatsApp alert failed:', error.message);
+    });
   }
 
   res.set('Cache-Control', 'no-store');
@@ -3672,6 +3690,7 @@ app.get('/api/admin/driver-recovery-requests', requireRole('admin'), async (req,
         id: entry.id,
         createdAt: entry.createdAt,
         expiresAt: entry.expiresAt,
+        verificationReason: entry.verificationReason || 'face-match-below-threshold',
         driver: {
           id: driver.id,
           name: driver.name || `${driver.fname || ''} ${driver.lname || ''}`.trim(),
@@ -3743,6 +3762,14 @@ app.post('/api/admin/driver-recovery-requests/:id/review', requireRole('admin'),
     },
     req
   );
+  const recoveryMessage = decision === 'approve'
+    ? 'YEBS: Your driver password recovery request was approved. Return to the recovery page to set your new password.'
+    : 'YEBS: Your driver password recovery request was not approved. Contact YEBS support using your registered phone number.';
+  void sendWhatsAppText(driver.phone, recoveryMessage).then(delivery => {
+    if (!delivery.ok) console.warn('[driver-recovery] Driver WhatsApp update was not delivered:', delivery.reason);
+  }).catch(error => {
+    console.warn('[driver-recovery] Driver WhatsApp update failed:', error.message);
+  });
   return res.json({
     success: true,
     status: entry.status,
